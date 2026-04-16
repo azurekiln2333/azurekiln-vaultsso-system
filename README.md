@@ -223,5 +223,3 @@ oauth2/
 - **Editorial Typography** - Manrope + Inter 字体组合
 
 ## License
-
-MIT
