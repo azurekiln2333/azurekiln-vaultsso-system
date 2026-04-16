@@ -1,0 +1,53 @@
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: 'Manrope', sans-serif;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.vault-gradient,
+.primary-gradient {
+  background: linear-gradient(135deg, #003d9b 0%, #0052cc 100%);
+}
+
+.bg-mesh {
+  background-color: #f8f9fb;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(12, 86, 208, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(12, 86, 208, 0.03) 0px, transparent 50%);
+}
+
+.vaultsso-page-surface {
+  background:
+    radial-gradient(circle at top left, rgba(11, 87, 208, 0.14), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(0, 61, 155, 0.08), transparent 28%),
+    linear-gradient(135deg, #eef5ff 0%, #f8fbff 48%, #dee9ff 100%);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 20px 40px rgba(25, 28, 30, 0.05);
+}
+
+.glass-effect {
+  background: rgba(12, 86, 208, 0.05);
+  backdrop-filter: blur(12px);
+}
+
+.ambient-shadow {
+  box-shadow: 0 20px 40px rgba(25, 28, 30, 0.04);
+}
+
+.language-switch button.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #003d9b 0%, #0052cc 100%);
+  box-shadow: 0 12px 24px rgba(11, 87, 208, 0.16);
+}

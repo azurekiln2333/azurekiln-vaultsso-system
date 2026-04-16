@@ -1,0 +1,490 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 涓汉淇℃伅</title>`r`n  <script src="/assets/vaultsso-tailwind.js"></script>`r`n  <script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">`r`n  <link rel="stylesheet" href="/assets/vaultsso-profile.css">
+</head>
+<body>
+  <div class="shell">
+    <section class="profile-card">
+      <div class="topbar">
+        <div class="brand">
+          <span class="brand-mark">V</span>
+          <span data-i18n="common.brand">VaultSSO</span>
+        </div>
+
+        <div class="language-switch">
+          <button type="button" data-language-switch="zh" data-i18n="common.language.zh">涓枃</button>
+          <button type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+        </div>
+      </div>
+
+      <div class="status" id="statusMessage"></div>
+      <div class="loading" id="loadingState" data-i18n="profile.loading">姝ｅ湪鍔犺浇涓汉淇℃伅...</div>
+
+      <div class="content" id="profileContent" style="display:none;">
+        <section class="hero">
+          <div class="hero-main">
+            <img class="avatar" id="avatarPreview" alt="avatar">
+            <div>
+              <p class="profile-name" id="profileName">...</p>
+              <p class="profile-meta" id="profileMeta"></p>
+              <p class="hero-description" data-i18n="profile.hero.description">褰撳墠椤甸潰浠ヨ祫鏂欏睍绀轰负涓汇€傛樉绀哄悕绉般€佸ご鍍忋€侀偖绠卞拰瀵嗙爜閮介€氳繃寮圭獥淇敼锛岀敤鎴峰悕涓哄彧璇汇€?/p>
+              <div class="chip-row">
+                <span class="chip" id="emailVerifiedBadge"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-actions">
+            <a class="action-link" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">搴旂敤绠＄悊</a>
+            <a class="action-link" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">浠ょ墝绠＄悊</a>
+            <a class="action-link" href="/oauth2/logout" data-i18n="common.action.logout">閫€鍑虹櫥褰?/a>
+          </div>
+        </section>
+
+        <section class="info-list">
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.display_name">鏄剧ず鍚嶇О</p>
+              <p class="info-value" id="displayNameValue"></p>
+            </div>
+            <button class="text-button" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">淇敼璧勬枡</button>
+          </div>
+
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.username">鐢ㄦ埛鍚?/p>
+              <p class="info-value" id="usernameValue"></p>
+              <p class="info-helper" data-i18n="profile.field.username_hint">鐢ㄦ埛鍚嶅凡閿佸畾锛屼笉鍏佽淇敼銆?/p>
+            </div>
+          </div>
+
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.email">閭</p>
+              <p class="info-value" id="emailValue"></p>
+            </div>
+            <button class="text-button" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">淇敼閭</button>
+          </div>
+
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.new_password">瀵嗙爜</p>
+              <p class="info-value" id="passwordValue" data-i18n="profile.value.password_masked">宸查殣钘?/p>
+            </div>
+            <button class="text-button" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">淇敼瀵嗙爜</button>
+          </div>
+
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.user_id">鐢ㄦ埛 ID</p>
+              <p class="info-value" id="userIdValue"></p>
+            </div>
+          </div>
+
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.created_at">鍒涘缓鏃堕棿</p>
+              <p class="info-value" id="createdAtValue"></p>
+            </div>
+          </div>
+
+          <div class="info-row">
+            <div class="info-copy">
+              <p class="info-label" data-i18n="profile.field.updated_at">鏈€杩戞洿鏂版椂闂?/p>
+              <p class="info-value" id="updatedAtValue"></p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="profileModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="profileModalTitle" data-i18n="profile.modal.profile_title">淇敼璧勬枡</h2>
+          <p class="modal-desc" data-i18n="profile.modal.profile_desc">浣犲彲浠ュ湪杩欓噷淇敼鏄剧ず鍚嶇О鍜屽ご鍍忓湴鍧€銆?/p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="profileModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="profileEditForm">
+        <div class="field">
+          <label for="profileNameInput" data-i18n="profile.field.display_name">鏄剧ず鍚嶇О</label>
+          <input id="profileNameInput" name="name" type="text" required>
+        </div>
+
+        <div class="field">
+          <label for="profileAvatarInput" data-i18n="profile.field.avatar">澶村儚鍦板潃</label>
+          <input id="profileAvatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
+          <small data-i18n="profile.field.avatar_hint">鐣欑┖浼氫娇鐢ㄧ郴缁熺敓鎴愮殑榛樿澶村儚銆?/small>
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="profileModal" data-i18n="common.action.cancel">鍙栨秷</button>
+          <button class="submit" id="profileModalSubmit" type="submit" data-i18n="common.action.save">淇濆瓨</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="emailModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="emailModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="emailModalTitle" data-i18n="profile.modal.email_title">淇敼閭</h2>
+          <p class="modal-desc" data-i18n="profile.modal.email_desc">鎻愪氦鍚庝細绔嬪嵆鏇存柊褰撳墠璐︽埛閭銆?/p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="emailModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="emailEditForm">
+        <div class="field">
+          <label for="profileEmailInput" data-i18n="profile.field.email">閭</label>
+          <input id="profileEmailInput" name="email" type="email" required>
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="emailModal" data-i18n="common.action.cancel">鍙栨秷</button>
+          <button class="submit" id="emailModalSubmit" type="submit" data-i18n="common.action.save">淇濆瓨</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="passwordModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="passwordModalTitle" data-i18n="profile.modal.password_title">淇敼瀵嗙爜</h2>
+          <p class="modal-desc" data-i18n="profile.modal.password_desc">璇疯緭鍏ュ綋鍓嶅瘑鐮侊紝骞惰缃柊鐨勭櫥褰曞瘑鐮併€?/p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="passwordModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="passwordForm">
+        <div class="field">
+          <label for="currentPasswordInput" data-i18n="profile.field.current_password">褰撳墠瀵嗙爜</label>
+          <input id="currentPasswordInput" name="currentPassword" type="password" autocomplete="current-password">
+        </div>
+
+        <div class="field">
+          <label for="newPasswordInput" data-i18n="profile.field.new_password">鏂板瘑鐮?/label>
+          <input id="newPasswordInput" name="newPassword" type="password" autocomplete="new-password">
+        </div>
+
+        <div class="field">
+          <label for="confirmNewPasswordInput" data-i18n="profile.field.confirm_new_password">纭鏂板瘑鐮?/label>
+          <input id="confirmNewPasswordInput" type="password" autocomplete="new-password">
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="passwordModal" data-i18n="common.action.cancel">鍙栨秷</button>
+          <button class="submit" id="passwordModalSubmit" type="submit" data-i18n="profile.button.update_password">鏇存柊瀵嗙爜</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/i18n.js?v=20260416-2"></script>
+  <script>
+    const i18n = window.VaultI18n;
+    let currentUser = null;
+
+    function buildAvatarDataUri(name) {
+      const safeName = (name || 'U').trim();
+      const initial = safeName.charAt(0).toUpperCase() || 'U';
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88">
+          <defs>
+            <linearGradient id="avatarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#003d9b" />
+              <stop offset="100%" stop-color="#0b57d0" />
+            </linearGradient>
+          </defs>
+          <rect width="88" height="88" rx="18" fill="url(#avatarGradient)" />
+          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">${initial}</text>
+        </svg>
+      `;
+
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    function formatDate(value) {
+      if (!value) {
+        return i18n.t('profile.meta.date_missing');
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return i18n.t('profile.meta.date_missing');
+      }
+
+      const locale = i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US';
+      return date.toLocaleString(locale, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    function setAvatar(url, name) {
+      const avatar = document.getElementById('avatarPreview');
+      avatar.onerror = function () {
+        avatar.src = buildAvatarDataUri(name);
+      };
+      avatar.src = url || buildAvatarDataUri(name);
+    }
+
+    function toggleAdminLinks(isAdmin) {
+      document.getElementById('appsMenuLink').style.display = isAdmin ? '' : 'none';
+      document.getElementById('tokensMenuLink').style.display = isAdmin ? '' : 'none';
+    }
+
+    function setStatus(kind, message) {
+      const element = document.getElementById('statusMessage');
+      if (!kind || !message) {
+        element.className = 'status';
+        element.textContent = '';
+        return;
+      }
+
+      element.className = `status show ${kind}`;
+      element.textContent = message;
+    }
+
+    function closeModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.remove('show');
+      }
+    }
+
+    function openModal(modalId) {
+      closeAllModals();
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.add('show');
+        const firstInput = modal.querySelector('input');
+        if (firstInput) {
+          window.setTimeout(() => firstInput.focus(), 20);
+        }
+      }
+    }
+
+    function closeAllModals() {
+      document.querySelectorAll('[data-modal-backdrop]').forEach(modal => {
+        modal.classList.remove('show');
+      });
+    }
+
+    function syncUserToPage(user) {
+      currentUser = user;
+      toggleAdminLinks(Boolean(user.isAdmin));
+
+      document.getElementById('profileName').textContent = user.name || user.username;
+      document.getElementById('profileMeta').textContent = `${user.username} 路 ${user.email}`;
+      setAvatar(user.avatar, user.name || user.username);
+
+      document.getElementById('emailVerifiedBadge').textContent = user.emailVerified
+        ? i18n.t('profile.meta.email_verified')
+        : i18n.t('profile.meta.email_unverified');
+      document.getElementById('emailVerifiedBadge').className = user.emailVerified ? 'chip' : 'chip muted';
+
+      document.getElementById('displayNameValue').textContent = user.name || '-';
+      document.getElementById('usernameValue').textContent = user.username || '-';
+      document.getElementById('emailValue').textContent = user.email || '-';
+      document.getElementById('passwordValue').textContent = i18n.t('profile.value.password_masked');
+      document.getElementById('userIdValue').textContent = user.id || '-';
+      document.getElementById('createdAtValue').textContent = formatDate(user.createdAt);
+      document.getElementById('updatedAtValue').textContent = formatDate(user.updatedAt);
+
+      document.getElementById('profileNameInput').value = user.name || '';
+      document.getElementById('profileAvatarInput').value = user.avatar || '';
+      document.getElementById('profileEmailInput').value = user.email || '';
+    }
+
+    function renderDocument() {
+      i18n.apply(document);
+      document.title = i18n.t('profile.page.title');
+
+      if (currentUser) {
+        syncUserToPage(currentUser);
+      }
+    }
+
+    async function loadProfile() {
+      try {
+        const response = await fetch('/api/profile', {
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return;
+        }
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(i18n.resolveMessage(payload, 'server.internal'));
+        }
+
+        syncUserToPage(payload.user);
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('profileContent').style.display = 'grid';
+      } catch (error) {
+        console.error('Load profile failed:', error);
+        setStatus('error', error.message || i18n.t('common.network_error'));
+      }
+    }
+
+    async function saveProfile(payload, submitButton, loadingKey, successKey) {
+      const originalLabel = submitButton.textContent;
+      submitButton.disabled = true;
+      submitButton.textContent = i18n.t(loadingKey);
+      setStatus('', '');
+
+      try {
+        const response = await fetch('/api/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return false;
+        }
+
+        if (!response.ok) {
+          throw new Error(i18n.resolveMessage(result, 'server.internal'));
+        }
+
+        syncUserToPage(result.user);
+        setStatus('success', i18n.resolveMessage(result, successKey));
+        return true;
+      } catch (error) {
+        console.error('Save profile failed:', error);
+        setStatus('error', error.message || i18n.t('common.network_error'));
+        return false;
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    }
+
+    document.getElementById('editProfileBtn').addEventListener('click', function () {
+      openModal('profileModal');
+    });
+
+    document.getElementById('editEmailBtn').addEventListener('click', function () {
+      openModal('emailModal');
+    });
+
+    document.getElementById('editPasswordBtn').addEventListener('click', function () {
+      openModal('passwordModal');
+    });
+
+    document.getElementById('profileEditForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+
+      const updated = await saveProfile({
+        name: document.getElementById('profileNameInput').value,
+        avatar: document.getElementById('profileAvatarInput').value
+      }, document.getElementById('profileModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
+
+      if (updated) {
+        closeModal('profileModal');
+      }
+    });
+
+    document.getElementById('emailEditForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+
+      const updated = await saveProfile({
+        email: document.getElementById('profileEmailInput').value
+      }, document.getElementById('emailModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
+
+      if (updated) {
+        closeModal('emailModal');
+      }
+    });
+
+    document.getElementById('passwordForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+
+      const currentPassword = document.getElementById('currentPasswordInput').value;
+      const newPassword = document.getElementById('newPasswordInput').value;
+      const confirmPassword = document.getElementById('confirmNewPasswordInput').value;
+
+      if (!newPassword && !currentPassword && !confirmPassword) {
+        setStatus('error', i18n.t('profile.status.password_empty'));
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        setStatus('error', i18n.t('profile.status.password_mismatch'));
+        return;
+      }
+
+      const updated = await saveProfile({
+        currentPassword,
+        newPassword
+      }, document.getElementById('passwordModalSubmit'), 'profile.status.updating_password', 'profile.status.password_updated');
+
+      if (updated) {
+        document.getElementById('currentPasswordInput').value = '';
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('confirmNewPasswordInput').value = '';
+        closeModal('passwordModal');
+      }
+    });
+
+    document.querySelectorAll('[data-close-modal]').forEach(button => {
+      button.addEventListener('click', function () {
+        closeModal(button.getAttribute('data-close-modal'));
+      });
+    });
+
+    document.querySelectorAll('[data-modal-backdrop]').forEach(backdrop => {
+      backdrop.addEventListener('click', function (event) {
+        if (event.target === backdrop) {
+          closeModal(backdrop.id);
+        }
+      });
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeAllModals();
+      }
+    });
+
+    i18n.bindLanguageButtons(document);
+    renderDocument();
+    loadProfile();
+
+    document.addEventListener('vaultsso:languagechange', function () {
+      renderDocument();
+    });
+  </script>
+</body>
+</html>
+
+

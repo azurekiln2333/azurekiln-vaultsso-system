@@ -1,0 +1,419 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 鐧诲綍 / 娉ㄥ唽</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>`r`n  <script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">`r`n  <link rel="stylesheet" href="/assets/vaultsso-authorize.css">
+</head>
+<body class="bg-mesh min-h-screen flex flex-col text-on-surface">
+  <header class="page-header">
+    <div class="brand-title">
+      VaultSSO
+    </div>
+
+    <div class="language-switch">
+      <button class="lang-button" type="button" data-language-switch="zh" data-i18n="common.language.zh">涓枃</button>
+      <button class="lang-button" type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+    </div>
+  </header>
+
+  <main class="page-main">
+    <section class="auth-card">
+      <div class="card-orb"></div>
+
+      <div class="card-section card-header">
+        <h1 class="card-title" id="panelTitle"></h1>
+        <p class="card-description" id="panelDescription"></p>
+      </div>
+
+      <div class="card-section hidden session-panel" id="sessionBanner">
+        <div class="session-card" id="sessionEntry" role="button" tabindex="0">
+          <div class="session-head">
+            <div class="min-w-0">
+              <strong class="session-title" id="sessionBannerTitle"></strong>
+            </div>
+            <button class="logout-button" id="logoutButton" type="button" data-i18n="common.action.logout_short">娉ㄩ攢</button>
+          </div>
+          <span class="session-text" id="sessionBannerText"></span>
+        </div>
+      </div>
+
+      <div class="card-section hidden oauth-panel" id="oauthCard">
+        <small class="oauth-eyebrow" data-i18n="auth.oauth.eyebrow">Authorization Request</small>
+        <strong class="oauth-title" id="oauthClientName"></strong>
+        <p class="oauth-text" id="oauthDescription"></p>
+        <div class="scope-list" id="scopeList"></div>
+        <div class="redirect-panel">
+          <span class="redirect-label" data-i18n="auth.oauth.redirect_label">鍥炶皟鍦板潃</span>
+          <code class="redirect-code" id="redirectUriPreview"></code>
+        </div>
+      </div>
+
+      <div class="hidden auth-region card-section" id="authRegion">
+        <div class="tabs-row">
+          <button class="tab-button active" type="button" data-mode="login" data-i18n="auth.tab.login">鐧诲綍</button>
+          <button class="tab-button" type="button" data-mode="register" data-i18n="auth.tab.register">娉ㄥ唽</button>
+        </div>
+
+        <div class="status-box" id="statusMessage"></div>
+
+        <div data-card="login">
+          <form class="auth-form" id="loginForm">
+            <input type="hidden" name="client_id">
+            <input type="hidden" name="redirect_uri">
+            <input type="hidden" name="scope">
+            <input type="hidden" name="state">
+
+            <div class="field-group">
+              <label class="field-label" for="loginUsername" data-i18n="auth.form.username_or_email">鐢ㄦ埛鍚嶆垨閭</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">person</span>
+                <input class="field-input" id="loginUsername" name="username" type="text" data-i18n-placeholder="auth.placeholder.username_or_email" placeholder="璇疯緭鍏ョ敤鎴峰悕鎴栭偖绠? required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="loginPassword" data-i18n="auth.form.password">瀵嗙爜</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="loginPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password" placeholder="璇疯緭鍏ュ瘑鐮? required>
+              </div>
+            </div>
+
+            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.login">鐧诲綍骞剁户缁?/button>
+          </form>
+        </div>
+
+        <div class="hidden" data-card="register">
+          <form class="auth-form" id="registerForm">
+            <input type="hidden" name="client_id">
+            <input type="hidden" name="redirect_uri">
+            <input type="hidden" name="scope">
+            <input type="hidden" name="state">
+
+            <div class="field-group">
+              <label class="field-label" for="registerName" data-i18n="auth.form.display_name">鏄剧ず鍚嶇О</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">badge</span>
+                <input class="field-input" id="registerName" name="name" type="text" data-i18n-placeholder="auth.placeholder.display_name" placeholder="渚嬪锛欰lexander Chen" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerUsername" data-i18n="auth.form.username">鐢ㄦ埛鍚?/label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">person</span>
+                <input class="field-input" id="registerUsername" name="username" type="text" data-i18n-placeholder="auth.placeholder.username" placeholder="鐣欑┖鍒欓粯璁や娇鐢ㄩ偖绠?>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerEmail" data-i18n="auth.form.email">閭</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">mail</span>
+                <input class="field-input" id="registerEmail" name="email" type="email" data-i18n-placeholder="auth.placeholder.email" placeholder="name@company.com" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerPassword" data-i18n="auth.form.password">瀵嗙爜</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="registerPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password_short" placeholder="鑷冲皯 6 浣? required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerConfirmPassword" data-i18n="auth.form.confirm_password">纭瀵嗙爜</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">verified_user</span>
+                <input class="field-input" id="registerConfirmPassword" name="confirm_password" type="password" data-i18n-placeholder="auth.placeholder.confirm_password" placeholder="鍐嶆杈撳叆瀵嗙爜" required>
+              </div>
+            </div>
+
+            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.register">鍒涘缓璐︽埛骞剁户缁?/button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/i18n.js?v=20260416-2"></script>
+  <script>
+    const clientNames = {
+      'salesforce-prod': 'Salesforce',
+      'slack-workspace': 'Slack',
+      'github-enterprise': 'GitHub',
+      'azure-portal': 'Azure Portal'
+    };
+
+    const i18n = window.VaultI18n;
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthParams = {
+      client_id: urlParams.get('client_id') || '',
+      redirect_uri: urlParams.get('redirect_uri') || '',
+      scope: urlParams.get('scope') || 'openid profile email',
+      state: urlParams.get('state') || ''
+    };
+
+    const hasOAuthRequest = Boolean(oauthParams.client_id && oauthParams.redirect_uri);
+    const tabButtons = Array.from(document.querySelectorAll('.tab-button'));
+    const cards = Array.from(document.querySelectorAll('[data-card]'));
+    const statusMessage = document.getElementById('statusMessage');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const authRegion = document.getElementById('authRegion');
+    const sessionBanner = document.getElementById('sessionBanner');
+    const sessionEntry = document.getElementById('sessionEntry');
+    const logoutButton = document.getElementById('logoutButton');
+    const oauthCard = document.getElementById('oauthCard');
+
+    function getClientLabel() {
+      return clientNames[oauthParams.client_id] || oauthParams.client_id || i18n.t('common.app_fallback');
+    }
+
+    function clearStatus() {
+      statusMessage.className = 'status-box';
+      statusMessage.textContent = '';
+    }
+
+    function setMode(mode) {
+      tabButtons.forEach(function (button) {
+        button.classList.toggle('active', button.dataset.mode === mode);
+      });
+
+      cards.forEach(function (card) {
+        card.classList.toggle('hidden', card.dataset.card !== mode);
+      });
+
+      clearStatus();
+    }
+
+    function setStatus(kind, message) {
+      if (!kind || !message) {
+        clearStatus();
+        return;
+      }
+
+      const colorMap = {
+        error: 'is-error',
+        success: 'is-success'
+      };
+
+      statusMessage.className = `status-box is-visible ${colorMap[kind] || 'is-info'}`;
+      statusMessage.textContent = message;
+    }
+
+    function setSignedInState(isSignedIn) {
+      sessionBanner.classList.toggle('hidden', !isSignedIn);
+      authRegion.classList.toggle('hidden', isSignedIn);
+
+      if (isSignedIn) {
+        clearStatus();
+      }
+    }
+
+    function fillHiddenFields(form) {
+      Object.keys(oauthParams).forEach(function (key) {
+        const input = form.querySelector(`input[name="${key}"]`);
+        if (input) {
+          input.value = oauthParams[key];
+        }
+      });
+    }
+
+    function renderPage() {
+      i18n.apply(document);
+      document.title = i18n.t('auth.page.title');
+
+      if (hasOAuthRequest) {
+        document.getElementById('panelTitle').textContent = i18n.t('auth.panel.oauth_title', {
+          client: getClientLabel()
+        });
+        document.getElementById('panelDescription').textContent = i18n.t('auth.panel.oauth_description');
+        document.getElementById('oauthClientName').textContent = getClientLabel();
+        document.getElementById('oauthDescription').textContent = i18n.t('auth.oauth.description');
+        document.getElementById('redirectUriPreview').textContent = oauthParams.redirect_uri;
+
+        const scopeList = document.getElementById('scopeList');
+        scopeList.innerHTML = '';
+        oauthParams.scope.split(' ').filter(Boolean).forEach(function (scope) {
+          const chip = document.createElement('span');
+          chip.className = 'scope-chip';
+          chip.textContent = scope;
+          scopeList.appendChild(chip);
+        });
+
+        oauthCard.classList.remove('hidden');
+      } else {
+        document.getElementById('panelTitle').textContent = i18n.t('auth.panel.default_title');
+        document.getElementById('panelDescription').textContent = i18n.t('auth.panel.default_description');
+        oauthCard.classList.add('hidden');
+      }
+    }
+
+    async function hydrateSessionBanner() {
+      try {
+        const response = await fetch('/api/profile', {
+          credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+          setSignedInState(false);
+          return;
+        }
+
+        const payload = await response.json();
+        const user = payload.user;
+        document.getElementById('sessionBannerTitle').textContent = i18n.t('auth.session.title', {
+          user: user.name || user.username
+        });
+        document.getElementById('sessionBannerText').textContent = i18n.t('auth.session.default_text');
+        setSignedInState(true);
+      } catch (error) {
+        console.error('Session banner error:', error);
+        setSignedInState(false);
+      }
+    }
+
+    async function handleLogout() {
+      const originalLabel = logoutButton.textContent;
+      logoutButton.disabled = true;
+
+      try {
+        await fetch('/oauth2/logout', {
+          credentials: 'same-origin'
+        });
+
+        loginForm.reset();
+        registerForm.reset();
+        setMode('login');
+        setSignedInState(false);
+        document.getElementById('loginUsername').focus();
+      } catch (error) {
+        console.error('Logout failed:', error);
+        window.location.href = '/oauth2/logout';
+      } finally {
+        logoutButton.disabled = false;
+        logoutButton.textContent = originalLabel;
+      }
+    }
+
+    async function submitAuthForm(form, endpoint, loadingKey) {
+      setStatus('', '');
+
+      const submitButton = form.querySelector('.submit');
+      const originalLabel = submitButton.textContent;
+      const payload = new URLSearchParams(new FormData(form));
+
+      submitButton.disabled = true;
+      submitButton.textContent = i18n.t(loadingKey);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: payload
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          setStatus('error', i18n.resolveMessage(result, 'common.network_error', {
+            client: getClientLabel()
+          }));
+          return;
+        }
+
+        if (result.redirect) {
+          setStatus('success', i18n.resolveMessage(result, 'auth.status.redirecting'));
+          window.location.href = result.redirect;
+          return;
+        }
+
+        loginForm.reset();
+        registerForm.reset();
+        setMode('login');
+        await hydrateSessionBanner();
+      } catch (error) {
+        console.error('Auth request failed:', error);
+        setStatus('error', i18n.t('common.network_error'));
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    }
+
+    tabButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        setMode(button.dataset.mode);
+      });
+    });
+
+    fillHiddenFields(loginForm);
+    fillHiddenFields(registerForm);
+    setMode('login');
+    renderPage();
+    i18n.bindLanguageButtons(document);
+    hydrateSessionBanner();
+
+    document.addEventListener('vaultsso:languagechange', function () {
+      renderPage();
+      hydrateSessionBanner();
+    });
+
+    loginForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitAuthForm(loginForm, '/oauth2/authorize', 'auth.status.signing_in');
+    });
+
+    registerForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+
+      const password = registerForm.querySelector('input[name="password"]').value;
+      const confirmPassword = registerForm.querySelector('input[name="confirm_password"]').value;
+
+      if (password !== confirmPassword) {
+        setMode('register');
+        setStatus('error', i18n.t('auth.status.password_mismatch'));
+        return;
+      }
+
+      submitAuthForm(registerForm, '/oauth2/register', 'auth.status.creating');
+    });
+
+    logoutButton.addEventListener('click', function () {
+      handleLogout();
+    });
+
+    sessionEntry.addEventListener('click', function (event) {
+      if (event.target.closest('#logoutButton')) {
+        return;
+      }
+
+      window.location.href = '/profile';
+    });
+
+    sessionEntry.addEventListener('keydown', function (event) {
+      if (event.target.closest('#logoutButton')) {
+        return;
+      }
+
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+
+      event.preventDefault();
+      window.location.href = '/profile';
+    });
+  </script>
+</body>
+</html>
+
+

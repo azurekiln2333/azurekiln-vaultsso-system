@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VaultSSO | OAuth2 API Documentation</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "on-tertiary-fixed-variant": "#3f4850",
+        "secondary-container": "#bfd2fd",
+        "tertiary": "#3c454d",
+        "on-error-container": "#93000a",
+        "on-tertiary": "#ffffff",
+        "surface-container-highest": "#e1e2e4",
+        "error-container": "#ffdad6",
+        "on-primary-container": "#c4d2ff",
+        "inverse-surface": "#2e3132",
+        "surface-container-lowest": "#ffffff",
+        "error": "#ba1a1a",
+        "surface-container": "#edeef0",
+        "surface-container-high": "#e7e8ea",
+        "outline": "#737685",
+        "on-secondary-container": "#475a7e",
+        "on-tertiary-fixed": "#141c24",
+        "secondary": "#4c5e83",
+        "secondary-fixed-dim": "#b4c7f1",
+        "surface-container-low": "#f3f4f6",
+        "primary-container": "#0052cc",
+        "surface-bright": "#f8f9fb",
+        "on-primary-fixed": "#001848",
+        "inverse-primary": "#b2c5ff",
+        "tertiary-fixed-dim": "#bec7d2",
+        "primary-fixed": "#dae2ff",
+        "primary": "#003d9b",
+        "secondary-fixed": "#d7e2ff",
+        "on-secondary-fixed": "#041b3c",
+        "on-surface": "#191c1e",
+        "background": "#f8f9fb",
+        "on-tertiary-container": "#cbd4df",
+        "primary-fixed-dim": "#b2c5ff",
+        "on-surface-variant": "#434654",
+        "on-secondary-fixed-variant": "#34476a",
+        "surface-tint": "#0c56d0",
+        "inverse-on-surface": "#f0f1f3",
+        "on-primary-fixed-variant": "#0040a2",
+        "on-primary": "#ffffff",
+        "surface": "#f8f9fb",
+        "surface-variant": "#e1e2e4",
+        "outline-variant": "#c3c6d6",
+        "tertiary-container": "#535c65"
+      },
+      fontFamily: {
+        "headline": ["Manrope"],
+        "body": ["Inter"],
+        "label": ["Inter"]
+      },
+      borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+    },
+  },
+}
+</script>
+<style>
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.glass-effect {
+  background: rgba(12, 86, 208, 0.05);
+  backdrop-filter: blur(12px);
+}
+.primary-gradient {
+  background: linear-gradient(135deg, #003d9b 0%, #0052cc 100%);
+}
+.ambient-shadow {
+  box-shadow: 0px 20px 40px rgba(25, 28, 30, 0.04);
+}
+pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+}
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+.method-get { background: #10b981; }
+.method-post { background: #3b82f6; }
+</style>
+</head>
+<body class="bg-background text-on-surface font-body min-h-screen flex flex-col">
+<header class="bg-[#f8f9fb] dark:bg-slate-900 docked full-width top-0 z-50">
+<div class="flex justify-between items-center w-full px-8 py-4 max-w-7xl mx-auto">
+<div class="flex items-center gap-8">
+  <span class="text-xl font-black text-[#003d9b] dark:text-blue-400 tracking-tighter font-headline">VaultSSO</span>
+  <nav class="hidden md:flex gap-6 items-center">
+    <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/oauth2/authorize">Sign In</a>
+    <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/profile">Profile</a>
+    <a class="text-[#003d9b] dark:text-blue-400 font-bold border-b-2 border-[#003d9b] pb-1 hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">API Docs</a>
+  </nav>
+</div>
+<div class="flex items-center gap-4">
+  <button class="material-symbols-outlined text-slate-600 dark:text-slate-400 hover:text-[#0052cc] transition-colors">language</button>
+  <button class="material-symbols-outlined text-slate-600 dark:text-slate-400 hover:text-[#0052cc] transition-colors">help_outline</button>
+  <div class="h-10 w-10 rounded-full bg-surface-container-high overflow-hidden border-2 border-primary/10">
+    <img alt="User profile avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeJvKl7fU1iqZh6zOZs1aafVqUuYiG5yITDbH2UYR4RvaLznuMOqj8sGGOh1goH16sh4Jq75d9IeEbhUtLzk8V_ShUGkRIRYsEqo47Ads_1pw_6ySjt3T4vIDRjraWDGUoLRxXLVv7EFVRgKp9Mjfa4sHjuoM9MM5o2VIPg0rF66x0vP9_zEV3twEjYqDi1fMs_24JUSsFwuNUa7Kdjm6U7EfrzZzUMwm4IGtYm7pSX12FASsT6BxFQxtLiP-qzQ-YOymo-NhULTCI"/>
+  </div>
+</div>
+</div>
+</header>
+
+<main class="flex-grow max-w-7xl mx-auto w-full px-8 pt-12 pb-20">
+<div class="flex gap-8">
+<aside class="w-64 shrink-0 hidden lg:block">
+<div class="sticky top-24">
+  <h3 class="text-xs font-bold uppercase tracking-widest text-outline mb-4">Endpoints</h3>
+  <nav class="space-y-1">
+    <a href="#discovery" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">
+      <span class="w-2 h-2 rounded-full bg-green-500"></span>
+      Discovery
+    </a>
+    <a href="#authorize" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">
+      <span class="w-2 h-2 rounded-full bg-green-500"></span>
+      Authorization
+    </a>
+    <a href="#token" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">
+      <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+      Token
+    </a>
+    <a href="#userinfo" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">
+      <span class="w-2 h-2 rounded-full bg-green-500"></span>
+      UserInfo
+    </a>
+    <a href="#introspect" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">
+      <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+      Introspect
+    </a>
+    <a href="#revoke" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">
+      <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+      Revoke
+    </a>
+  </nav>
+  
+  <h3 class="text-xs font-bold uppercase tracking-widest text-outline mb-4 mt-8">Scopes</h3>
+  <nav class="space-y-1">
+    <a href="#scope-openid" class="block px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">openid</a>
+    <a href="#scope-profile" class="block px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">profile</a>
+    <a href="#scope-email" class="block px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">email</a>
+    <a href="#scope-offline" class="block px-3 py-2 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors">offline_access</a>
+  </nav>
+</div>
+</aside>
+
+<div class="flex-grow space-y-12">
+<section class="mb-12">
+<h1 class="font-headline font-extrabold text-4xl tracking-tight text-on-surface mb-4">OAuth2 API Documentation</h1>
+<p class="text-on-surface-variant text-lg leading-relaxed">
+  Complete reference for the VaultSSO OAuth2 provider. Implement secure authentication using industry-standard OAuth2 and OpenID Connect protocols.
+</p>
+</section>
+
+<section id="discovery" class="bg-surface-container-lowest rounded-xl p-8 ambient-shadow">
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 rounded-lg text-xs font-bold text-white method-get">GET</span>
+<h2 class="font-headline font-bold text-2xl text-on-surface">OpenID Discovery</h2>
+</div>
+<p class="text-on-surface-variant mb-6">Retrieve the OpenID Connect discovery document containing all endpoint URLs and supported features.</p>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<code class="text-sm text-primary">/.well-known/openid-configuration</code>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Response</h3>
+<pre><code>{
+  "issuer": "http://localhost:3000",
+  "authorization_endpoint": "http://localhost:3000/oauth2/authorize",
+  "token_endpoint": "http://localhost:3000/oauth2/token",
+  "userinfo_endpoint": "http://localhost:3000/oauth2/userinfo",
+  "jwks_uri": "http://localhost:3000/.well-known/jwks.json",
+  "response_types_supported": ["code", "token", "id_token"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+  "scopes_supported": ["openid", "profile", "email", "offline_access"],
+  "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"]
+}</code></pre>
+</section>
+
+<section id="authorize" class="bg-surface-container-lowest rounded-xl p-8 ambient-shadow">
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 rounded-lg text-xs font-bold text-white method-get">GET</span>
+<h2 class="font-headline font-bold text-2xl text-on-surface">Authorization Endpoint</h2>
+</div>
+<p class="text-on-surface-variant mb-6">Initiate the OAuth2 authorization flow. Redirects users to the login page for authentication.</p>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<code class="text-sm text-primary">/oauth2/authorize</code>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Parameters</h3>
+<div class="overflow-x-auto mb-6">
+<table class="w-full">
+  <thead>
+    <tr class="border-b border-outline-variant/10">
+      <th class="text-left py-3 text-sm font-bold text-on-surface">Parameter</th>
+      <th class="text-left py-3 text-sm font-bold text-on-surface">Required</th>
+      <th class="text-left py-3 text-sm font-bold text-on-surface">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="border-b border-outline-variant/5">
+      <td class="py-3"><code class="text-sm bg-surface-container-highest px-2 py-1 rounded">response_type</code></td>
+      <td class="py-3"><span class="text-green-600 font-semibold">Yes</span></td>
+      <td class="py-3 text-sm text-on-surface-variant">Must be <code>code</code></td>
+    </tr>
+    <tr class="border-b border-outline-variant/5">
+      <td class="py-3"><code class="text-sm bg-surface-container-highest px-2 py-1 rounded">client_id</code></td>
+      <td class="py-3"><span class="text-green-600 font-semibold">Yes</span></td>
+      <td class="py-3 text-sm text-on-surface-variant">Your client application ID</td>
+    </tr>
+    <tr class="border-b border-outline-variant/5">
+      <td class="py-3"><code class="text-sm bg-surface-container-highest px-2 py-1 rounded">redirect_uri</code></td>
+      <td class="py-3"><span class="text-green-600 font-semibold">Yes</span></td>
+      <td class="py-3 text-sm text-on-surface-variant">Must match registered redirect URI</td>
+    </tr>
+    <tr class="border-b border-outline-variant/5">
+      <td class="py-3"><code class="text-sm bg-surface-container-highest px-2 py-1 rounded">scope</code></td>
+      <td class="py-3"><span class="text-green-600 font-semibold">Yes</span></td>
+      <td class="py-3 text-sm text-on-surface-variant">Space-separated list of scopes</td>
+    </tr>
+    <tr>
+      <td class="py-3"><code class="text-sm bg-surface-container-highest px-2 py-1 rounded">state</code></td>
+      <td class="py-3"><span class="text-amber-600 font-semibold">Recommended</span></td>
+      <td class="py-3 text-sm text-on-surface-variant">CSRF protection token</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Example Request</h3>
+<pre><code>GET /oauth2/authorize?
+    response_type=code&
+    client_id=salesforce-prod&
+    redirect_uri=https://login.salesforce.com/oauth2/callback&
+    scope=openid%20profile%20email&
+    state=xyzABC123</code></pre>
+</section>
+
+<section id="token" class="bg-surface-container-lowest rounded-xl p-8 ambient-shadow">
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 rounded-lg text-xs font-bold text-white method-post">POST</span>
+<h2 class="font-headline font-bold text-2xl text-on-surface">Token Endpoint</h2>
+</div>
+<p class="text-on-surface-variant mb-6">Exchange an authorization code for access tokens. Supports multiple grant types.</p>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<code class="text-sm text-primary">/oauth2/token</code>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Authorization Code Grant</h3>
+<pre><code>POST /oauth2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&
+code=AUTHORIZATION_CODE&
+redirect_uri=https://login.salesforce.com/oauth2/callback&
+client_id=salesforce-prod&
+client_secret=CLIENT_SECRET</code></pre>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3 mt-6">Response</h3>
+<pre><code>{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "scope": "openid profile email"
+}</code></pre>
+</section>
+
+<section id="userinfo" class="bg-surface-container-lowest rounded-xl p-8 ambient-shadow">
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 rounded-lg text-xs font-bold text-white method-get">GET</span>
+<h2 class="font-headline font-bold text-2xl text-on-surface">UserInfo Endpoint</h2>
+</div>
+<p class="text-on-surface-variant mb-6">Retrieve user profile information using an access token.</p>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<code class="text-sm text-primary">/oauth2/userinfo</code>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Request</h3>
+<pre><code>GET /oauth2/userinfo
+Authorization: Bearer ACCESS_TOKEN</code></pre>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3 mt-6">Response</h3>
+<pre><code>{
+  "sub": "user-001",
+  "name": "Alexander Chen",
+  "email": "demo@vaultsso.com",
+  "picture": "https://example.com/avatar.jpg",
+  "email_verified": true
+}</code></pre>
+</section>
+
+<section id="introspect" class="bg-surface-container-lowest rounded-xl p-8 ambient-shadow">
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 rounded-lg text-xs font-bold text-white method-post">POST</span>
+<h2 class="font-headline font-bold text-2xl text-on-surface">Token Introspection</h2>
+</div>
+<p class="text-on-surface-variant mb-6">Validate and retrieve information about an access token.</p>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<code class="text-sm text-primary">/oauth2/introspect</code>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Request</h3>
+<pre><code>POST /oauth2/introspect
+Content-Type: application/x-www-form-urlencoded
+
+token=ACCESS_TOKEN</code></pre>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3 mt-6">Response</h3>
+<pre><code>{
+  "active": true,
+  "sub": "user-001",
+  "aud": "salesforce-prod",
+  "scope": "openid profile email",
+  "exp": 1705315800,
+  "iat": 1705312200
+}</code></pre>
+</section>
+
+<section id="revoke" class="bg-surface-container-lowest rounded-xl p-8 ambient-shadow">
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 rounded-lg text-xs font-bold text-white method-post">POST</span>
+<h2 class="font-headline font-bold text-2xl text-on-surface">Token Revocation</h2>
+</div>
+<p class="text-on-surface-variant mb-6">Revoke an access token or refresh token.</p>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<code class="text-sm text-primary">/oauth2/revoke</code>
+</div>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3">Request</h3>
+<pre><code>POST /oauth2/revoke
+Content-Type: application/x-www-form-urlencoded
+
+token=ACCESS_TOKEN</code></pre>
+
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-3 mt-6">Response</h3>
+<p class="text-sm text-on-surface-variant">Returns HTTP 200 on success with empty body.</p>
+</section>
+
+<section class="bg-primary/5 rounded-xl p-8">
+<h2 class="font-headline font-bold text-2xl text-on-surface mb-6">Available Scopes</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-surface-container-lowest rounded-xl p-6">
+  <div class="flex items-center gap-3 mb-3">
+    <span class="material-symbols-outlined text-primary">badge</span>
+    <h3 class="font-bold text-lg text-on-surface">openid</h3>
+  </div>
+  <p class="text-sm text-on-surface-variant">Required scope for OpenID Connect. Returns an ID token with user identity claims.</p>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-6">
+  <div class="flex items-center gap-3 mb-3">
+    <span class="material-symbols-outlined text-primary">person</span>
+    <h3 class="font-bold text-lg text-on-surface">profile</h3>
+  </div>
+  <p class="text-sm text-on-surface-variant">Access to user's profile information including name, picture, and other profile data.</p>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-6">
+  <div class="flex items-center gap-3 mb-3">
+    <span class="material-symbols-outlined text-primary">mail</span>
+    <h3 class="font-bold text-lg text-on-surface">email</h3>
+  </div>
+  <p class="text-sm text-on-surface-variant">Access to user's email address and email verification status.</p>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-6">
+  <div class="flex items-center gap-3 mb-3">
+    <span class="material-symbols-outlined text-primary">sync</span>
+    <h3 class="font-bold text-lg text-on-surface">offline_access</h3>
+  </div>
+  <p class="text-sm text-on-surface-variant">Request a refresh token for long-lived access without user interaction.</p>
+</div>
+</div>
+</section>
+</div>
+</div>
+</main>
+
+<footer class="bg-[#f8f9fb] dark:bg-slate-900 w-full border-t-0 mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center px-12 py-8 w-full max-w-7xl mx-auto">
+  <p class="font-medium text-[12px] uppercase tracking-widest text-slate-500 mb-4 md:mb-0">
+    © 2024 Enterprise Vault Security. All rights reserved.
+  </p>
+  <nav class="flex flex-wrap justify-center gap-8">
+    <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
+    <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Terms of Service</a>
+    <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Compliance</a>
+  </nav>
+</div>
+</footer>
+</body>
+</html>

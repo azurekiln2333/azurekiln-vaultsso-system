@@ -1,0 +1,355 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | Token 瀹¤</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>`r`n<script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#003d9b',
+            'primary-soft': '#eaf2ff',
+            surface: '#f8f9fb',
+            line: '#d8deee',
+            ink: '#152033',
+            muted: '#61708a'
+          },
+          fontFamily: {
+            headline: ['Manrope'],
+            body: ['Inter']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(11, 87, 208, 0.14), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(0, 61, 155, 0.08), transparent 28%),
+        linear-gradient(135deg, #eef5ff 0%, #f8fbff 48%, #dee9ff 100%);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 20px 40px rgba(25, 28, 30, 0.05);
+    }
+
+    .primary-gradient {
+      background: linear-gradient(135deg, #003d9b 0%, #0052cc 100%);
+    }
+  </style>
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="max-w-7xl mx-auto px-6 py-6 lg:px-8">
+    <header class="glass-card rounded-3xl border border-white/80 px-6 py-5 mb-8">
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
+          <div>
+            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
+            <p class="text-sm text-muted">绠＄悊鍛樺彧璇?Token 瀹¤椤碉紝鐩存帴璇诲彇鐪熷疄璁块棶浠ょ墝鏁版嵁锛屼笉鍐嶆樉绀洪潤鎬?demo 鍐呭銆?/p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <nav class="flex items-center gap-4 text-sm font-semibold text-muted">
+            <a class="hover:text-primary transition-colors" href="/apps.html">搴旂敤</a>
+            <a class="text-primary" href="#">浠ょ墝</a>
+            <a class="hover:text-primary transition-colors" href="/profile">涓汉淇℃伅</a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <section class="glass-card rounded-3xl border border-white/80 p-8 mb-8 overflow-hidden relative">
+      <div class="relative z-10 max-w-3xl">
+        <p class="inline-flex items-center gap-2 rounded-full bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-primary mb-4">
+          <span class="material-symbols-outlined text-base">shield_lock</span>
+          Admin Audit
+        </p>
+        <h1 class="font-headline text-4xl lg:text-5xl font-extrabold tracking-tight mb-4">璁块棶浠ょ墝瀹¤</h1>
+        <p class="text-base lg:text-lg text-muted leading-8">杩欓噷灞曠ず VaultSSO 褰撳墠鐪熷疄鐨?access token 璁板綍銆傞〉闈粎鐢ㄤ簬瀹¤涓庢帓鏌ワ紝涓嶆彁渚涙壒閲忔挙閿€绛夊啓鎿嶄綔锛岄伩鍏嶅啀鍑虹幇鈥滅湅璧锋潵鑳界偣銆佸疄闄呬笂娌℃帴鍚庣鈥濈殑 demo 璇銆?/p>
+      </div>
+      <div class="absolute -right-16 -top-16 w-72 h-72 rounded-full bg-primary/10 blur-3xl"></div>
+    </section>
+
+    <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2">浠ょ墝鎬绘暟</p>
+        <p class="text-3xl font-bold" id="statsTotal">0</p>
+      </article>
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2">浠嶇劧鏈夋晥</p>
+        <p class="text-3xl font-bold" id="statsActive">0</p>
+      </article>
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2">24 灏忔椂鍐呰繃鏈?/p>
+        <p class="text-3xl font-bold" id="statsExpiring">0</p>
+      </article>
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2">宸茶繃鏈?/p>
+        <p class="text-3xl font-bold" id="statsExpired">0</p>
+      </article>
+    </section>
+
+    <div class="glass-card rounded-3xl border border-white/80 p-6 mb-6">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="relative w-full lg:max-w-md">
+          <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
+          <input class="w-full rounded-2xl border border-line bg-white pl-12 pr-4 py-3 text-sm" id="searchInput" placeholder="鎸夌敤鎴枫€侀偖绠便€佸簲鐢ㄣ€乧lient_id銆乻cope 鎴?token ID 鎼滅储..." type="text">
+        </div>
+        <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="refreshBtn" type="button">
+          <span class="inline-flex items-center gap-2">
+            <span class="material-symbols-outlined text-lg">refresh</span>
+            <span>鍒锋柊</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="glass-card rounded-3xl border border-white/80 p-5 text-sm text-muted mb-6" id="statusBar"></div>
+
+    <div class="glass-card rounded-3xl border border-white/80 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-white/70">
+            <tr class="border-b border-line/70">
+              <th class="px-5 py-4 text-left font-bold text-muted">搴旂敤</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">鐢ㄦ埛</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Scopes</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">鍒涘缓鏃堕棿</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">杩囨湡鏃堕棿</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">鐘舵€?/th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Token ID</th>
+            </tr>
+          </thead>
+          <tbody id="tokenTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusBar = document.getElementById('statusBar');
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const tokenTableBody = document.getElementById('tokenTableBody');
+
+    let allTokens = [];
+
+    function setStatus(kind, message) {
+      const colorMap = {
+        error: 'border-red-200 bg-red-50 text-red-700',
+        success: 'border-green-200 bg-green-50 text-green-700',
+        info: 'border-blue-200 bg-blue-50 text-blue-700'
+      };
+
+      statusBar.className = `glass-card rounded-3xl border border-white/80 p-5 text-sm mb-6 ${colorMap[kind] || colorMap.info}`;
+      statusBar.textContent = message;
+    }
+
+    function formatDate(value) {
+      if (!value) {
+        return '鏈褰?;
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return '鏈褰?;
+      }
+
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    function resolveTokenState(token) {
+      const expiresAt = new Date(token.expiresAt);
+      if (Number.isNaN(expiresAt.getTime())) {
+        return {
+          key: 'unknown',
+          label: '鏈煡',
+          className: 'bg-slate-100 text-slate-600'
+        };
+      }
+
+      const now = Date.now();
+      const diff = expiresAt.getTime() - now;
+      if (diff <= 0) {
+        return {
+          key: 'expired',
+          label: '宸茶繃鏈?,
+          className: 'bg-slate-100 text-slate-600'
+        };
+      }
+
+      if (diff <= 24 * 60 * 60 * 1000) {
+        return {
+          key: 'expiring',
+          label: '鍗冲皢杩囨湡',
+          className: 'bg-amber-50 text-amber-700'
+        };
+      }
+
+      return {
+        key: 'active',
+        label: '鏈夋晥',
+        className: 'bg-green-50 text-green-700'
+      };
+    }
+
+    function buildSearchText(token) {
+      return [
+        token.id,
+        token.client,
+        token.clientId,
+        token.user,
+        token.userEmail,
+        ...(token.scopes || [])
+      ].join(' ').toLowerCase();
+    }
+
+    function renderStats(tokens) {
+      let active = 0;
+      let expiring = 0;
+      let expired = 0;
+
+      tokens.forEach(token => {
+        const state = resolveTokenState(token);
+        if (state.key === 'active') {
+          active += 1;
+        } else if (state.key === 'expiring') {
+          expiring += 1;
+        } else if (state.key === 'expired') {
+          expired += 1;
+        }
+      });
+
+      document.getElementById('statsTotal').textContent = String(tokens.length);
+      document.getElementById('statsActive').textContent = String(active);
+      document.getElementById('statsExpiring').textContent = String(expiring);
+      document.getElementById('statsExpired').textContent = String(expired);
+    }
+
+    function renderTokens(tokens) {
+      tokenTableBody.innerHTML = '';
+
+      if (!tokens.length) {
+        tokenTableBody.innerHTML = `
+          <tr>
+            <td class="px-5 py-10 text-center text-muted" colspan="7">褰撳墠娌℃湁鍖归厤鐨?token 璁板綍銆?/td>
+          </tr>
+        `;
+        return;
+      }
+
+      tokens.forEach(token => {
+        const state = resolveTokenState(token);
+        const scopes = Array.isArray(token.scopes) ? token.scopes : [];
+        const row = document.createElement('tr');
+        row.className = 'border-b border-line/50 align-top';
+        row.innerHTML = `
+          <td class="px-5 py-4">
+            <div class="font-semibold text-ink">${token.client || 'Unknown'}</div>
+            <div class="mt-1 text-xs text-muted break-all">${token.clientId || '鏈褰?client_id'}</div>
+          </td>
+          <td class="px-5 py-4">
+            <div class="font-semibold text-ink">${token.user || 'Unknown'}</div>
+            <div class="mt-1 text-xs text-muted break-all">${token.userEmail || '鏈褰曢偖绠?}</div>
+          </td>
+          <td class="px-5 py-4">
+            <div class="flex flex-wrap gap-1">
+              ${scopes.length
+                ? scopes.map(scope => `<span class="rounded-full bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary">${scope}</span>`).join('')
+                : '<span class="text-xs text-muted">鏃?scope</span>'}
+            </div>
+          </td>
+          <td class="px-5 py-4 text-muted">${formatDate(token.createdAt)}</td>
+          <td class="px-5 py-4 text-muted">${formatDate(token.expiresAt)}</td>
+          <td class="px-5 py-4">
+            <span class="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${state.className}">${state.label}</span>
+          </td>
+          <td class="px-5 py-4">
+            <code class="text-xs text-muted break-all">${token.id}</code>
+          </td>
+        `;
+        tokenTableBody.appendChild(row);
+      });
+    }
+
+    function applySearch() {
+      const keyword = searchInput.value.trim().toLowerCase();
+      const filtered = !keyword
+        ? allTokens
+        : allTokens.filter(token => buildSearchText(token).includes(keyword));
+
+      renderTokens(filtered);
+      setStatus('info', keyword
+        ? `鏍规嵁鍏抽敭璇嶁€?{searchInput.value.trim()}鈥濇壘鍒?${filtered.length} 鏉?token 璁板綍銆俙
+        : `宸插姞杞?${allTokens.length} 鏉＄湡瀹?token 璁板綍銆俙);
+    }
+
+    async function loadTokens() {
+      refreshBtn.disabled = true;
+      setStatus('info', '姝ｅ湪浠?/api/tokens 鍔犺浇鐪熷疄 token 鏁版嵁...');
+
+      try {
+        const response = await fetch('/api/tokens', {
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return;
+        }
+
+        if (response.status === 403) {
+          window.location.href = '/oauth2/error?error=access_denied&error_description=' + encodeURIComponent('浠呯鐞嗗憳鍙闂?Token 瀹¤椤?);
+          return;
+        }
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error_description || '鍔犺浇 token 鏁版嵁澶辫触');
+        }
+
+        allTokens = Array.isArray(payload) ? payload : [];
+        renderStats(allTokens);
+        applySearch();
+      } catch (error) {
+        console.error('Failed to load tokens:', error);
+        allTokens = [];
+        renderStats(allTokens);
+        renderTokens(allTokens);
+        setStatus('error', error.message || '鍔犺浇 token 鏁版嵁澶辫触');
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    searchInput.addEventListener('input', applySearch);
+    refreshBtn.addEventListener('click', loadTokens);
+
+    loadTokens();
+  </script>
+</body>
+</html>
+
+

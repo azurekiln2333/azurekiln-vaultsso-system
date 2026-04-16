@@ -1,0 +1,24 @@
+{
+  "name": "vaultsso-oauth2",
+  "version": "1.0.0",
+  "description": "VaultSSO OAuth2 Provider - Enterprise Single Sign-On Solution",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "init-db": "node scripts/init-db.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.0",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "mysql2": "^3.6.0",
+    "dotenv": "^16.3.1"
+  },
+  "keywords": ["oauth2", "sso", "authentication", "enterprise"],
+  "author": "VaultSSO Team",
+  "license": "MIT"
+}

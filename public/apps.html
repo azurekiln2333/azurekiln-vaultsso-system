@@ -1,0 +1,635 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | OAuth2 搴旂敤</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>`r`n<script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="max-w-7xl mx-auto px-6 py-6 lg:px-8">
+    <header class="glass-card rounded-3xl border border-white/80 px-6 py-5 mb-8">
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
+          <div>
+            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
+            <p class="text-sm text-muted" data-i18n="apps.hero.description">杩欎釜椤甸潰浼氱洿鎺ヤ粠鏈嶅姟鍣?API 璇诲彇鏁版嵁搴撻噷鐨勫鎴风閰嶇疆锛屼笉鍐嶆樉绀哄啓姝诲崱鐗囥€備綘鍙互鍦ㄨ繖閲屽垱寤恒€佺紪杈戙€佸垹闄ゅ苟妫€绱?OAuth2 瀹㈡埛绔€?/p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <nav class="flex items-center gap-4 text-sm font-semibold text-muted">
+            <a class="text-primary" href="#" data-i18n="apps.nav.applications">搴旂敤</a>
+            <a class="hover:text-primary transition-colors" href="tokens.html" data-i18n="apps.nav.tokens">浠ょ墝</a>
+            <a class="hover:text-primary transition-colors" href="api-docs.html" data-i18n="apps.nav.docs">API 鏂囨。</a>
+          </nav>
+
+          <div class="language-switch inline-flex items-center gap-2 rounded-full border border-line bg-white/90 p-1">
+            <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" data-language-switch="zh" data-i18n="common.language.zh" type="button">涓枃</button>
+            <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" data-language-switch="en" data-i18n="common.language.en" type="button">English</button>
+          </div>
+
+          <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/profile">
+            <span class="material-symbols-outlined text-base">account_circle</span>
+            <span data-i18n="common.action.view_profile">鏌ョ湅涓汉淇℃伅</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <section class="glass-card rounded-3xl border border-white/80 p-8 mb-8 overflow-hidden relative">
+      <div class="relative z-10 max-w-3xl">
+        <p class="inline-flex items-center gap-2 rounded-full bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-primary mb-4">
+          <span class="material-symbols-outlined text-base">database</span>
+          API + Database
+        </p>
+        <h1 class="font-headline text-4xl lg:text-5xl font-extrabold tracking-tight mb-4" data-i18n="apps.hero.title">OAuth2 搴旂敤绠＄悊</h1>
+        <p class="text-base lg:text-lg text-muted leading-8" data-i18n="apps.hero.description">杩欎釜椤甸潰浼氱洿鎺ヤ粠鏈嶅姟鍣?API 璇诲彇鏁版嵁搴撻噷鐨勫鎴风閰嶇疆锛屼笉鍐嶆樉绀哄啓姝诲崱鐗囥€備綘鍙互鍦ㄨ繖閲屽垱寤恒€佺紪杈戙€佸垹闄ゅ苟妫€绱?OAuth2 瀹㈡埛绔€?/p>
+      </div>
+      <div class="absolute -right-16 -top-16 w-72 h-72 rounded-full bg-primary/10 blur-3xl"></div>
+    </section>
+
+    <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.total">瀹㈡埛绔€绘暟</p>
+        <p class="text-3xl font-bold" id="statsTotal">0</p>
+      </article>
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.active">鍚敤涓殑瀹㈡埛绔?/p>
+        <p class="text-3xl font-bold" id="statsActive">0</p>
+      </article>
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.redirects">鍥炶皟鍦板潃鏁伴噺</p>
+        <p class="text-3xl font-bold" id="statsRedirects">0</p>
+      </article>
+      <article class="glass-card rounded-2xl border border-white/80 p-5">
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.scopes">鍞竴 Scope 鏁伴噺</p>
+        <p class="text-3xl font-bold" id="statsScopes">0</p>
+      </article>
+    </section>
+
+    <div class="grid grid-cols-1 xl:grid-cols-[420px,minmax(0,1fr)] gap-8">
+      <section class="glass-card rounded-3xl border border-white/80 p-6 h-fit">
+        <div class="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h2 class="font-headline text-2xl font-bold" id="editorTitle"></h2>
+            <p class="text-sm text-muted mt-2" data-i18n="apps.editor.desc">杩欓噷鐨勮〃鍗曚細鐩存帴璋冪敤鏁版嵁搴撶増 API 淇濆瓨瀹㈡埛绔厤缃€?/p>
+          </div>
+          <button class="rounded-full border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary transition-colors" id="resetFormBtn" type="button" data-i18n="common.action.cancel">鍙栨秷</button>
+        </div>
+
+        <div class="hidden rounded-2xl border px-4 py-3 text-sm mb-5" id="formStatus"></div>
+
+        <form class="space-y-4" id="clientForm">
+          <input id="formMode" type="hidden" value="create">
+          <input id="currentClientId" type="hidden" value="">
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.id" for="clientId">瀹㈡埛绔?ID</label>
+            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.id" id="clientId" placeholder="渚嬪锛歟mlog-prod" type="text">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.name" for="clientName">鍚嶇О</label>
+            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.name" id="clientName" placeholder="渚嬪锛歟mlog" type="text">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.secret" for="clientSecret">瀹㈡埛绔瘑閽?/label>
+            <div class="flex gap-3">
+              <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.secret" id="clientSecret" placeholder="鍒涘缓鏃跺彲鐣欑┖鑷姩鐢熸垚锛涚紪杈戞椂鐣欑┖琛ㄧず涓嶄慨鏀? type="text">
+              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="generateSecretBtn" type="button" data-i18n="common.action.generate">鐢熸垚</button>
+            </div>
+            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_secret">寤鸿浣跨敤绯荤粺鐢熸垚鐨勯殢鏈哄瘑閽ャ€傚垱寤烘椂濡傛灉鐣欑┖锛屽悗绔細鑷姩鐢熸垚銆?/p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.logo" for="clientLogo">Logo 鍦板潃</label>
+            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.logo" id="clientLogo" placeholder="https://example.com/logo.png" type="url">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.redirects" for="clientRedirects">鍥炶皟鍦板潃</label>
+            <textarea class="w-full min-h-[120px] rounded-2xl border border-line bg-white px-4 py-3 text-sm resize-y" data-i18n-placeholder="apps.editor.placeholder.redirects" id="clientRedirects" placeholder="姣忚涓€涓洖璋冨湴鍧€"></textarea>
+            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_redirects">鑷冲皯濉啓涓€涓畬鏁寸殑 URL锛屼繚瀛樻椂浼氭牎楠屾牸寮忋€?/p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.scopes" for="clientScopes">Scopes</label>
+            <textarea class="w-full min-h-[100px] rounded-2xl border border-line bg-white px-4 py-3 text-sm resize-y" data-i18n-placeholder="apps.editor.placeholder.scopes" id="clientScopes" placeholder="鍙敤閫楀彿鎴栨崲琛屽垎闅旓紝渚嬪锛歰penid, profile, email"></textarea>
+            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_scopes">寤鸿鑷冲皯鍖呭惈 openid銆乸rofile銆乪mail銆?/p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.active" for="clientActive">鍚敤鐘舵€?/label>
+            <select class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" id="clientActive">
+              <option data-i18n="apps.editor.active_yes" value="true">鍚敤</option>
+              <option data-i18n="apps.editor.active_no" value="false">鍋滅敤</option>
+            </select>
+          </div>
+
+          <div class="flex flex-wrap gap-3 pt-2">
+            <button class="primary-gradient rounded-2xl px-5 py-3 text-sm font-bold text-white" id="saveBtn" type="submit"></button>
+            <button class="rounded-2xl border border-line bg-white px-5 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="cancelBtn" type="button" data-i18n="common.action.cancel">鍙栨秷</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="space-y-6">
+        <div class="glass-card rounded-3xl border border-white/80 p-6">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="relative w-full lg:max-w-md">
+              <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
+              <input class="w-full rounded-2xl border border-line bg-white pl-12 pr-4 py-3 text-sm" data-i18n-placeholder="apps.search.placeholder" id="searchInput" placeholder="鎸夊悕绉般€両D銆佸洖璋冨湴鍧€鎴?scope 鎼滅储..." type="text">
+            </div>
+            <div class="flex items-center gap-3">
+              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="refreshBtn" type="button">
+                <span class="inline-flex items-center gap-2">
+                  <span class="material-symbols-outlined text-lg">refresh</span>
+                  <span data-i18n="common.action.refresh">鍒锋柊</span>
+                </span>
+              </button>
+              <button class="rounded-2xl primary-gradient px-4 py-3 text-sm font-bold text-white" id="createBtn" type="button">
+                <span class="inline-flex items-center gap-2">
+                  <span class="material-symbols-outlined text-lg">add</span>
+                  <span data-i18n="common.action.create">鏂板缓</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card rounded-3xl border border-white/80 p-5 text-sm text-muted" id="statusBar"></div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-5" id="clientGrid"></div>
+
+        <section class="glass-card rounded-3xl border border-white/80 p-6">
+          <h2 class="font-headline text-2xl font-bold mb-5" data-i18n="apps.guide.title">蹇€熷紑濮?/h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <article class="rounded-2xl bg-primary-soft p-5">
+              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step1.title">1. 鍒涘缓瀹㈡埛绔褰?/h3>
+              <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step1.desc">鍦ㄨ繖閲屾柊澧炴垨缂栬緫 OAuth 瀹㈡埛绔紝淇濆瓨鍚庨〉闈細鐩存帴鍙嶆槧鏁版嵁搴撳唴瀹广€?/p>
+            </article>
+            <article class="rounded-2xl bg-primary-soft p-5">
+              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step2.title">2. 妫€鏌ュ洖璋冨湴鍧€</h3>
+              <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step2.desc">纭鏄剧ず鍑烘潵鐨勫洖璋冨湴鍧€鍜?scope 涓庡疄闄呮帴鍏ュ簲鐢ㄤ竴鑷淬€?/p>
+            </article>
+            <article class="rounded-2xl bg-primary-soft p-5">
+              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step3.title">3. 瀹為檯璺戞巿鏉冩祦绋?/h3>
+              <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step3.desc">淇敼瀹㈡埛绔悗锛岀珛鍒荤敤鎺堟潈绔偣鍜?token 绔偣楠岃瘉鐪熷疄鐧诲綍閾捐矾銆?/p>
+            </article>
+          </div>
+        </section>
+      </section>
+    </div>
+  </div>
+
+  <template id="clientCardTemplate">
+    <article class="glass-card rounded-3xl border border-white/80 p-5">
+      <div class="flex items-start justify-between gap-4 mb-5">
+        <div class="flex items-center gap-4 min-w-0">
+          <div class="w-14 h-14 rounded-2xl bg-primary-soft overflow-hidden flex items-center justify-center shrink-0">
+            <img class="w-full h-full object-cover hidden" data-role="logo-image" alt="">
+            <span class="material-symbols-outlined text-primary text-3xl" data-role="logo-fallback">apps</span>
+          </div>
+          <div class="min-w-0">
+            <h3 class="font-headline text-xl font-bold truncate" data-role="name"></h3>
+            <p class="text-sm text-muted break-all" data-role="id"></p>
+          </div>
+        </div>
+        <span class="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]" data-role="badge"></span>
+      </div>
+
+      <div class="space-y-3 text-sm text-muted mb-5">
+        <div class="flex items-start gap-2">
+          <span class="material-symbols-outlined text-base mt-0.5">link</span>
+          <div>
+            <p class="break-all" data-role="redirect"></p>
+            <p class="text-xs mt-1" data-role="redirect-count"></p>
+          </div>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="material-symbols-outlined text-base mt-0.5">vpn_key</span>
+          <div class="flex flex-wrap gap-1" data-role="scopes"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-4 pt-4 border-t border-line/60">
+        <div class="text-xs text-muted">
+          <p data-role="created"></p>
+          <p class="mt-1" data-role="updated"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="rounded-2xl border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary transition-colors" data-action="edit" type="button"></button>
+          <button class="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 transition-colors" data-action="delete" type="button"></button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="/i18n.js?v=20260416-2"></script>
+  <script>
+    const i18n = window.VaultI18n;
+    const statusBar = document.getElementById('statusBar');
+    const formStatus = document.getElementById('formStatus');
+    const clientGrid = document.getElementById('clientGrid');
+    const template = document.getElementById('clientCardTemplate');
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const createBtn = document.getElementById('createBtn');
+    const resetFormBtn = document.getElementById('resetFormBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const clientForm = document.getElementById('clientForm');
+    const saveBtn = document.getElementById('saveBtn');
+    const editorTitle = document.getElementById('editorTitle');
+    const generateSecretBtn = document.getElementById('generateSecretBtn');
+
+    let allClients = [];
+    let filteredClients = [];
+
+    function setStatus(element, kind, message) {
+      if (!message) {
+        element.className = 'hidden rounded-2xl border px-4 py-3 text-sm mb-5';
+        element.textContent = '';
+        return;
+      }
+
+      const colorMap = {
+        error: 'border-red-200 bg-red-50 text-red-700',
+        success: 'border-green-200 bg-green-50 text-green-700',
+        info: 'border-blue-200 bg-blue-50 text-blue-700'
+      };
+
+      element.className = `rounded-2xl border px-4 py-3 text-sm mb-5 ${colorMap[kind] || colorMap.info}`;
+      element.textContent = message;
+    }
+
+    function formatDate(value, labelKey, unknownKey) {
+      if (!value) {
+        return i18n.t(unknownKey);
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return i18n.t(unknownKey);
+      }
+
+      const locale = i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US';
+      return i18n.t(labelKey, { value: date.toLocaleString(locale) });
+    }
+
+    function getFormPayload() {
+      return {
+        id: document.getElementById('clientId').value.trim(),
+        name: document.getElementById('clientName').value.trim(),
+        secret: document.getElementById('clientSecret').value.trim(),
+        logoUrl: document.getElementById('clientLogo').value.trim(),
+        redirectUris: document.getElementById('clientRedirects').value.trim(),
+        scopes: document.getElementById('clientScopes').value.trim(),
+        isActive: document.getElementById('clientActive').value === 'true'
+      };
+    }
+
+    function setEditorMode(mode, client = null) {
+      document.getElementById('formMode').value = mode;
+      document.getElementById('currentClientId').value = client?.id || '';
+      editorTitle.textContent = i18n.t(mode === 'edit' ? 'apps.editor.title_edit' : 'apps.editor.title_create');
+      saveBtn.textContent = i18n.t(mode === 'edit' ? 'common.action.save' : 'common.action.create');
+
+      if (!client) {
+        clientForm.reset();
+        document.getElementById('clientActive').value = 'true';
+        document.getElementById('clientId').disabled = false;
+      } else {
+        document.getElementById('clientId').value = client.id;
+        document.getElementById('clientName').value = client.name || '';
+        document.getElementById('clientSecret').value = '';
+        document.getElementById('clientLogo').value = client.logoUrl || '';
+        document.getElementById('clientRedirects').value = (client.redirectUris || []).join('\n');
+        document.getElementById('clientScopes').value = (client.scopes || []).join('\n');
+        document.getElementById('clientActive').value = client.isActive !== false ? 'true' : 'false';
+        document.getElementById('clientId').disabled = true;
+      }
+
+      setStatus(formStatus, '', '');
+    }
+
+    function generateReadableSecret() {
+      const bytes = new Uint8Array(32);
+
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        window.crypto.getRandomValues(bytes);
+      } else {
+        for (let index = 0; index < bytes.length; index += 1) {
+          bytes[index] = Math.floor(Math.random() * 256);
+        }
+      }
+
+      let binary = '';
+      bytes.forEach(value => {
+        binary += String.fromCharCode(value);
+      });
+
+      return window.btoa(binary)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+    }
+
+    function summarizeStats(clients) {
+      const total = clients.length;
+      const active = clients.filter(client => client.isActive !== false).length;
+      const redirectCount = clients.reduce((sum, client) => sum + (client.redirectUris?.length || 0), 0);
+      const scopeSet = new Set();
+
+      clients.forEach(client => {
+        (client.scopes || []).forEach(scope => scopeSet.add(scope));
+      });
+
+      document.getElementById('statsTotal').textContent = String(total);
+      document.getElementById('statsActive').textContent = String(active);
+      document.getElementById('statsRedirects').textContent = String(redirectCount);
+      document.getElementById('statsScopes').textContent = String(scopeSet.size);
+    }
+
+    function buildSearchText(client) {
+      return [
+        client.name,
+        client.id,
+        ...(client.redirectUris || []),
+        ...(client.scopes || [])
+      ].join(' ').toLowerCase();
+    }
+
+    function renderClients(clients) {
+      filteredClients = clients;
+      clientGrid.innerHTML = '';
+
+      if (!clients.length) {
+        clientGrid.innerHTML = `
+          <div class="xl:col-span-2 glass-card rounded-3xl border border-white/80 p-10 text-center">
+            <div class="w-14 h-14 rounded-full bg-primary-soft flex items-center justify-center mx-auto mb-4">
+              <span class="material-symbols-outlined text-primary text-3xl">apps</span>
+            </div>
+            <h3 class="font-headline text-2xl font-bold mb-2">${i18n.t('apps.list.empty_title')}</h3>
+            <p class="text-muted">${i18n.t('apps.list.empty_desc')}</p>
+          </div>
+        `;
+        return;
+      }
+
+      clients.forEach(client => {
+        const fragment = template.content.cloneNode(true);
+        const card = fragment.querySelector('article');
+        const badge = fragment.querySelector('[data-role="badge"]');
+        const scopeList = fragment.querySelector('[data-role="scopes"]');
+        const logoImage = fragment.querySelector('[data-role="logo-image"]');
+        const logoFallback = fragment.querySelector('[data-role="logo-fallback"]');
+
+        fragment.querySelector('[data-role="name"]').textContent = client.name || client.id;
+        fragment.querySelector('[data-role="id"]').textContent = i18n.t('apps.card.client_id', { id: client.id });
+        fragment.querySelector('[data-role="redirect"]').textContent = client.redirectUris?.[0] || i18n.t('apps.card.no_redirect');
+        fragment.querySelector('[data-role="redirect-count"]').textContent = i18n.t(
+          client.redirectUris?.length === 1 ? 'apps.card.redirect_count_one' : 'apps.card.redirect_count',
+          { count: client.redirectUris?.length || 0 }
+        );
+        fragment.querySelector('[data-role="created"]').textContent = formatDate(client.createdAt, 'apps.card.created', 'apps.card.created_unknown');
+        fragment.querySelector('[data-role="updated"]').textContent = formatDate(client.updatedAt, 'apps.card.updated', 'apps.card.updated_unknown');
+
+        const editBtn = fragment.querySelector('[data-action="edit"]');
+        editBtn.textContent = i18n.t('common.action.edit');
+        editBtn.addEventListener('click', () => setEditorMode('edit', client));
+
+        const deleteBtn = fragment.querySelector('[data-action="delete"]');
+        deleteBtn.textContent = i18n.t('common.action.delete');
+        deleteBtn.addEventListener('click', () => handleDelete(client));
+
+        if (client.isActive !== false) {
+          badge.className = 'rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] bg-green-50 text-green-700';
+          badge.textContent = i18n.t('apps.card.active');
+        } else {
+          badge.className = 'rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] bg-slate-100 text-slate-600';
+          badge.textContent = i18n.t('apps.card.inactive');
+        }
+
+        if (client.logoUrl) {
+          logoImage.src = client.logoUrl;
+          logoImage.alt = `${client.name || client.id} logo`;
+          logoImage.classList.remove('hidden');
+          logoImage.addEventListener('error', () => {
+            logoImage.classList.add('hidden');
+            logoFallback.textContent = (client.name || client.id || 'A').slice(0, 1).toUpperCase();
+          }, { once: true });
+        } else {
+          logoFallback.textContent = (client.name || client.id || 'A').slice(0, 1).toUpperCase();
+        }
+
+        if (client.scopes?.length) {
+          client.scopes.forEach(scope => {
+            const chip = document.createElement('span');
+            chip.className = 'rounded-full bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary';
+            chip.textContent = scope;
+            scopeList.appendChild(chip);
+          });
+        } else {
+          const empty = document.createElement('span');
+          empty.className = 'text-xs text-muted';
+          empty.textContent = i18n.t('apps.card.no_scopes');
+          scopeList.appendChild(empty);
+        }
+
+        card.dataset.search = buildSearchText(client);
+        clientGrid.appendChild(fragment);
+      });
+    }
+
+    function applySearch() {
+      const keyword = searchInput.value.trim().toLowerCase();
+      if (!keyword) {
+        renderClients(allClients);
+        setStatus(statusBar, 'info', i18n.t('apps.status.loaded', { count: allClients.length }));
+        return;
+      }
+
+      const filtered = allClients.filter(client => buildSearchText(client).includes(keyword));
+      renderClients(filtered);
+      setStatus(statusBar, 'info', i18n.t('apps.status.filtered', {
+        keyword: searchInput.value.trim(),
+        count: filtered.length
+      }));
+    }
+
+    async function request(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {})
+        },
+        ...options
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+
+      if (response.status === 401) {
+        window.location.href = '/oauth2/authorize';
+        return { response, payload };
+      }
+
+      if (response.status === 403) {
+        window.location.href = '/oauth2/error?error=access_denied&error_description=' + encodeURIComponent(payload?.error_description || '浠呯鐞嗗憳鍙闂簲鐢ㄧ鐞?);
+        return { response, payload };
+      }
+
+      return { response, payload };
+    }
+
+    async function loadClients() {
+      refreshBtn.disabled = true;
+      setStatus(statusBar, 'info', i18n.t('apps.status.loading'));
+
+      try {
+        const { response, payload } = await request('/api/clients', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response || !response.ok) {
+          throw new Error(i18n.resolveMessage(payload, 'apps.status.load_failed'));
+        }
+
+        allClients = Array.isArray(payload) ? payload : [];
+        summarizeStats(allClients);
+        renderClients(allClients);
+        setStatus(statusBar, 'info', i18n.t('apps.status.loaded', { count: allClients.length }));
+        applySearch();
+      } catch (error) {
+        console.error('Failed to load clients:', error);
+        allClients = [];
+        summarizeStats(allClients);
+        renderClients(allClients);
+        setStatus(statusBar, 'error', error.message || i18n.t('apps.status.load_failed'));
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    async function handleSave(event) {
+      event.preventDefault();
+
+      const mode = document.getElementById('formMode').value;
+      const currentId = document.getElementById('currentClientId').value;
+      const payload = getFormPayload();
+      const isEdit = mode === 'edit';
+      const requestUrl = isEdit ? `/api/clients/${encodeURIComponent(currentId)}` : '/api/clients';
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = i18n.t(isEdit ? 'apps.editor.saving_update' : 'apps.editor.saving_create');
+      setStatus(formStatus, '', '');
+
+      try {
+        const { response, payload: result } = await request(requestUrl, {
+          method: isEdit ? 'PUT' : 'POST',
+          body: JSON.stringify(payload)
+        });
+
+        if (!response || !response.ok) {
+          throw new Error(i18n.resolveMessage(result, 'server.internal'));
+        }
+
+        setEditorMode('edit', result.client);
+        if (result.clientSecret) {
+          document.getElementById('clientSecret').value = result.clientSecret;
+        }
+
+        const successMessage = result.clientSecret
+          ? `${i18n.resolveMessage(result, isEdit ? 'clients.updated' : 'clients.created')} ${i18n.t('apps.editor.secret_notice', { secret: result.clientSecret })}`
+          : i18n.resolveMessage(result, isEdit ? 'clients.updated' : 'clients.created');
+
+        setStatus(formStatus, 'success', successMessage);
+        await loadClients();
+      } catch (error) {
+        console.error('Failed to save client:', error);
+        setStatus(formStatus, 'error', error.message || i18n.t('common.network_error'));
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = i18n.t(document.getElementById('formMode').value === 'edit' ? 'common.action.save' : 'common.action.create');
+      }
+    }
+
+    async function handleDelete(client) {
+      const confirmed = window.confirm(i18n.t('apps.editor.delete_confirm', {
+        name: client.name || client.id
+      }));
+
+      if (!confirmed) {
+        return;
+      }
+
+      setStatus(statusBar, 'info', i18n.t('apps.editor.deleting'));
+
+      try {
+        const { response, payload } = await request(`/api/clients/${encodeURIComponent(client.id)}`, {
+          method: 'DELETE'
+        });
+
+        if (!response || !response.ok) {
+          throw new Error(i18n.resolveMessage(payload, 'server.internal'));
+        }
+
+        if (document.getElementById('currentClientId').value === client.id) {
+          setEditorMode('create');
+        }
+
+        await loadClients();
+        setStatus(statusBar, 'success', i18n.resolveMessage(payload, 'clients.deleted'));
+      } catch (error) {
+        console.error('Failed to delete client:', error);
+        setStatus(statusBar, 'error', error.message || i18n.t('common.network_error'));
+      }
+    }
+
+    function renderStaticText() {
+      i18n.apply(document);
+      i18n.bindLanguageButtons(document);
+      document.title = i18n.t('apps.page.title');
+      editorTitle.textContent = i18n.t(document.getElementById('formMode').value === 'edit' ? 'apps.editor.title_edit' : 'apps.editor.title_create');
+      saveBtn.textContent = i18n.t(document.getElementById('formMode').value === 'edit' ? 'common.action.save' : 'common.action.create');
+    }
+
+    searchInput.addEventListener('input', applySearch);
+    refreshBtn.addEventListener('click', loadClients);
+    createBtn.addEventListener('click', () => setEditorMode('create'));
+    resetFormBtn.addEventListener('click', () => setEditorMode('create'));
+    cancelBtn.addEventListener('click', () => setEditorMode('create'));
+    generateSecretBtn.addEventListener('click', () => {
+      document.getElementById('clientSecret').value = generateReadableSecret();
+    });
+    clientForm.addEventListener('submit', handleSave);
+
+    document.addEventListener('vaultsso:languagechange', () => {
+      renderStaticText();
+      summarizeStats(allClients);
+      applySearch();
+    });
+
+    renderStaticText();
+    setEditorMode('create');
+    loadClients();
+  </script>
+</body>
+</html>
+
+
+

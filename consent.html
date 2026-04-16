@@ -1,0 +1,152 @@
+﻿<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VaultSSO | OAuth2 Consent</title>
+<script src="/assets/vaultsso-tailwind.js"></script>`r`n<script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/assets/vaultsso-base.css">
+</head>
+<body class="bg-mesh min-h-screen flex flex-col text-on-surface">
+<header class="bg-[#f8f9fb] dark:bg-slate-900 flex justify-between items-center w-full px-8 py-4 max-w-7xl mx-auto top-0 z-50">
+<div class="text-xl font-black text-[#003d9b] dark:text-blue-400 tracking-tighter">
+  VaultSSO
+</div>
+<div class="flex items-center gap-6">
+<nav class="hidden md:flex gap-8">
+  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Directory</a>
+  <a class="text-[#003d9b] dark:text-blue-400 font-bold border-b-2 border-[#003d9b] pb-1 hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Security</a>
+  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Sessions</a>
+</nav>
+<div class="flex items-center gap-4">
+  <button class="flex items-center gap-1 hover:text-primary transition-colors text-slate-600">
+    <span class="material-symbols-outlined text-[20px]">language</span>
+  </button>
+  <button class="hover:text-primary transition-colors text-slate-600">
+    <span class="material-symbols-outlined text-[20px]">help_outline</span>
+  </button>
+  <div class="h-10 w-10 rounded-full bg-surface-container-high overflow-hidden border-2 border-primary/10">
+    <img alt="User profile avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeJvKl7fU1iqZh6zOZs1aafVqUuYiG5yITDbH2UYR4RvaLznuMOqj8sGGOh1goH16sh4Jq75d9IeEbhUtLzk8V_ShUGkRIRYsEqo47Ads_1pw_6ySjt3T4vIDRjraWDGUoLRxXLVv7EFVRgKp9Mjfa4sHjuoM9MM5o2VIPg0rF66x0vP9_zEV3twEjYqDi1fMs_24JUSsFwuNUa7Kdjm6U7EfrzZzUMwm4IGtYm7pSX12FASsT6BxFQxtLiP-qzQ-YOymo-NhULTCI"/>
+  </div>
+</div>
+</div>
+</header>
+
+<main class="flex-grow flex items-center justify-center px-6 py-12">
+<div class="w-full max-w-[520px] bg-surface-container-lowest rounded-xl p-10 ambient-shadow relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+
+<div class="flex items-center gap-4 mb-8">
+<div class="w-14 h-14 rounded-xl bg-[#00A1E0]/10 flex items-center justify-center">
+  <span class="material-symbols-outlined text-[#00A1E0] text-3xl">cloud</span>
+</div>
+<div>
+  <h1 class="text-2xl font-extrabold tracking-tight text-on-surface">Salesforce</h1>
+  <p class="text-sm text-on-surface-variant">CRM & Customer Success Platform</p>
+</div>
+</div>
+
+<div class="mb-8">
+<h2 class="text-xl font-bold text-on-surface mb-2">Grant Access Permission</h2>
+<p class="text-on-surface-variant text-sm leading-relaxed">
+  <span class="font-semibold text-on-surface">Salesforce</span> is requesting permission to access your account. Review the permissions below before granting access.
+</p>
+</div>
+
+<div class="bg-surface-container-low rounded-xl p-6 mb-8">
+<h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-4">Requested Scopes</h3>
+<div class="space-y-4">
+  <div class="flex items-start gap-4">
+    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+      <span class="material-symbols-outlined text-primary text-xl">person</span>
+    </div>
+    <div>
+      <p class="font-semibold text-on-surface">Profile Information</p>
+      <p class="text-sm text-on-surface-variant">Access your basic profile data including name, email, and profile picture</p>
+    </div>
+  </div>
+  <div class="flex items-start gap-4">
+    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+      <span class="material-symbols-outlined text-primary text-xl">mail</span>
+    </div>
+    <div>
+      <p class="font-semibold text-on-surface">Email Address</p>
+      <p class="text-sm text-on-surface-variant">View your email address</p>
+    </div>
+  </div>
+  <div class="flex items-start gap-4">
+    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+      <span class="material-symbols-outlined text-primary text-xl">groups</span>
+    </div>
+    <div>
+      <p class="font-semibold text-on-surface">Organization Access</p>
+      <p class="text-sm text-on-surface-variant">Access your organization's directory and team information</p>
+    </div>
+  </div>
+  <div class="flex items-start gap-4">
+    <div class="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+      <span class="material-symbols-outlined text-amber-600 text-xl">admin_panel_settings</span>
+    </div>
+    <div>
+      <p class="font-semibold text-on-surface">Offline Access</p>
+      <p class="text-sm text-on-surface-variant">Access your data even when you're not actively using the application</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="bg-surface-container-low rounded-xl p-4 mb-8">
+<div class="flex items-center gap-3 text-sm">
+  <span class="material-symbols-outlined text-primary text-xl">info</span>
+  <span class="text-on-surface-variant">
+    By clicking "Allow", you allow this app to use your information in accordance with its <a href="#" class="text-primary font-semibold hover:underline">privacy policy</a>.
+  </span>
+</div>
+</div>
+
+<div class="flex gap-4">
+<button class="flex-1 py-4 bg-surface-container-high text-on-surface font-bold rounded-xl hover:bg-surface-container-highest transition-all">
+  Deny
+</button>
+<button class="flex-1 vault-gradient text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all">
+  Allow
+</button>
+</div>
+
+<div class="mt-8 pt-6 border-t border-outline-variant/10">
+<div class="flex items-center justify-center gap-2 text-xs text-on-surface-variant">
+  <span class="material-symbols-outlined text-[16px]">verified_user</span>
+  <span>Secured by VaultSSO OAuth2 Provider</span>
+</div>
+</div>
+</div>
+</main>
+
+<footer class="bg-[#f8f9fb] dark:bg-slate-900 flex flex-col md:flex-row justify-between items-center px-12 py-8 w-full mt-auto">
+<div class="flex flex-col items-center md:items-start gap-2">
+  <div class="text-[#003d9b] font-medium text-[12px] uppercase tracking-widest">
+    漏 2024 Enterprise Vault Security. All rights reserved.
+  </div>
+  <div class="flex gap-4">
+    <div class="flex items-center gap-1 grayscale opacity-50">
+      <span class="material-symbols-outlined text-[16px]">verified_user</span>
+      <span class="text-[10px] font-bold uppercase tracking-tighter">ISO 27001</span>
+    </div>
+    <div class="flex items-center gap-1 grayscale opacity-50">
+      <span class="material-symbols-outlined text-[16px]">security</span>
+      <span class="text-[10px] font-bold uppercase tracking-tighter">SOC2 Type II</span>
+    </div>
+  </div>
+</div>
+<nav class="flex flex-wrap justify-center gap-6 mt-6 md:mt-0">
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Terms of Service</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Compliance</a>
+</nav>
+</footer>
+</body>
+</html>
+
+
