@@ -1,105 +1,104 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VaultSSO | 涓汉淇℃伅</title>`r`n  <script src="/assets/vaultsso-tailwind.js"></script>`r`n  <script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <title>VaultSSO | 个人信息</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/vaultsso-base.css">`r`n  <link rel="stylesheet" href="/assets/vaultsso-profile.css">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
 </head>
-<body>
-  <div class="shell">
-    <section class="profile-card">
-      <div class="topbar">
-        <div class="brand">
-          <span class="brand-mark">V</span>
-          <span data-i18n="common.brand">VaultSSO</span>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="max-w-5xl mx-auto px-6 py-6 lg:px-8">
+    <section class="glass-card rounded-3xl border border-white/80 p-6 md:p-8">
+      <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between mb-6">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
+          <div>
+            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSOVaultSSO
+            <p class="text-sm text-muted" data-i18n="profile.hero.description">This page focuses on displaying your account information. Update your display name, avatar, email, and password through focused modal dialogs while keeping the username read-only.当前页面以资料展示为主。显示名称、头像、邮箱和密码都通过弹窗修改，用户名为只读。
+          </div>
         </div>
 
-        <div class="language-switch">
-          <button type="button" data-language-switch="zh" data-i18n="common.language.zh">涓枃</button>
-          <button type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+        <div class="language-switch inline-flex items-center gap-2 rounded-full border border-line bg-white/90 p-1 self-start md:self-auto">
+          <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" type="button" data-language-switch="zh" data-i18n="common.language.zh">Chinese中文
+          <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" type="button" data-language-switch="en" data-i18n="common.language.en">EnglishEnglish
         </div>
       </div>
 
-      <div class="status" id="statusMessage"></div>
-      <div class="loading" id="loadingState" data-i18n="profile.loading">姝ｅ湪鍔犺浇涓汉淇℃伅...</div>
+      <div class="hidden rounded-2xl border px-4 py-3 text-sm mb-5" id="statusMessage"></div>
+      <div class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-700 font-semibold mb-5" id="loadingState" data-i18n="profile.loading">Loading your profile...正在加载个人信息...
 
-      <div class="content" id="profileContent" style="display:none;">
-        <section class="hero">
-          <div class="hero-main">
-            <img class="avatar" id="avatarPreview" alt="avatar">
-            <div>
-              <p class="profile-name" id="profileName">...</p>
-              <p class="profile-meta" id="profileMeta"></p>
-              <p class="hero-description" data-i18n="profile.hero.description">褰撳墠椤甸潰浠ヨ祫鏂欏睍绀轰负涓汇€傛樉绀哄悕绉般€佸ご鍍忋€侀偖绠卞拰瀵嗙爜閮介€氳繃寮圭獥淇敼锛岀敤鎴峰悕涓哄彧璇汇€?/p>
-              <div class="chip-row">
-                <span class="chip" id="emailVerifiedBadge"></span>
+      <div id="profileContent" class="hidden space-y-5">
+        <section class="glass-card rounded-3xl border border-white/80 p-6">
+          <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div class="flex items-start gap-5 min-w-0">
+              <img class="w-24 h-24 rounded-3xl object-cover bg-primary shadow-[0_18px_36px_rgba(11,87,208,0.16)] shrink-0" id="avatarPreview" alt="avatar">
+              <div class="min-w-0">
+                <p class="font-headline text-3xl font-extrabold tracking-tight text-ink" id="profileName">...</p>
+                <p class="text-sm text-muted mt-2 break-all" id="profileMeta"></p>
+                <div class="flex flex-wrap gap-2 mt-4">
+                  <span class="rounded-full bg-primary-soft px-3 py-1.5 text-xs font-bold text-primary" id="emailVerifiedBadge"></span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="hero-actions">
-            <a class="action-link" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">搴旂敤绠＄悊</a>
-            <a class="action-link" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">浠ょ墝绠＄悊</a>
-            <a class="action-link" href="/oauth2/logout" data-i18n="common.action.logout">閫€鍑虹櫥褰?/a>
+            <div class="flex flex-wrap gap-3">
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">Apps应用管理
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">Tokens令牌管理
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/oauth2/logout" data-i18n="common.action.logout">Sign Out退出登录
+            </div>
           </div>
         </section>
 
-        <section class="info-list">
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.display_name">鏄剧ず鍚嶇О</p>
-              <p class="info-value" id="displayNameValue"></p>
+        <section class="grid grid-cols-1 gap-4">
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.display_name">Display Name显示名称
+              <p class="text-lg font-bold text-ink break-words" id="displayNameValue"></p>
             </div>
-            <button class="text-button" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">淇敼璧勬枡</button>
-          </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">Edit Profile修改资料
+          </article>
 
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.username">鐢ㄦ埛鍚?/p>
-              <p class="info-value" id="usernameValue"></p>
-              <p class="info-helper" data-i18n="profile.field.username_hint">鐢ㄦ埛鍚嶅凡閿佸畾锛屼笉鍏佽淇敼銆?/p>
-            </div>
-          </div>
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.username">Username用户名
+            <p class="text-lg font-bold text-ink break-words" id="usernameValue"></p>
+            <p class="text-sm text-muted mt-2" data-i18n="profile.field.username_hint">This username is locked and cannot be changed.用户名已锁定，不允许修改。
+          </article>
 
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.email">閭</p>
-              <p class="info-value" id="emailValue"></p>
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.email">Email邮箱
+              <p class="text-lg font-bold text-ink break-words" id="emailValue"></p>
             </div>
-            <button class="text-button" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">淇敼閭</button>
-          </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">Edit Email修改邮箱
+          </article>
 
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.new_password">瀵嗙爜</p>
-              <p class="info-value" id="passwordValue" data-i18n="profile.value.password_masked">宸查殣钘?/p>
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.new_password">New Password密码
+              <p class="text-lg font-bold text-ink break-words" id="passwordValue" data-i18n="profile.value.password_masked">Hidden已隐藏
             </div>
-            <button class="text-button" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">淇敼瀵嗙爜</button>
-          </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">Change Password修改密码
+          </article>
 
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.user_id">鐢ㄦ埛 ID</p>
-              <p class="info-value" id="userIdValue"></p>
-            </div>
-          </div>
-
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.created_at">鍒涘缓鏃堕棿</p>
-              <p class="info-value" id="createdAtValue"></p>
-            </div>
-          </div>
-
-          <div class="info-row">
-            <div class="info-copy">
-              <p class="info-label" data-i18n="profile.field.updated_at">鏈€杩戞洿鏂版椂闂?/p>
-              <p class="info-value" id="updatedAtValue"></p>
-            </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.user_id">User ID用户 ID
+              <p class="text-sm font-semibold text-ink break-all" id="userIdValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.created_at">Created At创建时间
+              <p class="text-sm font-semibold text-ink break-words" id="createdAtValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.updated_at">Updated At最近更新时间
+              <p class="text-sm font-semibold text-ink break-words" id="updatedAtValue"></p>
+            </article>
           </div>
         </section>
       </div>
@@ -110,27 +109,27 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
       <div class="modal-head">
         <div>
-          <h2 class="modal-title" id="profileModalTitle" data-i18n="profile.modal.profile_title">淇敼璧勬枡</h2>
-          <p class="modal-desc" data-i18n="profile.modal.profile_desc">浣犲彲浠ュ湪杩欓噷淇敼鏄剧ず鍚嶇О鍜屽ご鍍忓湴鍧€銆?/p>
-        </div>
+          <h2 class="modal-title" id="profileModalTitle" data-i18n="profile.modal.profile_title">Edit Profile淇敼璧勬枡
+          <p class="modal-desc" data-i18n="profile.modal.profile_desc">Update your display name and avatar URL here.浣犲彲浠ュ湪杩欓噷淇敼鏄剧ず鍚嶇О鍜屽ご鍍忓湴鍧€銆?/p>
+        
         <button class="close-button" type="button" data-close-modal="profileModal" aria-label="Close">&times;</button>
       </div>
 
       <form class="form-grid" id="profileEditForm">
         <div class="field">
-          <label for="profileNameInput" data-i18n="profile.field.display_name">鏄剧ず鍚嶇О</label>
+          <label for="profileNameInput" data-i18n="profile.field.display_name">Display Name鏄剧ず鍚嶇О
           <input id="profileNameInput" name="name" type="text" required>
         </div>
 
         <div class="field">
-          <label for="profileAvatarInput" data-i18n="profile.field.avatar">澶村儚鍦板潃</label>
+          <label for="profileAvatarInput" data-i18n="profile.field.avatar">Avatar URL澶村儚鍦板潃
           <input id="profileAvatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
-          <small data-i18n="profile.field.avatar_hint">鐣欑┖浼氫娇鐢ㄧ郴缁熺敓鎴愮殑榛樿澶村儚銆?/small>
-        </div>
+          <small data-i18n="profile.field.avatar_hint">Leave this empty to use the system-generated avatar.鐣欑┖浼氫娇鐢ㄧ郴缁熺敓鎴愮殑榛樿澶村儚銆?/small>
+        
 
         <div class="modal-actions">
-          <button class="ghost-button" type="button" data-close-modal="profileModal" data-i18n="common.action.cancel">鍙栨秷</button>
-          <button class="submit" id="profileModalSubmit" type="submit" data-i18n="common.action.save">淇濆瓨</button>
+          <button class="ghost-button" type="button" data-close-modal="profileModal" data-i18n="common.action.cancel">Cancel鍙栨秷
+          <button class="submit" id="profileModalSubmit" type="submit" data-i18n="common.action.save">Save淇濆瓨
         </div>
       </form>
     </div>
@@ -140,21 +139,21 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="emailModalTitle">
       <div class="modal-head">
         <div>
-          <h2 class="modal-title" id="emailModalTitle" data-i18n="profile.modal.email_title">淇敼閭</h2>
-          <p class="modal-desc" data-i18n="profile.modal.email_desc">鎻愪氦鍚庝細绔嬪嵆鏇存柊褰撳墠璐︽埛閭銆?/p>
-        </div>
+          <h2 class="modal-title" id="emailModalTitle" data-i18n="profile.modal.email_title">Edit Email淇敼閭
+          <p class="modal-desc" data-i18n="profile.modal.email_desc">Submitting this form updates the current account email immediately.鎻愪氦鍚庝細绔嬪嵆鏇存柊褰撳墠璐︽埛閭銆?/p>
+        
         <button class="close-button" type="button" data-close-modal="emailModal" aria-label="Close">&times;</button>
       </div>
 
       <form class="form-grid" id="emailEditForm">
         <div class="field">
-          <label for="profileEmailInput" data-i18n="profile.field.email">閭</label>
+          <label for="profileEmailInput" data-i18n="profile.field.email">Email閭
           <input id="profileEmailInput" name="email" type="email" required>
         </div>
 
         <div class="modal-actions">
-          <button class="ghost-button" type="button" data-close-modal="emailModal" data-i18n="common.action.cancel">鍙栨秷</button>
-          <button class="submit" id="emailModalSubmit" type="submit" data-i18n="common.action.save">淇濆瓨</button>
+          <button class="ghost-button" type="button" data-close-modal="emailModal" data-i18n="common.action.cancel">Cancel鍙栨秷
+          <button class="submit" id="emailModalSubmit" type="submit" data-i18n="common.action.save">Save淇濆瓨
         </div>
       </form>
     </div>
@@ -164,31 +163,31 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
       <div class="modal-head">
         <div>
-          <h2 class="modal-title" id="passwordModalTitle" data-i18n="profile.modal.password_title">淇敼瀵嗙爜</h2>
-          <p class="modal-desc" data-i18n="profile.modal.password_desc">璇疯緭鍏ュ綋鍓嶅瘑鐮侊紝骞惰缃柊鐨勭櫥褰曞瘑鐮併€?/p>
-        </div>
+          <h2 class="modal-title" id="passwordModalTitle" data-i18n="profile.modal.password_title">Change Password淇敼瀵嗙爜
+          <p class="modal-desc" data-i18n="profile.modal.password_desc">Enter your current password and choose a new sign-in password.璇疯緭鍏ュ綋鍓嶅瘑鐮侊紝骞惰缃柊鐨勭櫥褰曞瘑鐮併€?/p>
+        
         <button class="close-button" type="button" data-close-modal="passwordModal" aria-label="Close">&times;</button>
       </div>
 
       <form class="form-grid" id="passwordForm">
         <div class="field">
-          <label for="currentPasswordInput" data-i18n="profile.field.current_password">褰撳墠瀵嗙爜</label>
+          <label for="currentPasswordInput" data-i18n="profile.field.current_password">Current Password褰撳墠瀵嗙爜
           <input id="currentPasswordInput" name="currentPassword" type="password" autocomplete="current-password">
         </div>
 
         <div class="field">
-          <label for="newPasswordInput" data-i18n="profile.field.new_password">鏂板瘑鐮?/label>
+          <label for="newPasswordInput" data-i18n="profile.field.new_password">New Password鏂板瘑鐮?/label>
           <input id="newPasswordInput" name="newPassword" type="password" autocomplete="new-password">
-        </div>
+        
 
         <div class="field">
-          <label for="confirmNewPasswordInput" data-i18n="profile.field.confirm_new_password">纭鏂板瘑鐮?/label>
+          <label for="confirmNewPasswordInput" data-i18n="profile.field.confirm_new_password">Confirm New Password纭鏂板瘑鐮?/label>
           <input id="confirmNewPasswordInput" type="password" autocomplete="new-password">
-        </div>
+        
 
         <div class="modal-actions">
-          <button class="ghost-button" type="button" data-close-modal="passwordModal" data-i18n="common.action.cancel">鍙栨秷</button>
-          <button class="submit" id="passwordModalSubmit" type="submit" data-i18n="profile.button.update_password">鏇存柊瀵嗙爜</button>
+          <button class="ghost-button" type="button" data-close-modal="passwordModal" data-i18n="common.action.cancel">Cancel鍙栨秷
+          <button class="submit" id="passwordModalSubmit" type="submit" data-i18n="profile.button.update_password">Update Password鏇存柊瀵嗙爜
         </div>
       </form>
     </div>
@@ -294,7 +293,7 @@
       toggleAdminLinks(Boolean(user.isAdmin));
 
       document.getElementById('profileName').textContent = user.name || user.username;
-      document.getElementById('profileMeta').textContent = `${user.username} 路 ${user.email}`;
+      document.getElementById('profileMeta').textContent = `${user.username} · ${user.email}`;
       setAvatar(user.avatar, user.name || user.username);
 
       document.getElementById('emailVerifiedBadge').textContent = user.emailVerified
@@ -325,6 +324,9 @@
     }
 
     async function loadProfile() {
+      const loadingState = document.getElementById('loadingState');
+      const profileContent = document.getElementById('profileContent');
+
       try {
         const response = await fetch('/api/profile', {
           credentials: 'same-origin'
@@ -341,11 +343,12 @@
         }
 
         syncUserToPage(payload.user);
-        document.getElementById('loadingState').style.display = 'none';
-        document.getElementById('profileContent').style.display = 'grid';
+        profileContent.classList.remove('hidden');
       } catch (error) {
         console.error('Load profile failed:', error);
         setStatus('error', error.message || i18n.t('common.network_error'));
+      } finally {
+        loadingState.classList.add('hidden');
       }
     }
 
@@ -486,5 +489,7 @@
   </script>
 </body>
 </html>
+
+
 
 

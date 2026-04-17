@@ -1,10 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VaultSSO | OAuth2 搴旂敤</title>
-  <script src="/assets/vaultsso-tailwind.js"></script>`r`n<script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <title>VaultSSO | OAuth2 应用</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/vaultsso-base.css">
@@ -16,26 +17,26 @@
         <div class="flex items-center gap-4">
           <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
           <div>
-            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
-            <p class="text-sm text-muted" data-i18n="apps.hero.description">杩欎釜椤甸潰浼氱洿鎺ヤ粠鏈嶅姟鍣?API 璇诲彇鏁版嵁搴撻噷鐨勫鎴风閰嶇疆锛屼笉鍐嶆樉绀哄啓姝诲崱鐗囥€備綘鍙互鍦ㄨ繖閲屽垱寤恒€佺紪杈戙€佸垹闄ゅ苟妫€绱?OAuth2 瀹㈡埛绔€?/p>
-          </div>
+            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSOVaultSSO
+            <p class="text-sm text-muted" data-i18n="apps.hero.description">This page loads client configuration directly from the server API backed by the database. You can create, edit, delete, and search OAuth2 clients here.杩欎釜椤甸潰浼氱洿鎺ヤ粠鏈嶅姟鍣?API 璇诲彇鏁版嵁搴撻噷鐨勫鎴风閰嶇疆锛屼笉鍐嶆樉绀哄啓姝诲崱鐗囥€備綘鍙互鍦ㄨ繖閲屽垱寤恒€佺紪杈戙€佸垹闄ゅ苟妫€绱?OAuth2 瀹㈡埛绔€?/p>
+          
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
           <nav class="flex items-center gap-4 text-sm font-semibold text-muted">
-            <a class="text-primary" href="#" data-i18n="apps.nav.applications">搴旂敤</a>
-            <a class="hover:text-primary transition-colors" href="tokens.html" data-i18n="apps.nav.tokens">浠ょ墝</a>
-            <a class="hover:text-primary transition-colors" href="api-docs.html" data-i18n="apps.nav.docs">API 鏂囨。</a>
+            <a class="text-primary" href="#" data-i18n="apps.nav.applications">Applications搴旂敤
+            <a class="hover:text-primary transition-colors" href="tokens.html" data-i18n="apps.nav.tokens">Tokens浠ょ墝
+            <a class="hover:text-primary transition-colors" href="api-docs.html" data-i18n="apps.nav.docs">API DocsAPI 鏂囨。
           </nav>
 
           <div class="language-switch inline-flex items-center gap-2 rounded-full border border-line bg-white/90 p-1">
-            <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" data-language-switch="zh" data-i18n="common.language.zh" type="button">涓枃</button>
-            <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" data-language-switch="en" data-i18n="common.language.en" type="button">English</button>
+            <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" data-language-switch="zh" data-i18n="common.language.zh" type="button">Chinese涓枃
+            <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" data-language-switch="en" data-i18n="common.language.en" type="button">EnglishEnglish
           </div>
 
           <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/profile">
             <span class="material-symbols-outlined text-base">account_circle</span>
-            <span data-i18n="common.action.view_profile">鏌ョ湅涓汉淇℃伅</span>
+            <span data-i18n="common.action.view_profile">View Profile鏌ョ湅涓汉淇℃伅
           </a>
         </div>
       </div>
@@ -47,27 +48,27 @@
           <span class="material-symbols-outlined text-base">database</span>
           API + Database
         </p>
-        <h1 class="font-headline text-4xl lg:text-5xl font-extrabold tracking-tight mb-4" data-i18n="apps.hero.title">OAuth2 搴旂敤绠＄悊</h1>
-        <p class="text-base lg:text-lg text-muted leading-8" data-i18n="apps.hero.description">杩欎釜椤甸潰浼氱洿鎺ヤ粠鏈嶅姟鍣?API 璇诲彇鏁版嵁搴撻噷鐨勫鎴风閰嶇疆锛屼笉鍐嶆樉绀哄啓姝诲崱鐗囥€備綘鍙互鍦ㄨ繖閲屽垱寤恒€佺紪杈戙€佸垹闄ゅ苟妫€绱?OAuth2 瀹㈡埛绔€?/p>
-      </div>
+        <h1 class="font-headline text-4xl lg:text-5xl font-extrabold tracking-tight mb-4" data-i18n="apps.hero.title">OAuth2 Application ManagementOAuth2 搴旂敤绠＄悊
+        <p class="text-base lg:text-lg text-muted leading-8" data-i18n="apps.hero.description">This page loads client configuration directly from the server API backed by the database. You can create, edit, delete, and search OAuth2 clients here.杩欎釜椤甸潰浼氱洿鎺ヤ粠鏈嶅姟鍣?API 璇诲彇鏁版嵁搴撻噷鐨勫鎴风閰嶇疆锛屼笉鍐嶆樉绀哄啓姝诲崱鐗囥€備綘鍙互鍦ㄨ繖閲屽垱寤恒€佺紪杈戙€佸垹闄ゅ苟妫€绱?OAuth2 瀹㈡埛绔€?/p>
+      
       <div class="absolute -right-16 -top-16 w-72 h-72 rounded-full bg-primary/10 blur-3xl"></div>
     </section>
 
     <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
       <article class="glass-card rounded-2xl border border-white/80 p-5">
-        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.total">瀹㈡埛绔€绘暟</p>
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.total">Total Clients瀹㈡埛绔€绘暟
         <p class="text-3xl font-bold" id="statsTotal">0</p>
       </article>
       <article class="glass-card rounded-2xl border border-white/80 p-5">
-        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.active">鍚敤涓殑瀹㈡埛绔?/p>
-        <p class="text-3xl font-bold" id="statsActive">0</p>
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.active">Active Clients鍚敤涓殑瀹㈡埛绔?/p>
+        <p class="text-3xl font-bold" id="statsActive">0
       </article>
       <article class="glass-card rounded-2xl border border-white/80 p-5">
-        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.redirects">鍥炶皟鍦板潃鏁伴噺</p>
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.redirects">Redirect URIs鍥炶皟鍦板潃鏁伴噺
         <p class="text-3xl font-bold" id="statsRedirects">0</p>
       </article>
       <article class="glass-card rounded-2xl border border-white/80 p-5">
-        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.scopes">鍞竴 Scope 鏁伴噺</p>
+        <p class="text-sm text-muted mb-2" data-i18n="apps.stats.scopes">Unique Scopes鍞竴 Scope 鏁伴噺
         <p class="text-3xl font-bold" id="statsScopes">0</p>
       </article>
     </section>
@@ -77,9 +78,9 @@
         <div class="flex items-start justify-between gap-4 mb-6">
           <div>
             <h2 class="font-headline text-2xl font-bold" id="editorTitle"></h2>
-            <p class="text-sm text-muted mt-2" data-i18n="apps.editor.desc">杩欓噷鐨勮〃鍗曚細鐩存帴璋冪敤鏁版嵁搴撶増 API 淇濆瓨瀹㈡埛绔厤缃€?/p>
-          </div>
-          <button class="rounded-full border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary transition-colors" id="resetFormBtn" type="button" data-i18n="common.action.cancel">鍙栨秷</button>
+            <p class="text-sm text-muted mt-2" data-i18n="apps.editor.desc">This form writes directly to the database-backed client API.杩欓噷鐨勮〃鍗曚細鐩存帴璋冪敤鏁版嵁搴撶増 API 淇濆瓨瀹㈡埛绔厤缃€?/p>
+          
+          <button class="rounded-full border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary transition-colors" id="resetFormBtn" type="button" data-i18n="common.action.cancel">Cancel鍙栨秷
         </div>
 
         <div class="hidden rounded-2xl border px-4 py-3 text-sm mb-5" id="formStatus"></div>
@@ -89,52 +90,52 @@
           <input id="currentClientId" type="hidden" value="">
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.id" for="clientId">瀹㈡埛绔?ID</label>
-            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.id" id="clientId" placeholder="渚嬪锛歟mlog-prod" type="text">
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.id" for="clientId">Client ID瀹㈡埛绔?ID
+            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.id" id="clientId" placeholder="For example: emlog-prod" type="text">
           </div>
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.name" for="clientName">鍚嶇О</label>
-            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.name" id="clientName" placeholder="渚嬪锛歟mlog" type="text">
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.name" for="clientName">Name鍚嶇О
+            <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.name" id="clientName" placeholder="For example: emlog" type="text">
           </div>
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.secret" for="clientSecret">瀹㈡埛绔瘑閽?/label>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.secret" for="clientSecret">Client Secret瀹㈡埛绔瘑閽?/label>
             <div class="flex gap-3">
-              <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.secret" id="clientSecret" placeholder="鍒涘缓鏃跺彲鐣欑┖鑷姩鐢熸垚锛涚紪杈戞椂鐣欑┖琛ㄧず涓嶄慨鏀? type="text">
-              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="generateSecretBtn" type="button" data-i18n="common.action.generate">鐢熸垚</button>
+              <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.secret" id="clientSecret" placeholder="Leave empty on create to auto-generate; leave empty on edit to keep the current secret"text">
+              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="generateSecretBtn" type="button" data-i18n="common.action.generate">鐢熸垚
             </div>
-            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_secret">寤鸿浣跨敤绯荤粺鐢熸垚鐨勯殢鏈哄瘑閽ャ€傚垱寤烘椂濡傛灉鐣欑┖锛屽悗绔細鑷姩鐢熸垚銆?/p>
-          </div>
+            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_secret">The system generates a high-entropy, URL-safe secret following common OAuth practice. Leave this empty on create to generate one automatically.寤鸿浣跨敤绯荤粺鐢熸垚鐨勯殢鏈哄瘑閽ャ€傚垱寤烘椂濡傛灉鐣欑┖锛屽悗绔細鑷姩鐢熸垚銆?/p>
+          
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.logo" for="clientLogo">Logo 鍦板潃</label>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.logo" for="clientLogo">Logo URLLogo 鍦板潃
             <input class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" data-i18n-placeholder="apps.editor.placeholder.logo" id="clientLogo" placeholder="https://example.com/logo.png" type="url">
           </div>
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.redirects" for="clientRedirects">鍥炶皟鍦板潃</label>
-            <textarea class="w-full min-h-[120px] rounded-2xl border border-line bg-white px-4 py-3 text-sm resize-y" data-i18n-placeholder="apps.editor.placeholder.redirects" id="clientRedirects" placeholder="姣忚涓€涓洖璋冨湴鍧€"></textarea>
-            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_redirects">鑷冲皯濉啓涓€涓畬鏁寸殑 URL锛屼繚瀛樻椂浼氭牎楠屾牸寮忋€?/p>
-          </div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.redirects" for="clientRedirects">Redirect URIs鍥炶皟鍦板潃
+            <textarea class="w-full min-h-[120px] rounded-2xl border border-line bg-white px-4 py-3 text-sm resize-y" data-i18n-placeholder="apps.editor.placeholder.redirects" id="clientRedirects" placeholder="One redirect URI per line"></textarea>
+            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_redirects">Enter at least one full URL. Format validation runs before save.鑷冲皯濉啓涓€涓畬鏁寸殑 URL锛屼繚瀛樻椂浼氭牎楠屾牸寮忋€?/p>
+          
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.scopes" for="clientScopes">Scopes</label>
-            <textarea class="w-full min-h-[100px] rounded-2xl border border-line bg-white px-4 py-3 text-sm resize-y" data-i18n-placeholder="apps.editor.placeholder.scopes" id="clientScopes" placeholder="鍙敤閫楀彿鎴栨崲琛屽垎闅旓紝渚嬪锛歰penid, profile, email"></textarea>
-            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_scopes">寤鸿鑷冲皯鍖呭惈 openid銆乸rofile銆乪mail銆?/p>
-          </div>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.scopes" for="clientScopes">ScopesScopes
+            <textarea class="w-full min-h-[100px] rounded-2xl border border-line bg-white px-4 py-3 text-sm resize-y" data-i18n-placeholder="apps.editor.placeholder.scopes" id="clientScopes" placeholder="Separate scopes with commas or new lines, for example: openid, profile, email"></textarea>
+            <p class="mt-2 text-xs text-muted" data-i18n="apps.editor.help_scopes">It is usually safest to include at least openid, profile, and email.寤鸿鑷冲皯鍖呭惈 openid銆乸rofile銆乪mail銆?/p>
+          
 
           <div>
-            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.active" for="clientActive">鍚敤鐘舵€?/label>
+            <label class="block text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="apps.editor.field.active" for="clientActive">Active Status鍚敤鐘舵€?/label>
             <select class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" id="clientActive">
-              <option data-i18n="apps.editor.active_yes" value="true">鍚敤</option>
-              <option data-i18n="apps.editor.active_no" value="false">鍋滅敤</option>
+              <option data-i18n="apps.editor.active_yes" value="true">鍚敤
+              <option data-i18n="apps.editor.active_no" value="false">Inactive鍋滅敤
             </select>
           </div>
 
           <div class="flex flex-wrap gap-3 pt-2">
             <button class="primary-gradient rounded-2xl px-5 py-3 text-sm font-bold text-white" id="saveBtn" type="submit"></button>
-            <button class="rounded-2xl border border-line bg-white px-5 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="cancelBtn" type="button" data-i18n="common.action.cancel">鍙栨秷</button>
+            <button class="rounded-2xl border border-line bg-white px-5 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="cancelBtn" type="button" data-i18n="common.action.cancel">Cancel鍙栨秷
           </div>
         </form>
       </section>
@@ -144,19 +145,19 @@
           <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div class="relative w-full lg:max-w-md">
               <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
-              <input class="w-full rounded-2xl border border-line bg-white pl-12 pr-4 py-3 text-sm" data-i18n-placeholder="apps.search.placeholder" id="searchInput" placeholder="鎸夊悕绉般€両D銆佸洖璋冨湴鍧€鎴?scope 鎼滅储..." type="text">
+              <input class="w-full rounded-2xl border border-line bg-white pl-12 pr-4 py-3 text-sm" data-i18n-placeholder="apps.search.placeholder" id="searchInput" placeholder="Search by name, id, redirect URI, or scope..." type="text">
             </div>
             <div class="flex items-center gap-3">
               <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="refreshBtn" type="button">
                 <span class="inline-flex items-center gap-2">
                   <span class="material-symbols-outlined text-lg">refresh</span>
-                  <span data-i18n="common.action.refresh">鍒锋柊</span>
+                  <span data-i18n="common.action.refresh">Refresh鍒锋柊
                 </span>
               </button>
               <button class="rounded-2xl primary-gradient px-4 py-3 text-sm font-bold text-white" id="createBtn" type="button">
                 <span class="inline-flex items-center gap-2">
                   <span class="material-symbols-outlined text-lg">add</span>
-                  <span data-i18n="common.action.create">鏂板缓</span>
+                  <span data-i18n="common.action.create">Create鏂板缓
                 </span>
               </button>
             </div>
@@ -168,20 +169,20 @@
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-5" id="clientGrid"></div>
 
         <section class="glass-card rounded-3xl border border-white/80 p-6">
-          <h2 class="font-headline text-2xl font-bold mb-5" data-i18n="apps.guide.title">蹇€熷紑濮?/h2>
+          <h2 class="font-headline text-2xl font-bold mb-5" data-i18n="apps.guide.title">Quick Start蹇€熷紑濮?/h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <article class="rounded-2xl bg-primary-soft p-5">
               <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step1.title">1. 鍒涘缓瀹㈡埛绔褰?/h3>
               <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step1.desc">鍦ㄨ繖閲屾柊澧炴垨缂栬緫 OAuth 瀹㈡埛绔紝淇濆瓨鍚庨〉闈細鐩存帴鍙嶆槧鏁版嵁搴撳唴瀹广€?/p>
-            </article>
+            
             <article class="rounded-2xl bg-primary-soft p-5">
-              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step2.title">2. 妫€鏌ュ洖璋冨湴鍧€</h3>
-              <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step2.desc">纭鏄剧ず鍑烘潵鐨勫洖璋冨湴鍧€鍜?scope 涓庡疄闄呮帴鍏ュ簲鐢ㄤ竴鑷淬€?/p>
-            </article>
+              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step2.title">2. Check Redirect URIs2. 妫€鏌ュ洖璋冨湴鍧€
+              <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step2.desc">Make sure the redirect URIs and scopes shown here match the application integration you expect.纭鏄剧ず鍑烘潵鐨勫洖璋冨湴鍧€鍜?scope 涓庡疄闄呮帴鍏ュ簲鐢ㄤ竴鑷淬€?/p>
+            
             <article class="rounded-2xl bg-primary-soft p-5">
-              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step3.title">3. 瀹為檯璺戞巿鏉冩祦绋?/h3>
+              <h3 class="font-headline text-lg font-bold mb-2" data-i18n="apps.guide.step3.title">3. Run Real Authorization Tests3. 瀹為檯璺戞巿鏉冩祦绋?/h3>
               <p class="text-sm text-muted leading-7" data-i18n="apps.guide.step3.desc">淇敼瀹㈡埛绔悗锛岀珛鍒荤敤鎺堟潈绔偣鍜?token 绔偣楠岃瘉鐪熷疄鐧诲綍閾捐矾銆?/p>
-            </article>
+            
           </div>
         </section>
       </section>
@@ -630,6 +631,9 @@
   </script>
 </body>
 </html>
+
+
+
 
 
 
