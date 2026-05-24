@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 class TokenModel {
   constructor(pool) {
@@ -6,7 +6,7 @@ class TokenModel {
   }
 
   async createAccessToken(data) {
-    const id = data.id || uuidv4();
+    const id = data.id || crypto.randomUUID();
     
     await this.pool.execute(
       `INSERT INTO access_tokens (id, token, user_id, client_id, scopes, expires_at)
@@ -83,7 +83,7 @@ class TokenModel {
   }
 
   async createRefreshToken(data) {
-    const id = data.id || uuidv4();
+    const id = data.id || crypto.randomUUID();
     
     await this.pool.execute(
       `INSERT INTO refresh_tokens (id, token, user_id, client_id, scopes, expires_at)
@@ -128,7 +128,7 @@ class TokenModel {
   }
 
   async createAuthCode(data) {
-    const code = data.code || uuidv4();
+    const code = data.code || crypto.randomUUID();
     
     await this.pool.execute(
       `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at)

@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
@@ -34,7 +34,7 @@ class UserModel {
   }
 
   async create(userData) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     const role = await this.pickDefaultRole(userData.role);
     

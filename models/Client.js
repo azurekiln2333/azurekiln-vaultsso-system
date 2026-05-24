@@ -1,5 +1,3 @@
-const { v4: uuidv4 } = require('uuid');
-
 class ClientModel {
   constructor(pool) {
     this.pool = pool;

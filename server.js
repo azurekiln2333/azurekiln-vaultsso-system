@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
@@ -552,7 +551,7 @@ async function findUserConflicts({ username, email, excludeUserId }) {
 }
 
 async function generateAccessToken(userId, clientId, scopes) {
-  const tokenId = uuidv4();
+  const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
   const token = jwt.sign({
     sub: userId,
@@ -576,7 +575,7 @@ async function generateAccessToken(userId, clientId, scopes) {
 }
 
 async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profile', 'email']) {
-  const tokenId = uuidv4();
+  const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
   const token = jwt.sign({
     sub: userId,
@@ -817,7 +816,7 @@ async function ensureSystemUser() {
   return User.create({
     username: SYSTEM_USER_USERNAME,
     email: SYSTEM_USER_EMAIL,
-    password: uuidv4(),
+    password: crypto.randomUUID(),
     name: 'VaultSSO System',
     avatar: '',
     emailVerified: true,
