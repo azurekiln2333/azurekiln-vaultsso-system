@@ -198,6 +198,8 @@
     const editorTitle = document.getElementById('editorTitle');
 
     let allClients = [];
+    let pendingDeleteClientId = '';
+    let pendingDeleteTimer = null;
 
     function setStatus(element, kind, message) {
       const classes = {
@@ -208,6 +210,32 @@
       element.className = `rounded-lg border px-4 py-3 text-sm shadow-sm ${classes[kind] || classes.info}`;
       element.textContent = message;
       element.classList.toggle('hidden', !message);
+    }
+
+    function setButtonLoading(button, isLoading, label) {
+      if (!button) return;
+      if (!button.dataset.originalLabel) {
+        button.dataset.originalLabel = button.innerHTML;
+      }
+
+      button.disabled = isLoading;
+      button.classList.toggle('opacity-70', isLoading);
+      button.classList.toggle('cursor-wait', isLoading);
+      button.innerHTML = isLoading
+        ? `<span class="material-symbols-outlined animate-spin text-lg">progress_activity</span><span>${label || 'Loading...'}</span>`
+        : button.dataset.originalLabel;
+    }
+
+    function clearPendingDelete() {
+      pendingDeleteClientId = '';
+      if (pendingDeleteTimer) {
+        clearTimeout(pendingDeleteTimer);
+        pendingDeleteTimer = null;
+      }
+      document.querySelectorAll('[data-action="delete"]').forEach(button => {
+        button.textContent = 'Delete';
+        button.className = 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100';
+      });
     }
 
     function splitList(value) {
@@ -238,6 +266,8 @@
       editorTitle.textContent = mode === 'edit' ? 'Edit Client' : 'Create Client';
       saveBtn.textContent = mode === 'edit' ? 'Save Changes' : 'Create';
       document.getElementById('clientId').disabled = mode === 'edit';
+      saveBtn.textContent = mode === 'edit' ? 'Save Changes' : 'Create';
+      saveBtn.dataset.originalLabel = saveBtn.textContent;
 
       if (!client) {
         clientForm.reset();
@@ -324,7 +354,7 @@
         });
 
         fragment.querySelector('[data-action="edit"]').addEventListener('click', () => setEditorMode('edit', client));
-        fragment.querySelector('[data-action="delete"]').addEventListener('click', () => deleteClient(client));
+        fragment.querySelector('[data-action="delete"]').addEventListener('click', event => deleteClient(client, event.currentTarget));
         clientGrid.appendChild(fragment);
       });
     }
@@ -343,7 +373,7 @@
     }
 
     async function loadClients() {
-      refreshBtn.disabled = true;
+      setButtonLoading(refreshBtn, true, 'Loading');
       setStatus(statusBar, 'info', 'Loading clients from /api/clients...');
       try {
         const { response, payload } = await request('/api/clients');
@@ -357,7 +387,7 @@
         renderClients([]);
         setStatus(statusBar, 'error', error.message);
       } finally {
-        refreshBtn.disabled = false;
+        setButtonLoading(refreshBtn, false);
       }
     }
 
@@ -374,7 +404,7 @@
       const currentId = document.getElementById('currentClientId').value;
       const payload = getFormPayload();
       const url = mode === 'edit' ? `/api/clients/${encodeURIComponent(currentId)}` : '/api/clients';
-      saveBtn.disabled = true;
+      setButtonLoading(saveBtn, true, mode === 'edit' ? 'Saving' : 'Creating');
       try {
         const { response, payload: result } = await request(url, {
           method: mode === 'edit' ? 'PUT' : 'POST',
@@ -388,12 +418,23 @@
       } catch (error) {
         setStatus(formStatus, 'error', error.message);
       } finally {
-        saveBtn.disabled = false;
+        setButtonLoading(saveBtn, false);
       }
     }
 
-    async function deleteClient(client) {
-      if (!confirm(`Delete ${client.name || client.id}?`)) return;
+    async function deleteClient(client, button) {
+      if (pendingDeleteClientId !== client.id) {
+        clearPendingDelete();
+        pendingDeleteClientId = client.id;
+        button.textContent = 'Confirm delete';
+        button.className = 'rounded-lg border border-red-300 bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700';
+        setStatus(statusBar, 'info', `Click Confirm delete to remove ${client.name || client.id}.`);
+        pendingDeleteTimer = setTimeout(clearPendingDelete, 5000);
+        return;
+      }
+
+      clearPendingDelete();
+      setButtonLoading(button, true, 'Deleting');
       try {
         const { response, payload } = await request(`/api/clients/${encodeURIComponent(client.id)}`, { method: 'DELETE' });
         if (!response.ok) throw new Error(payload?.error_description || 'Delete failed');
@@ -402,6 +443,8 @@
         setStatus(statusBar, 'success', 'Client deleted.');
       } catch (error) {
         setStatus(statusBar, 'error', error.message);
+      } finally {
+        setButtonLoading(button, false);
       }
     }
 

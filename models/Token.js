@@ -86,9 +86,9 @@ class TokenModel {
     const id = data.id || uuidv4();
     
     await this.pool.execute(
-      `INSERT INTO refresh_tokens (id, token, user_id, client_id, expires_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, data.token, data.userId, data.clientId, data.expiresAt]
+      `INSERT INTO refresh_tokens (id, token, user_id, client_id, scopes, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, data.token, data.userId, data.clientId, JSON.stringify(data.scopes || []), data.expiresAt]
     );
     
     return this.findRefreshTokenById(id);
@@ -100,7 +100,12 @@ class TokenModel {
       [id]
     );
     
-    return rows[0] || null;
+    if (!rows[0]) return null;
+
+    return {
+      ...rows[0],
+      scopes: rows[0].scopes ? JSON.parse(rows[0].scopes) : []
+    };
   }
 
   async findRefreshTokenByToken(token) {
@@ -109,7 +114,12 @@ class TokenModel {
       [token]
     );
     
-    return rows[0] || null;
+    if (!rows[0]) return null;
+
+    return {
+      ...rows[0],
+      scopes: rows[0].scopes ? JSON.parse(rows[0].scopes) : []
+    };
   }
 
   async deleteRefreshToken(id) {
@@ -121,9 +131,18 @@ class TokenModel {
     const code = data.code || uuidv4();
     
     await this.pool.execute(
-      `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [code, data.userId, data.clientId, data.redirectUri, JSON.stringify(data.scopes), data.expiresAt]
+      `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        code,
+        data.userId,
+        data.clientId,
+        data.redirectUri,
+        JSON.stringify(data.scopes),
+        data.codeChallenge || null,
+        data.codeChallengeMethod || null,
+        data.expiresAt
+      ]
     );
     
     return this.findAuthCode(code);

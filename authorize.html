@@ -69,6 +69,8 @@
             <input type="hidden" name="redirect_uri">
             <input type="hidden" name="scope">
             <input type="hidden" name="state">
+            <input type="hidden" name="code_challenge">
+            <input type="hidden" name="code_challenge_method">
 
             <div class="field-group">
               <label class="field-label" for="loginUsername" data-i18n="auth.form.username_or_email">Username or Email</label>
@@ -96,6 +98,8 @@
             <input type="hidden" name="redirect_uri">
             <input type="hidden" name="scope">
             <input type="hidden" name="state">
+            <input type="hidden" name="code_challenge">
+            <input type="hidden" name="code_challenge_method">
 
             <div class="field-group">
               <label class="field-label" for="registerName" data-i18n="auth.form.display_name">Display Name</label>
@@ -159,7 +163,9 @@
       client_id: urlParams.get('client_id') || '',
       redirect_uri: urlParams.get('redirect_uri') || '',
       scope: urlParams.get('scope') || 'openid profile email',
-      state: urlParams.get('state') || ''
+      state: urlParams.get('state') || '',
+      code_challenge: urlParams.get('code_challenge') || '',
+      code_challenge_method: urlParams.get('code_challenge_method') || ''
     };
 
     const hasOAuthRequest = Boolean(oauthParams.client_id && oauthParams.redirect_uri);
@@ -417,5 +423,4 @@
   </script>
 </body>
 </html>
-
 

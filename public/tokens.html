@@ -100,6 +100,8 @@
     const tokenTableBody = document.getElementById('tokenTableBody');
 
     let allTokens = [];
+    let pendingRevokeTokenId = '';
+    let pendingRevokeTimer = null;
 
     function setStatus(kind, message) {
       const classes = {
@@ -109,6 +111,32 @@
       };
       statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm shadow-sm ${classes[kind] || classes.info}`;
       statusBar.textContent = message;
+    }
+
+    function setButtonLoading(button, isLoading, label) {
+      if (!button) return;
+      if (!button.dataset.originalLabel) {
+        button.dataset.originalLabel = button.innerHTML;
+      }
+
+      button.disabled = isLoading;
+      button.classList.toggle('opacity-70', isLoading);
+      button.classList.toggle('cursor-wait', isLoading);
+      button.innerHTML = isLoading
+        ? `<span class="material-symbols-outlined animate-spin text-lg">progress_activity</span><span>${label || 'Loading...'}</span>`
+        : button.dataset.originalLabel;
+    }
+
+    function clearPendingRevoke() {
+      pendingRevokeTokenId = '';
+      if (pendingRevokeTimer) {
+        clearTimeout(pendingRevokeTimer);
+        pendingRevokeTimer = null;
+      }
+      document.querySelectorAll('[data-revoke]').forEach(button => {
+        button.textContent = 'Revoke';
+        button.className = 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100';
+      });
     }
 
     function formatDate(value) {
@@ -206,7 +234,7 @@
       });
 
       tokenTableBody.querySelectorAll('[data-revoke]').forEach(button => {
-        button.addEventListener('click', () => revokeToken(button.dataset.revoke));
+        button.addEventListener('click', event => revokeToken(button.dataset.revoke, event.currentTarget));
       });
     }
 
@@ -227,7 +255,7 @@
     }
 
     async function loadTokens() {
-      refreshBtn.disabled = true;
+      setButtonLoading(refreshBtn, true, 'Loading');
       setStatus('info', 'Loading tokens from /api/tokens...');
       try {
         const response = await fetch('/api/tokens', { credentials: 'same-origin' });
@@ -252,13 +280,25 @@
         renderTokens([]);
         setStatus('error', error.message);
       } finally {
-        refreshBtn.disabled = false;
+        setButtonLoading(refreshBtn, false);
       }
     }
 
-    async function revokeToken(tokenId) {
-      if (!tokenId || !confirm('Revoke this access token?')) return;
+    async function revokeToken(tokenId, button) {
+      if (!tokenId) return;
 
+      if (pendingRevokeTokenId !== tokenId) {
+        clearPendingRevoke();
+        pendingRevokeTokenId = tokenId;
+        button.textContent = 'Confirm revoke';
+        button.className = 'rounded-lg border border-red-300 bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700';
+        setStatus('info', 'Click Confirm revoke to invalidate this access token.');
+        pendingRevokeTimer = setTimeout(clearPendingRevoke, 5000);
+        return;
+      }
+
+      clearPendingRevoke();
+      setButtonLoading(button, true, 'Revoking');
       try {
         const response = await fetch(`/api/tokens/${encodeURIComponent(tokenId)}`, {
           method: 'DELETE',
@@ -270,6 +310,8 @@
         setStatus('success', 'Token revoked.');
       } catch (error) {
         setStatus('error', error.message);
+      } finally {
+        setButtonLoading(button, false);
       }
     }
 

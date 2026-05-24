@@ -26,6 +26,7 @@ const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html']);
+const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 
 let User;
 let Client;
@@ -170,6 +171,63 @@ function parseRequestedScopes(scopeValue, fallbackScopes = ['openid']) {
 function findUnsupportedScopes(requestedScopes, allowedScopes) {
   const allowedSet = new Set(Array.isArray(allowedScopes) ? allowedScopes : []);
   return requestedScopes.filter(scope => !allowedSet.has(scope));
+}
+
+function isValidPkceChallenge(value) {
+  return CODE_CHALLENGE_PATTERN.test(normalizeText(value));
+}
+
+function normalizePkceMethod(value) {
+  const method = normalizeText(value) || 'plain';
+  return method.toUpperCase() === 'S256' ? 'S256' : method.toLowerCase();
+}
+
+function verifyPkceChallenge(authCodeData, codeVerifier) {
+  const codeChallenge = normalizeText(authCodeData.code_challenge);
+  if (!codeChallenge) {
+    return true;
+  }
+
+  const verifier = normalizeText(codeVerifier);
+  if (!CODE_CHALLENGE_PATTERN.test(verifier)) {
+    return false;
+  }
+
+  const method = normalizePkceMethod(authCodeData.code_challenge_method);
+  if (method === 'S256') {
+    const digest = crypto.createHash('sha256').update(verifier).digest('base64url');
+    if (digest.length !== codeChallenge.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(codeChallenge));
+  }
+
+  if (verifier.length !== codeChallenge.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(verifier), Buffer.from(codeChallenge));
+}
+
+function buildAuthorizationServerMetadata(baseUrl) {
+  return {
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/oauth2/authorize`,
+    token_endpoint: `${baseUrl}/oauth2/token`,
+    userinfo_endpoint: `${baseUrl}/oauth2/userinfo`,
+    jwks_uri: `${baseUrl}/.well-known/jwks.json`,
+    response_types_supported: ['code'],
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['HS256'],
+    scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+    grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials'],
+    code_challenge_methods_supported: ['plain', 'S256'],
+    claims_supported: ['sub', 'name', 'preferred_username', 'username', 'email', 'email_verified', 'picture', 'updated_at'],
+    introspection_endpoint: `${baseUrl}/oauth2/introspect`,
+    revocation_endpoint: `${baseUrl}/oauth2/revoke`,
+    service_documentation: `${baseUrl}/api-docs.html`,
+    ui_locales_supported: ['zh-CN', 'zh-TW', 'en']
+  };
 }
 
 function parseClientCredentials(req) {
@@ -481,7 +539,7 @@ async function generateAccessToken(userId, clientId, scopes) {
   return token;
 }
 
-async function generateRefreshToken(userId, clientId) {
+async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profile', 'email']) {
   const tokenId = uuidv4();
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
   const token = jwt.sign({
@@ -498,6 +556,7 @@ async function generateRefreshToken(userId, clientId) {
     token,
     userId,
     clientId,
+    scopes,
     expiresAt
   });
 
@@ -582,6 +641,8 @@ async function buildAuthorizationResponseV2(user, params) {
   const scopeValue = normalizeText(params.scope);
   const state = normalizeText(params.state);
   const responseType = normalizeText(params.response_type) || 'code';
+  const codeChallenge = normalizeText(params.code_challenge);
+  const codeChallengeMethod = normalizePkceMethod(params.code_challenge_method);
 
   if (!clientId && !redirectUri) {
     return {
@@ -614,6 +675,30 @@ async function buildAuthorizationResponseV2(user, params) {
         error_description: 'Only response_type=code is supported'
       }
     };
+  }
+
+  if (codeChallenge) {
+    if (!isValidPkceChallenge(codeChallenge)) {
+      return {
+        status: 400,
+        body: {
+          error: 'invalid_request',
+          error_key: 'auth.request.pkce.challenge',
+          error_description: 'code_challenge must be 43-128 URL-safe characters'
+        }
+      };
+    }
+
+    if (!['plain', 'S256'].includes(codeChallengeMethod)) {
+      return {
+        status: 400,
+        body: {
+          error: 'invalid_request',
+          error_key: 'auth.request.pkce.method',
+          error_description: 'code_challenge_method must be plain or S256'
+        }
+      };
+    }
   }
 
   const client = await Client.findById(clientId);
@@ -668,6 +753,8 @@ async function buildAuthorizationResponseV2(user, params) {
     clientId,
     redirectUri,
     scopes: requestedScopes,
+    codeChallenge,
+    codeChallengeMethod: codeChallenge ? codeChallengeMethod : '',
     expiresAt: new Date(Date.now() + 10 * 60 * 1000)
   });
 
@@ -702,21 +789,11 @@ async function ensureSystemUser() {
 }
 
 app.get('/.well-known/openid-configuration', (req, res) => {
-  const baseUrl = getBaseUrl(req);
+  res.json(buildAuthorizationServerMetadata(getBaseUrl(req)));
+});
 
-  res.json({
-    issuer: baseUrl,
-    authorization_endpoint: `${baseUrl}/oauth2/authorize`,
-    token_endpoint: `${baseUrl}/oauth2/token`,
-    userinfo_endpoint: `${baseUrl}/oauth2/userinfo`,
-    jwks_uri: `${baseUrl}/.well-known/jwks.json`,
-    response_types_supported: ['code'],
-    subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['HS256'],
-    scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
-    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
-    grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials']
-  });
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+  res.json(buildAuthorizationServerMetadata(getBaseUrl(req)));
 });
 
 app.get('/.well-known/jwks.json', (req, res) => {
@@ -753,7 +830,9 @@ app.get('/oauth2/authorize', asyncHandler(async (req, res) => {
         redirect_uri: redirectUri,
         scope,
         state,
-        response_type: req.query.response_type
+        response_type: req.query.response_type,
+        code_challenge: req.query.code_challenge,
+        code_challenge_method: req.query.code_challenge_method
       });
       return res.redirect(result.body.redirect);
     }
@@ -1006,6 +1085,7 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
   const redirectUri = normalizeText(req.body.redirect_uri);
   const refreshToken = normalizeText(req.body.refresh_token);
   const scopeParam = normalizeText(req.body.scope);
+  const codeVerifier = normalizeText(req.body.code_verifier);
   const client = await authenticateClient(req, res);
 
   if (!client) {
@@ -1049,7 +1129,13 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    await Token.deleteAuthCode(code);
+    if (!verifyPkceChallenge(authCodeData, codeVerifier)) {
+      return res.status(400).json({
+        error: 'invalid_grant',
+        error_key: 'oauth.pkce.verifier_invalid',
+        error_description: 'Invalid code verifier'
+      });
+    }
 
     const user = await User.findById(authCodeData.user_id);
     if (!user) {
@@ -1060,8 +1146,10 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
+    await Token.deleteAuthCode(code);
+
     const accessToken = await generateAccessToken(authCodeData.user_id, clientId, authCodeData.scopes);
-    const newRefreshToken = await generateRefreshToken(authCodeData.user_id, clientId);
+    const newRefreshToken = await generateRefreshToken(authCodeData.user_id, clientId, authCodeData.scopes);
 
     const idToken = jwt.sign({
       sub: user.id,
@@ -1113,13 +1201,16 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    const accessToken = await generateAccessToken(decoded.sub, clientId, ['openid', 'profile', 'email']);
+    const refreshedScopes = Array.isArray(refreshTokenData.scopes) && refreshTokenData.scopes.length
+      ? refreshTokenData.scopes
+      : ['openid', 'profile', 'email'];
+    const accessToken = await generateAccessToken(decoded.sub, clientId, refreshedScopes);
 
     return res.json({
       access_token: accessToken,
       token_type: 'Bearer',
       expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-      scope: 'openid profile email'
+      scope: refreshedScopes.join(' ')
     });
   }
 
@@ -1153,7 +1244,7 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
   });
 }));
 
-app.post('/oauth2/token-legacy-disabled', asyncHandler(async (req, res) => {
+if (false) app.post('/oauth2/token-legacy-disabled', asyncHandler(async (req, res) => {
   const grantType = normalizeText(req.body.grant_type);
   const code = normalizeText(req.body.code);
   const redirectUri = normalizeText(req.body.redirect_uri);

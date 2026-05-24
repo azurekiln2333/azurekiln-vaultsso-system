@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS auth_codes (
   client_id VARCHAR(255) NOT NULL,
   redirect_uri TEXT NOT NULL,
   scopes TEXT NOT NULL,
+  code_challenge TEXT,
+  code_challenge_method VARCHAR(16),
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -75,6 +77,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   token TEXT NOT NULL,
   user_id VARCHAR(36) NOT NULL,
   client_id VARCHAR(255) NOT NULL,
+  scopes TEXT,
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -112,6 +115,17 @@ async function ensureUsersRoleColumn(connection) {
     `ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT '${USER_ROLE_USER}' AFTER email_verified`
   );
   console.log('✅ Added users.role column');
+}
+
+async function ensureColumn(connection, tableName, columnName, definition, afterColumn) {
+  const [columns] = await connection.query(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [columnName]);
+  if (columns.length > 0) {
+    return;
+  }
+
+  const afterClause = afterColumn ? ` AFTER ${afterColumn}` : '';
+  await connection.query(`ALTER TABLE ${tableName} ADD COLUMN ${definition}${afterClause}`);
+  console.log(`Added ${tableName}.${columnName} column`);
 }
 
 async function ensureAdminUser(connection) {
@@ -178,6 +192,9 @@ async function initDatabase() {
     await connection.query(CREATE_REFRESH_TOKENS_TABLE);
     await connection.query(CREATE_SESSIONS_TABLE);
     await ensureUsersRoleColumn(connection);
+    await ensureColumn(connection, 'auth_codes', 'code_challenge', 'code_challenge TEXT', 'scopes');
+    await ensureColumn(connection, 'auth_codes', 'code_challenge_method', 'code_challenge_method VARCHAR(16)', 'code_challenge');
+    await ensureColumn(connection, 'refresh_tokens', 'scopes', 'scopes TEXT', 'client_id');
     await ensureAdminUser(connection);
     
     console.log('✅ Database tables initialized');
