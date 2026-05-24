@@ -128,3 +128,36 @@ git -c safe.directory=D:/MyNewProject/azurekiln-oauth/azurekiln-oauth2 status --
 
 - 外层根目录不是 Git 仓库，所以外层这份 `PROJECT_STATUS_2026-05-25.md` 不在当前主仓库提交范围内。
 - 本文件位于主项目仓库根目录，可随主项目一起提交和追踪。
+
+## 后期研究入口
+
+建议后续研究时优先看这些文件：
+
+- `server.js`：主服务入口，包含 Express 中间件、OIDC/OAuth2 元数据、授权页、登录、token、userinfo、introspection、revocation、管理 API 等主要路由。
+- `db/init.js`：数据库连接与初始化逻辑，负责 MySQL / memory 模式切换，以及表结构补齐。
+- `db/memory.js`：内存数据库适配层，方便无 MySQL 环境跑通完整 OAuth2 流程。
+- `models/User.js`、`models/Client.js`、`models/Token.js`：用户、OAuth 客户端、token/授权码/refresh token 的数据访问封装。
+- `scripts/check-e2e.js`：当前最重要的行为回归验证入口，能看出系统预期支持哪些 OAuth2/OIDC 流程。
+- `scripts/init-db.js`：MySQL 模式初始化和默认 demo 数据种子入口。
+- `README.md`：三语项目说明、运行方式、API 摘要和示例请求。
+- `public/api-docs.html`：浏览器内 API 文档页，内容已按 `server.js` 真实路由校准。
+- `public/apps.html`、`public/tokens.html`：管理 UI 页面，重点看客户端管理和 token 管理交互。
+- `authorize.html`、`consent.html`、`profile.html`、`success.html`、`error.html`：OAuth 登录、授权确认、成功/错误页面。
+
+## 关键行为与研究重点
+
+- 授权码模式是主流程，PKCE 校验逻辑集中在 `server.js` 中的授权码创建和 `/oauth2/token` 兑换阶段。
+- `offline_access` 是 refresh token 的开关；不带该 scope 时，授权码换 token 不返回 `refresh_token`。
+- introspection/revocation 的关键安全边界是客户端认证和 client ownership 校验，不能跨客户端探测或撤销 token。
+- memory 模式是本地研究优先入口，因为不依赖 MySQL，适合快速验证前端页面、API 和 OAuth2 流程。
+- MySQL 模式仍保留，后续研究生产化部署时要重点检查 `.env`、数据库表结构、迁移策略和密钥管理。
+- 当前 JWKS 是 placeholder 级别，适合 Demo 发现文档完整性；如果要做生产级 OIDC，需要补真实签名 key 管理和 JWKS 轮换。
+- 当前 E2E 是本项目行为契约的核心证据；修改 OAuth 流程、token 逻辑、DB 适配层或管理 API 后，应先跑 `npm run check`。
+- UI 已重点修过“按钮无反馈/假链接/confirm 弹窗”等问题；后续新增页面也应保持页内 loading、错误、成功反馈一致。
+
+## 已知范围边界
+
+- 本项目目前定位是 OAuth2/OIDC Demo / Provider 原型，不等同于完整生产级身份平台。
+- 尚未实现完整生产级能力，例如真实 JWKS 私钥轮换、细粒度审计日志、管理后台权限分级、长期迁移系统、分布式 session/token 存储。
+- 外层同级目录名称相近，但不能直接假设是同一项目代码来源；本次可信代码源是 `azurekiln-oauth2`。
+- 外层根目录这份总结用于人工研究；主项目内同名总结用于 Git 追踪。
