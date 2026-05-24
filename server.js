@@ -1212,7 +1212,9 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
     await Token.deleteAuthCode(code);
 
     const accessToken = await generateAccessToken(authCodeData.user_id, clientId, authCodeData.scopes);
-    const newRefreshToken = await generateRefreshToken(authCodeData.user_id, clientId, authCodeData.scopes);
+    const newRefreshToken = authCodeData.scopes.includes('offline_access')
+      ? await generateRefreshToken(authCodeData.user_id, clientId, authCodeData.scopes)
+      : '';
 
     const idToken = jwt.sign({
       sub: user.id,
@@ -1227,14 +1229,19 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       exp: Math.floor((Date.now() + ACCESS_TOKEN_TTL_MS) / 1000)
     }, JWT_SECRET);
 
-    return res.json({
+    const responseBody = {
       access_token: accessToken,
       token_type: 'Bearer',
       expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-      refresh_token: newRefreshToken,
       id_token: idToken,
       scope: authCodeData.scopes.join(' ')
-    });
+    };
+
+    if (newRefreshToken) {
+      responseBody.refresh_token = newRefreshToken;
+    }
+
+    return res.json(responseBody);
   }
 
   if (grantType === 'refresh_token') {
@@ -1358,13 +1365,18 @@ app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
 }));
 
 app.post('/oauth2/introspect', asyncHandler(async (req, res) => {
+  const client = await authenticateClient(req, res);
+  if (!client) {
+    return;
+  }
+
   const decoded = validateToken(normalizeText(req.body.token));
   if (!decoded) {
     return res.json({ active: false });
   }
 
   const tokenData = await Token.findAccessTokenById(decoded.jti);
-  if (!tokenData || new Date(tokenData.expires_at) < new Date()) {
+  if (!tokenData || tokenData.client_id !== client.id || new Date(tokenData.expires_at) < new Date()) {
     return res.json({ active: false });
   }
 
@@ -1379,9 +1391,14 @@ app.post('/oauth2/introspect', asyncHandler(async (req, res) => {
 }));
 
 app.post('/oauth2/revoke', asyncHandler(async (req, res) => {
+  const client = await authenticateClient(req, res);
+  if (!client) {
+    return;
+  }
+
   const decoded = validateToken(normalizeText(req.body.token));
 
-  if (decoded) {
+  if (decoded && decoded.aud === client.id) {
     if (decoded.type === 'refresh') {
       await Token.deleteRefreshToken(decoded.jti);
     } else {

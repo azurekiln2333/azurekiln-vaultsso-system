@@ -129,8 +129,8 @@ $env:DB_DRIVER="memory"; npm start
 | `POST` | `/oauth2/register` | 公开 | 注册并继续授权 |
 | `POST` | `/oauth2/token` | 客户端认证 | 授权码、刷新令牌、客户端凭证换取令牌 |
 | `GET` | `/oauth2/userinfo` | Bearer Token | 返回 OIDC 用户信息 |
-| `POST` | `/oauth2/introspect` | 公开 | 检查访问令牌活跃状态 |
-| `POST` | `/oauth2/revoke` | 公开 | 撤销访问令牌或刷新令牌 |
+| `POST` | `/oauth2/introspect` | 客户端认证 | 检查同一客户端访问令牌的活跃状态 |
+| `POST` | `/oauth2/revoke` | 客户端认证 | 撤销同一客户端的访问令牌或刷新令牌 |
 | `GET` | `/api/me` | 会话 | 当前用户资料 |
 | `GET` | `/api/profile` | 会话 | 当前用户资料 |
 | `PUT` | `/api/profile` | 会话 | 修改资料、邮箱、头像或密码 |
@@ -160,6 +160,8 @@ curl -X POST http://localhost:3146/oauth2/token \
   -d "redirect_uri=http://localhost:3146/callback" \
   -d "code_verifier=CODE_VERIFIER"
 ```
+
+只有授权请求包含 `offline_access` scope 时，授权码换取令牌的响应才会包含 `refresh_token`。
 
 客户端凭证：
 
@@ -308,8 +310,8 @@ $env:DB_DRIVER="memory"; npm start
 | `POST` | `/oauth2/register` | 公開 | 註冊並繼續授權 |
 | `POST` | `/oauth2/token` | 用戶端驗證 | 授權碼、刷新權杖、用戶端憑證換取權杖 |
 | `GET` | `/oauth2/userinfo` | Bearer Token | 回傳 OIDC 使用者資訊 |
-| `POST` | `/oauth2/introspect` | 公開 | 檢查存取權杖活躍狀態 |
-| `POST` | `/oauth2/revoke` | 公開 | 撤銷存取權杖或刷新權杖 |
+| `POST` | `/oauth2/introspect` | 用戶端驗證 | 檢查同一用戶端存取權杖的活躍狀態 |
+| `POST` | `/oauth2/revoke` | 用戶端驗證 | 撤銷同一用戶端的存取權杖或刷新權杖 |
 | `GET` | `/api/me` | 工作階段 | 目前使用者資料 |
 | `GET` | `/api/profile` | 工作階段 | 目前使用者資料 |
 | `PUT` | `/api/profile` | 工作階段 | 修改資料、信箱、頭像或密碼 |
@@ -339,6 +341,8 @@ curl -X POST http://localhost:3146/oauth2/token \
   -d "redirect_uri=http://localhost:3146/callback" \
   -d "code_verifier=CODE_VERIFIER"
 ```
+
+只有授權請求包含 `offline_access` scope 時，授權碼換取權杖的回應才會包含 `refresh_token`。
 
 ### 驗證
 
@@ -475,8 +479,8 @@ Every seeded client includes `http://localhost:3146/callback` as a local redirec
 | `POST` | `/oauth2/register` | Public | Register and continue authorization |
 | `POST` | `/oauth2/token` | Client auth | Authorization code, refresh token, and client credentials grants |
 | `GET` | `/oauth2/userinfo` | Bearer token | OIDC UserInfo response |
-| `POST` | `/oauth2/introspect` | Public | Access token activity check |
-| `POST` | `/oauth2/revoke` | Public | Access token or refresh token revocation |
+| `POST` | `/oauth2/introspect` | Client auth | Activity check for access tokens issued to the same client |
+| `POST` | `/oauth2/revoke` | Client auth | Access token or refresh token revocation for the same client |
 | `GET` | `/api/me` | Session | Current user profile |
 | `GET` | `/api/profile` | Session | Current user profile |
 | `PUT` | `/api/profile` | Session | Update profile, email, avatar, or password |
@@ -506,6 +510,8 @@ curl -X POST http://localhost:3146/oauth2/token \
   -d "redirect_uri=http://localhost:3146/callback" \
   -d "code_verifier=CODE_VERIFIER"
 ```
+
+The authorization-code token response includes `refresh_token` only when the authorization request included the `offline_access` scope.
 
 Client credentials:
 

@@ -88,8 +88,8 @@
                 <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/register</code></td><td>Public</td><td>Registers a user and continues OAuth authorization.</td></tr>
                 <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/token</code></td><td>Client auth</td><td>Supports authorization code, refresh token, and client credentials grants.</td></tr>
                 <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/oauth2/userinfo</code></td><td>Bearer token</td><td>Returns OIDC user claims.</td></tr>
-                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/introspect</code></td><td>Public</td><td>Returns token active state and JWT claims for stored access tokens.</td></tr>
-                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/revoke</code></td><td>Public</td><td>Revokes access or refresh token by JWT ID.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/introspect</code></td><td>Client auth</td><td>Returns active state and JWT claims for access tokens issued to the same client.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/revoke</code></td><td>Client auth</td><td>Revokes access or refresh tokens issued to the same client.</td></tr>
               </tbody>
             </table>
           </div>
@@ -103,6 +103,7 @@ Authorization: Basic base64(client_id:client_secret)
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code&code=AUTHORIZATION_CODE&redirect_uri=http://localhost:3146/callback&code_verifier=CODE_VERIFIER</code></pre>
+          <p class="mt-3 text-sm leading-6 text-muted">The token response includes <code>refresh_token</code> only when the authorization request includes the <code>offline_access</code> scope.</p>
         </section>
 
         <section id="session" class="rounded-xl bg-white p-6 shadow-sm">

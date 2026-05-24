@@ -98,10 +98,25 @@ async function runChecks() {
   const introspect = await request('/oauth2/introspect', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token: tokenPayload.access_token }).toString()
+    body: new URLSearchParams({
+      token: tokenPayload.access_token,
+      client_id: 'salesforce-prod',
+      client_secret: 'salesforce-secret'
+    }).toString()
   });
   assert(introspect.response.status === 200, 'Introspection should return 200');
   assert(JSON.parse(introspect.text).active === true, 'Introspection should mark access token active');
+
+  const revoke = await request('/oauth2/revoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      token: tokenPayload.access_token,
+      client_id: 'salesforce-prod',
+      client_secret: 'salesforce-secret'
+    }).toString()
+  });
+  assert(revoke.response.status === 200, 'Revocation should return 200');
 }
 
 async function main() {
