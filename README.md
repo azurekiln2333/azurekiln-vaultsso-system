@@ -82,7 +82,7 @@ npm start
 $env:DB_DRIVER="memory"; npm start
 ```
 
-该模式会自动创建 `demo@vaultsso.com` 管理员和内置 OAuth 客户端，适合本机验证前端页面、管理页和 OAuth2 流程。内存数据会在服务停止后清空。
+该模式等价于设置 `DB_DRIVER=memory`，会自动创建 `demo@vaultsso.com` 管理员和内置 OAuth 客户端，适合本机验证前端页面、管理页和 OAuth2 流程。内存数据会在服务停止后清空。
 
 ### 演示账号和客户端
 
@@ -263,7 +263,7 @@ npm start
 $env:DB_DRIVER="memory"; npm start
 ```
 
-此模式會自動建立 `demo@vaultsso.com` 管理員和內建 OAuth 用戶端，適合本機驗證前端頁面、管理頁與 OAuth2 流程。記憶體資料會在服務停止後清空。
+此模式等同於設定 `DB_DRIVER=memory`，會自動建立 `demo@vaultsso.com` 管理員和內建 OAuth 用戶端，適合本機驗證前端頁面、管理頁與 OAuth2 流程。記憶體資料會在服務停止後清空。
 
 ### 示範帳號和用戶端
 
@@ -432,7 +432,7 @@ Development/demo mode without MySQL:
 $env:DB_DRIVER="memory"; npm start
 ```
 
-This mode automatically creates the `demo@vaultsso.com` admin user and seeded OAuth clients, so local page, admin, and OAuth2 flow verification can run without MySQL. In-memory data is cleared when the server stops.
+This mode is equivalent to setting `DB_DRIVER=memory`. It automatically creates the `demo@vaultsso.com` admin user and seeded OAuth clients, so local page, admin, and OAuth2 flow verification can run without MySQL. In-memory data is cleared when the server stops.
 
 ### Demo Account and Clients
 
