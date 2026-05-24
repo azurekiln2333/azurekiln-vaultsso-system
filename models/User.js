@@ -16,6 +16,10 @@ class UserModel {
   }
 
   async pickDefaultRole(requestedRole) {
+    if (requestedRole !== undefined && requestedRole !== null && String(requestedRole).trim()) {
+      return this.normalizeRole(requestedRole);
+    }
+
     const normalizedRole = this.normalizeRole(requestedRole);
     if (normalizedRole === USER_ROLE_ADMIN) {
       return USER_ROLE_ADMIN;

@@ -1,5 +1,6 @@
 const mysql = require('mysql2/promise');
 const dbConfig = require('../config/database');
+const { createMemoryPool } = require('./memory');
 
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
@@ -174,6 +175,12 @@ async function ensureAdminUser(connection) {
 }
 
 async function initDatabase() {
+  if (String(process.env.DB_DRIVER || '').trim().toLowerCase() === 'memory') {
+    pool = createMemoryPool();
+    console.log('Using in-memory development database');
+    return pool;
+  }
+
   const env = process.env.NODE_ENV || 'development';
   const config = dbConfig[env];
   

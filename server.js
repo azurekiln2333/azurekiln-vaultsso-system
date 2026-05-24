@@ -24,6 +24,7 @@ const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').trim();
 const SYSTEM_USER_EMAIL = 'system@vaultsso.local';
 const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
+const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html']);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
@@ -31,6 +32,41 @@ const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 let User;
 let Client;
 let Token;
+
+const DEMO_CLIENTS = [
+  {
+    id: 'salesforce-prod',
+    name: 'Salesforce',
+    secret: 'salesforce-secret',
+    redirectUris: ['https://login.salesforce.com/oauth2/callback', 'http://localhost:3000/callback', 'http://localhost:3146/callback'],
+    scopes: ['openid', 'profile', 'email', 'offline_access'],
+    logoUrl: 'https://login.salesforce.com/favicon.ico'
+  },
+  {
+    id: 'slack-workspace',
+    name: 'Slack',
+    secret: 'slack-secret',
+    redirectUris: ['https://slack.com/oauth2/callback', 'http://localhost:3000/callback', 'http://localhost:3146/callback'],
+    scopes: ['openid', 'profile', 'email'],
+    logoUrl: 'https://slack.com/favicon.ico'
+  },
+  {
+    id: 'github-enterprise',
+    name: 'GitHub',
+    secret: 'github-secret',
+    redirectUris: ['https://github.com/login/oauth/callback', 'http://localhost:3000/callback', 'http://localhost:3146/callback'],
+    scopes: ['openid', 'profile', 'email', 'repo'],
+    logoUrl: 'https://github.com/favicon.ico'
+  },
+  {
+    id: 'azure-portal',
+    name: 'Azure Portal',
+    secret: 'azure-secret',
+    redirectUris: ['https://portal.azure.com/oauth2/callback', 'http://localhost:3000/callback', 'http://localhost:3146/callback'],
+    scopes: ['openid', 'profile', 'email', 'offline_access'],
+    logoUrl: 'https://portal.azure.com/favicon.ico'
+  }
+];
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -784,8 +820,35 @@ async function ensureSystemUser() {
     password: uuidv4(),
     name: 'VaultSSO System',
     avatar: '',
-    emailVerified: true
+    emailVerified: true,
+    role: USER_ROLE_USER
   });
+}
+
+async function seedMemoryDemoData() {
+  if (String(process.env.DB_DRIVER || '').trim().toLowerCase() !== 'memory') {
+    return;
+  }
+
+  const existingDemoUser = await User.findByEmail('demo@vaultsso.com');
+  if (!existingDemoUser) {
+    await User.create({
+      username: 'demo@vaultsso.com',
+      email: 'demo@vaultsso.com',
+      password: 'demo123',
+      name: 'Alexander Chen',
+      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAeJvKl7fU1iqZh6zOZs1aafVqUuYiG5yITDbH2UYR4RvaLznuMOqj8sGGOh1goH16sh4Jq75d9IeEbhUtLzk8V_ShUGkRIRYsEqo47Ads_1pw_6ySjt3T4vIDRjraWDGUoLRxXLVv7EFVRgKp9Mjfa4sHjuoM9MM5o2VIPg0rF66x0vP9_zEV3twEjYqDi1fMs_24JUSsFwuNUa7Kdjm6U7EfrzZzUMwm4IGtYm7pSX12FASsT6BxFQxtLiP-qzQ-YOymo-NhULTCI',
+      emailVerified: true,
+      role: USER_ROLE_ADMIN
+    });
+  }
+
+  for (const clientData of DEMO_CLIENTS) {
+    const existingClient = await Client.findById(clientData.id);
+    if (!existingClient) {
+      await Client.create(clientData);
+    }
+  }
 }
 
 app.get('/.well-known/openid-configuration', (req, res) => {
@@ -1613,6 +1676,7 @@ async function bootstrap() {
   Token = new TokenModel(pool);
 
   await ensureSystemUser();
+  await seedMemoryDemoData();
   await Token.cleanExpiredTokens();
 
   app.listen(PORT, () => {
@@ -1633,8 +1697,8 @@ async function bootstrap() {
   - Token:         /oauth2/token
   - UserInfo:      /oauth2/userinfo
 
-  Database mode only. Run "npm run init-db" once if you need
-  the demo user and demo clients in MySQL.
+  Database driver: ${process.env.DB_DRIVER || 'mysql'}
+  Run "npm run init-db" once if you use MySQL and need demo data.
 ============================================================
     `);
   });

@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "init-db": "node scripts/init-db.js",
-    "check": "node --check server.js && node --check scripts/init-db.js && node --check db/init.js && node --check models/User.js && node --check models/Client.js && node --check models/Token.js"
+    "check:syntax": "node --check server.js && node --check scripts/init-db.js && node --check scripts/check-e2e.js && node --check db/init.js && node --check db/memory.js && node --check models/User.js && node --check models/Client.js && node --check models/Token.js",
+    "check:e2e": "node scripts/check-e2e.js",
+    "check": "npm run check:syntax && npm run check:e2e"
   },
   "dependencies": {
     "express": "^4.18.2",

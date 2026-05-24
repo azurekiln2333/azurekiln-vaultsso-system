@@ -47,6 +47,7 @@ CREATE DATABASE vaultsso_oauth2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 复制 `.env.example` 为 `.env` 并修改数据库和密钥：
 
 ```env
+DB_DRIVER=mysql
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
@@ -73,6 +74,15 @@ npm start
 ```
 
 打开 `http://localhost:3146/oauth2/authorize`。
+
+无 MySQL 的开发/演示模式：
+
+```bash
+# PowerShell
+$env:DB_DRIVER="memory"; npm start
+```
+
+该模式会自动创建 `demo@vaultsso.com` 管理员和内置 OAuth 客户端，适合本机验证前端页面、管理页和 OAuth2 流程。内存数据会在服务停止后清空。
 
 ### 演示账号和客户端
 
@@ -216,6 +226,7 @@ CREATE DATABASE vaultsso_oauth2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 複製 `.env.example` 為 `.env` 並修改資料庫與密鑰：
 
 ```env
+DB_DRIVER=mysql
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
@@ -242,6 +253,15 @@ npm start
 ```
 
 開啟 `http://localhost:3146/oauth2/authorize`。
+
+無 MySQL 的開發/示範模式：
+
+```bash
+# PowerShell
+$env:DB_DRIVER="memory"; npm start
+```
+
+此模式會自動建立 `demo@vaultsso.com` 管理員和內建 OAuth 用戶端，適合本機驗證前端頁面、管理頁與 OAuth2 流程。記憶體資料會在服務停止後清空。
 
 ### 示範帳號和用戶端
 
@@ -373,6 +393,7 @@ CREATE DATABASE vaultsso_oauth2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 Copy `.env.example` to `.env` and update database credentials and secrets:
 
 ```env
+DB_DRIVER=mysql
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
@@ -399,6 +420,15 @@ npm start
 ```
 
 Open `http://localhost:3146/oauth2/authorize`.
+
+Development/demo mode without MySQL:
+
+```bash
+# PowerShell
+$env:DB_DRIVER="memory"; npm start
+```
+
+This mode automatically creates the `demo@vaultsso.com` admin user and seeded OAuth clients, so local page, admin, and OAuth2 flow verification can run without MySQL. In-memory data is cleared when the server stops.
 
 ### Demo Account and Clients
 
