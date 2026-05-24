@@ -87,6 +87,7 @@ async function runChecks() {
   const tokenPayload = JSON.parse(token.text);
   assert(tokenPayload.access_token, 'Token response should include access_token');
   assert(tokenPayload.id_token, 'Token response should include id_token');
+  assert(!tokenPayload.refresh_token, 'Token response should not include refresh_token without offline_access');
 
   const userinfo = await request('/oauth2/userinfo', {
     headers: { Authorization: `Bearer ${tokenPayload.access_token}` }
@@ -117,6 +118,44 @@ async function runChecks() {
     }).toString()
   });
   assert(revoke.response.status === 200, 'Revocation should return 200');
+
+  const offlineAuthorize = await request('/oauth2/authorize?response_type=code&client_id=salesforce-prod&redirect_uri=http%3A%2F%2Flocalhost%3A3146%2Fcallback&scope=openid%20profile%20email%20offline_access&state=e2e-refresh', {
+    headers: { Cookie: cookie }
+  });
+  assert(offlineAuthorize.response.status >= 300 && offlineAuthorize.response.status < 400, 'Offline authorization should redirect with a code');
+  const offlineLocation = offlineAuthorize.response.headers.get('location');
+  const offlineCode = new URL(offlineLocation).searchParams.get('code');
+  assert(offlineCode, 'Offline authorization redirect should include a code');
+
+  const offlineToken = await request('/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: offlineCode,
+      redirect_uri: 'http://localhost:3146/callback',
+      client_id: 'salesforce-prod',
+      client_secret: 'salesforce-secret'
+    }).toString()
+  });
+  assert(offlineToken.response.status === 200, 'Offline token exchange should return 200');
+  const offlineTokenPayload = JSON.parse(offlineToken.text);
+  assert(offlineTokenPayload.refresh_token, 'Offline token response should include refresh_token');
+
+  const refreshed = await request('/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: offlineTokenPayload.refresh_token,
+      client_id: 'salesforce-prod',
+      client_secret: 'salesforce-secret'
+    }).toString()
+  });
+  assert(refreshed.response.status === 200, 'Refresh token grant should return 200');
+  const refreshedPayload = JSON.parse(refreshed.text);
+  assert(refreshedPayload.access_token, 'Refresh token grant should return a new access token');
+  assert(refreshedPayload.scope.includes('offline_access'), 'Refreshed token response should preserve original scopes');
 }
 
 async function main() {
