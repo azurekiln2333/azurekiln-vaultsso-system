@@ -17,18 +17,18 @@
 </div>
 <div class="flex items-center gap-6">
 <nav class="hidden md:flex gap-8">
-  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Directory</a>
-  <a class="text-[#003d9b] dark:text-blue-400 font-bold border-b-2 border-[#003d9b] pb-1 hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Security</a>
-  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Sessions</a>
+  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/profile">Profile</a>
+  <a class="text-[#003d9b] dark:text-blue-400 font-bold border-b-2 border-[#003d9b] pb-1 hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/api-docs.html">Security</a>
+  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/tokens.html">Sessions</a>
 </nav>
 <div class="flex items-center gap-4 text-slate-600">
-  <button class="flex items-center gap-1 hover:text-primary transition-colors">
+  <a class="flex items-center gap-1 hover:text-primary transition-colors" href="/api-docs.html">
     <span class="material-symbols-outlined text-[20px]">language</span>
     <span class="text-sm font-medium">EN</span>
-  </button>
-  <button class="hover:text-primary transition-colors">
+  </a>
+  <a class="hover:text-primary transition-colors" href="/api-docs.html">
     <span class="material-symbols-outlined text-[20px]">help_outline</span>
-  </button>
+  </a>
 </div>
 </div>
 </header>
@@ -51,8 +51,8 @@
 <div class="flex items-start gap-4">
   <span class="material-symbols-outlined text-error text-xl">warning</span>
   <div class="flex-grow">
-    <p class="font-bold text-on-error-container mb-2">invalid_request</p>
-    <p class="text-sm text-on-error-container/80">The request is missing a required parameter, includes an invalid parameter value, includes a parameter more than once, or is otherwise malformed.</p>
+    <p class="font-bold text-on-error-container mb-2" id="errorTitle">invalid_request</p>
+    <p class="text-sm text-on-error-container/80" id="errorDescription">The request is missing a required parameter, includes an invalid parameter value, includes a parameter more than once, or is otherwise malformed.</p>
   </div>
 </div>
 </div>
@@ -62,36 +62,36 @@
 <div class="space-y-3">
   <div class="flex justify-between items-center py-2">
     <span class="text-sm text-on-surface-variant">Error Code</span>
-    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-error">invalid_request</code>
+    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-error" id="errorCode">invalid_request</code>
   </div>
   <div class="flex justify-between items-center py-2">
     <span class="text-sm text-on-surface-variant">State</span>
-    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-on-surface">xyzABC123</code>
+    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-on-surface" id="stateValue">N/A</code>
   </div>
   <div class="flex justify-between items-center py-2">
     <span class="text-sm text-on-surface-variant">Client ID</span>
-    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-on-surface">salesforce-prod</code>
+    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-on-surface" id="clientValue">N/A</code>
   </div>
   <div class="flex justify-between items-center py-2">
     <span class="text-sm text-on-surface-variant">Timestamp</span>
-    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-on-surface">2024-01-15T10:30:00Z</code>
+    <code class="bg-surface-container-highest px-3 py-1 rounded text-sm font-mono text-on-surface" id="timeValue">N/A</code>
   </div>
 </div>
 </div>
 
 <div class="flex flex-col gap-4">
-<button class="w-full vault-gradient text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all">
+<button id="tryAgainBtn" type="button" class="w-full vault-gradient text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all">
   Try Again
 </button>
-<button class="w-full py-4 bg-surface-container-high text-on-surface font-bold rounded-xl hover:bg-surface-container-highest transition-all">
-  Contact Support
-</button>
+<a class="w-full py-4 bg-surface-container-high text-on-surface font-bold rounded-xl hover:bg-surface-container-highest transition-all text-center" href="/api-docs.html">
+  API Documentation
+</a>
 </div>
 
 <div class="mt-8 pt-6 border-t border-outline-variant/10">
 <div class="flex items-center justify-center gap-2 text-xs text-on-surface-variant">
   <span class="material-symbols-outlined text-[16px]">support_agent</span>
-  <span>Need help? <a href="#" class="text-primary font-semibold hover:underline">Contact Administrator</a></span>
+  <span>Need help? <a href="/profile" class="text-primary font-semibold hover:underline">Open Profile</a></span>
 </div>
 </div>
 </div>
@@ -114,11 +114,27 @@
   </div>
 </div>
 <nav class="flex flex-wrap justify-center gap-6 mt-6 md:mt-0">
-  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
-  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Terms of Service</a>
-  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Compliance</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="/api-docs.html">API Docs</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="/apps.html">Apps</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="/tokens.html">Tokens</a>
 </nav>
 </footer>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get('error') || 'invalid_request';
+  const description = params.get('error_description') || 'The authorization request could not be completed.';
+  document.getElementById('errorTitle').textContent = error;
+  document.getElementById('errorDescription').textContent = description;
+  document.getElementById('errorCode').textContent = error;
+  document.getElementById('stateValue').textContent = params.get('state') || 'N/A';
+  document.getElementById('clientValue').textContent = params.get('client_id') || 'N/A';
+  document.getElementById('timeValue').textContent = new Date().toISOString();
+  document.getElementById('tryAgainBtn').addEventListener('click', function () {
+    this.disabled = true;
+    this.innerHTML = '<span class="material-symbols-outlined animate-spin align-middle mr-2">progress_activity</span>Returning...';
+    window.location.href = '/oauth2/authorize';
+  });
+</script>
 </body>
 </html>
 

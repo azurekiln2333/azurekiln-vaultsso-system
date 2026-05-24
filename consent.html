@@ -17,17 +17,17 @@
 </div>
 <div class="flex items-center gap-6">
 <nav class="hidden md:flex gap-8">
-  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Directory</a>
-  <a class="text-[#003d9b] dark:text-blue-400 font-bold border-b-2 border-[#003d9b] pb-1 hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Security</a>
-  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="#">Sessions</a>
+  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/profile">Profile</a>
+  <a class="text-[#003d9b] dark:text-blue-400 font-bold border-b-2 border-[#003d9b] pb-1 hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/api-docs.html">Security</a>
+  <a class="text-slate-600 dark:text-slate-400 font-medium hover:text-[#0052cc] dark:hover:text-blue-300 transition-colors" href="/tokens.html">Sessions</a>
 </nav>
 <div class="flex items-center gap-4">
-  <button class="flex items-center gap-1 hover:text-primary transition-colors text-slate-600">
+  <a class="flex items-center gap-1 hover:text-primary transition-colors text-slate-600" href="/api-docs.html">
     <span class="material-symbols-outlined text-[20px]">language</span>
-  </button>
-  <button class="hover:text-primary transition-colors text-slate-600">
+  </a>
+  <a class="hover:text-primary transition-colors text-slate-600" href="/api-docs.html">
     <span class="material-symbols-outlined text-[20px]">help_outline</span>
-  </button>
+  </a>
   <div class="h-10 w-10 rounded-full bg-surface-container-high overflow-hidden border-2 border-primary/10">
     <img alt="User profile avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeJvKl7fU1iqZh6zOZs1aafVqUuYiG5yITDbH2UYR4RvaLznuMOqj8sGGOh1goH16sh4Jq75d9IeEbhUtLzk8V_ShUGkRIRYsEqo47Ads_1pw_6ySjt3T4vIDRjraWDGUoLRxXLVv7EFVRgKp9Mjfa4sHjuoM9MM5o2VIPg0rF66x0vP9_zEV3twEjYqDi1fMs_24JUSsFwuNUa7Kdjm6U7EfrzZzUMwm4IGtYm7pSX12FASsT6BxFQxtLiP-qzQ-YOymo-NhULTCI"/>
   </div>
@@ -44,57 +44,21 @@
   <span class="material-symbols-outlined text-[#00A1E0] text-3xl">cloud</span>
 </div>
 <div>
-  <h1 class="text-2xl font-extrabold tracking-tight text-on-surface">Salesforce</h1>
-  <p class="text-sm text-on-surface-variant">CRM & Customer Success Platform</p>
+  <h1 class="text-2xl font-extrabold tracking-tight text-on-surface" id="clientName">OAuth Client</h1>
+  <p class="text-sm text-on-surface-variant" id="clientId">Review requested access</p>
 </div>
 </div>
 
 <div class="mb-8">
 <h2 class="text-xl font-bold text-on-surface mb-2">Grant Access Permission</h2>
 <p class="text-on-surface-variant text-sm leading-relaxed">
-  <span class="font-semibold text-on-surface">Salesforce</span> is requesting permission to access your account. Review the permissions below before granting access.
+  <span class="font-semibold text-on-surface" id="clientInlineName">This application</span> is requesting permission to access your account. Review the permissions below before granting access.
 </p>
 </div>
 
 <div class="bg-surface-container-low rounded-xl p-6 mb-8">
 <h3 class="text-sm font-bold uppercase tracking-widest text-outline mb-4">Requested Scopes</h3>
-<div class="space-y-4">
-  <div class="flex items-start gap-4">
-    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-      <span class="material-symbols-outlined text-primary text-xl">person</span>
-    </div>
-    <div>
-      <p class="font-semibold text-on-surface">Profile Information</p>
-      <p class="text-sm text-on-surface-variant">Access your basic profile data including name, email, and profile picture</p>
-    </div>
-  </div>
-  <div class="flex items-start gap-4">
-    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-      <span class="material-symbols-outlined text-primary text-xl">mail</span>
-    </div>
-    <div>
-      <p class="font-semibold text-on-surface">Email Address</p>
-      <p class="text-sm text-on-surface-variant">View your email address</p>
-    </div>
-  </div>
-  <div class="flex items-start gap-4">
-    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-      <span class="material-symbols-outlined text-primary text-xl">groups</span>
-    </div>
-    <div>
-      <p class="font-semibold text-on-surface">Organization Access</p>
-      <p class="text-sm text-on-surface-variant">Access your organization's directory and team information</p>
-    </div>
-  </div>
-  <div class="flex items-start gap-4">
-    <div class="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-      <span class="material-symbols-outlined text-amber-600 text-xl">admin_panel_settings</span>
-    </div>
-    <div>
-      <p class="font-semibold text-on-surface">Offline Access</p>
-      <p class="text-sm text-on-surface-variant">Access your data even when you're not actively using the application</p>
-    </div>
-  </div>
+<div class="space-y-4" id="scopeList">
 </div>
 </div>
 
@@ -102,16 +66,16 @@
 <div class="flex items-center gap-3 text-sm">
   <span class="material-symbols-outlined text-primary text-xl">info</span>
   <span class="text-on-surface-variant">
-    By clicking "Allow", you allow this app to use your information in accordance with its <a href="#" class="text-primary font-semibold hover:underline">privacy policy</a>.
+    By clicking "Allow", you allow this app to use your information according to the requested OAuth scopes.
   </span>
 </div>
 </div>
 
 <div class="flex gap-4">
-<button class="flex-1 py-4 bg-surface-container-high text-on-surface font-bold rounded-xl hover:bg-surface-container-highest transition-all">
+<button id="denyBtn" type="button" class="flex-1 py-4 bg-surface-container-high text-on-surface font-bold rounded-xl hover:bg-surface-container-highest transition-all">
   Deny
 </button>
-<button class="flex-1 vault-gradient text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all">
+<button id="allowBtn" type="button" class="flex-1 vault-gradient text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all">
   Allow
 </button>
 </div>
@@ -142,11 +106,59 @@
   </div>
 </div>
 <nav class="flex flex-wrap justify-center gap-6 mt-6 md:mt-0">
-  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
-  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Terms of Service</a>
-  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="#">Compliance</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="/api-docs.html">API Docs</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="/apps.html">Apps</a>
+  <a class="font-medium text-[12px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors opacity-80 hover:opacity-100" href="/tokens.html">Tokens</a>
 </nav>
 </footer>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const clientId = params.get('client_id') || 'OAuth Client';
+  const redirectUri = params.get('redirect_uri') || '/oauth2/authorize';
+  const state = params.get('state') || '';
+  const scopeText = params.get('scope') || 'openid profile email';
+  const scopeDescriptions = {
+    openid: ['badge', 'OpenID Connect', 'Issue an ID token for identity sign-in.'],
+    profile: ['person', 'Profile Information', 'Read your display name, username, and avatar.'],
+    email: ['mail', 'Email Address', 'Read your email address and verification status.'],
+    offline_access: ['sync', 'Offline Access', 'Allow refresh-token based access.']
+  };
+
+  function setButtonLoading(button, label) {
+    button.disabled = true;
+    button.innerHTML = `<span class="material-symbols-outlined animate-spin align-middle mr-2">progress_activity</span>${label}`;
+  }
+
+  document.getElementById('clientName').textContent = clientId;
+  document.getElementById('clientId').textContent = clientId;
+  document.getElementById('clientInlineName').textContent = clientId;
+  document.getElementById('scopeList').innerHTML = scopeText.split(/\s+/).filter(Boolean).map(scope => {
+    const meta = scopeDescriptions[scope] || ['vpn_key', scope, `Grant the ${scope} scope.`];
+    return `
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-primary text-xl">${meta[0]}</span>
+        </div>
+        <div>
+          <p class="font-semibold text-on-surface">${meta[1]}</p>
+          <p class="text-sm text-on-surface-variant">${meta[2]}</p>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('denyBtn').addEventListener('click', function () {
+    setButtonLoading(this, 'Denying...');
+    const url = new URL(redirectUri, window.location.origin);
+    url.searchParams.set('error', 'access_denied');
+    if (state) url.searchParams.set('state', state);
+    window.location.href = url.toString();
+  });
+
+  document.getElementById('allowBtn').addEventListener('click', function () {
+    setButtonLoading(this, 'Continuing...');
+    window.location.href = `/oauth2/authorize?${params.toString()}`;
+  });
+</script>
 </body>
 </html>
 
