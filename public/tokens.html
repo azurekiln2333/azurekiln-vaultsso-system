@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | Token Audit</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="mx-auto max-w-7xl px-6 py-6 lg:px-8">
+    <header class="mb-8 flex flex-col gap-5 rounded-xl border border-white/80 bg-white/75 px-6 py-5 shadow-sm backdrop-blur lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
+        <div>
+          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
+          <p class="text-sm text-muted">OAuth2 access token audit</p>
+        </div>
+      </div>
+
+      <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/apps.html">Apps</a>
+        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/tokens.html">Tokens</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html">API Docs</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile">Profile</a>
+      </nav>
+    </header>
+
+    <section class="mb-8 rounded-xl bg-surface-container-low p-8">
+      <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+        <span class="material-symbols-outlined text-base">shield_lock</span>
+        Admin Audit
+      </p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">Token Audit</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted">Review issued access tokens, inspect expiry status, filter records, and revoke active tokens.</p>
+    </section>
+
+    <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Total Tokens</p>
+        <p class="text-3xl font-bold" id="statsTotal">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Active</p>
+        <p class="text-3xl font-bold" id="statsActive">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Expiring in 24h</p>
+        <p class="text-3xl font-bold" id="statsExpiring">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Expired</p>
+        <p class="text-3xl font-bold" id="statsExpired">0</p>
+      </article>
+    </section>
+
+    <div class="mb-6 rounded-xl bg-white p-6 shadow-sm">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <label class="relative w-full lg:max-w-md">
+          <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
+          <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" placeholder="Search user, client, scope, or token ID" type="search">
+        </label>
+        <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button">
+          <span class="material-symbols-outlined text-lg">refresh</span>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="mb-6 rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar">Loading tokens...</div>
+
+    <div class="overflow-hidden rounded-xl bg-white shadow-sm">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-surface-container-low">
+            <tr class="border-b border-line/70">
+              <th class="px-5 py-4 text-left font-bold text-muted">Client</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">User</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Scopes</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Created</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Expires</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Status</th>
+              <th class="px-5 py-4 text-left font-bold text-muted">Token ID</th>
+              <th class="px-5 py-4 text-right font-bold text-muted">Action</th>
+            </tr>
+          </thead>
+          <tbody id="tokenTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusBar = document.getElementById('statusBar');
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const tokenTableBody = document.getElementById('tokenTableBody');
+
+    let allTokens = [];
+
+    function setStatus(kind, message) {
+      const classes = {
+        error: 'border-red-200 bg-red-50 text-red-700',
+        success: 'border-green-200 bg-green-50 text-green-700',
+        info: 'border-blue-200 bg-blue-50 text-blue-700'
+      };
+      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm shadow-sm ${classes[kind] || classes.info}`;
+      statusBar.textContent = message;
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Not recorded';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+    }
+
+    function resolveTokenState(token) {
+      const expiresAt = new Date(token.expiresAt);
+      if (Number.isNaN(expiresAt.getTime())) {
+        return { key: 'unknown', label: 'Unknown', className: 'bg-slate-100 text-slate-600' };
+      }
+
+      const diff = expiresAt.getTime() - Date.now();
+      if (diff <= 0) {
+        return { key: 'expired', label: 'Expired', className: 'bg-slate-100 text-slate-600' };
+      }
+
+      if (diff <= 24 * 60 * 60 * 1000) {
+        return { key: 'expiring', label: 'Expiring', className: 'bg-amber-50 text-amber-700' };
+      }
+
+      return { key: 'active', label: 'Active', className: 'bg-green-50 text-green-700' };
+    }
+
+    function searchText(token) {
+      return [
+        token.id,
+        token.client,
+        token.clientId,
+        token.user,
+        token.userEmail,
+        ...(token.scopes || [])
+      ].join(' ').toLowerCase();
+    }
+
+    function renderStats(tokens) {
+      let active = 0;
+      let expiring = 0;
+      let expired = 0;
+
+      tokens.forEach(token => {
+        const state = resolveTokenState(token);
+        if (state.key === 'active') active += 1;
+        if (state.key === 'expiring') expiring += 1;
+        if (state.key === 'expired') expired += 1;
+      });
+
+      document.getElementById('statsTotal').textContent = String(tokens.length);
+      document.getElementById('statsActive').textContent = String(active);
+      document.getElementById('statsExpiring').textContent = String(expiring);
+      document.getElementById('statsExpired').textContent = String(expired);
+    }
+
+    function renderTokens(tokens) {
+      tokenTableBody.innerHTML = '';
+      if (!tokens.length) {
+        tokenTableBody.innerHTML = '<tr><td class="px-5 py-10 text-center text-muted" colspan="8">No tokens match the current search.</td></tr>';
+        return;
+      }
+
+      tokens.forEach(token => {
+        const state = resolveTokenState(token);
+        const scopes = Array.isArray(token.scopes) ? token.scopes : [];
+        const row = document.createElement('tr');
+        row.className = 'border-b border-line/50 align-top';
+        row.innerHTML = `
+          <td class="px-5 py-4">
+            <div class="font-semibold text-ink">${escapeHtml(token.client || 'Unknown')}</div>
+            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.clientId || 'No client_id')}</div>
+          </td>
+          <td class="px-5 py-4">
+            <div class="font-semibold text-ink">${escapeHtml(token.user || 'Unknown')}</div>
+            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.userEmail || 'No email')}</div>
+          </td>
+          <td class="px-5 py-4">
+            <div class="flex flex-wrap gap-1">
+              ${scopes.length
+                ? scopes.map(scope => `<span class="rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary">${escapeHtml(scope)}</span>`).join('')
+                : '<span class="text-xs text-muted">No scopes</span>'}
+            </div>
+          </td>
+          <td class="px-5 py-4 text-muted">${formatDate(token.createdAt)}</td>
+          <td class="px-5 py-4 text-muted">${formatDate(token.expiresAt)}</td>
+          <td class="px-5 py-4">
+            <span class="rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-widest ${state.className}">${state.label}</span>
+          </td>
+          <td class="px-5 py-4"><code class="break-all text-xs text-muted">${escapeHtml(token.id || '')}</code></td>
+          <td class="px-5 py-4 text-right">
+            <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-revoke="${escapeHtml(token.id || '')}" type="button">Revoke</button>
+          </td>
+        `;
+        tokenTableBody.appendChild(row);
+      });
+
+      tokenTableBody.querySelectorAll('[data-revoke]').forEach(button => {
+        button.addEventListener('click', () => revokeToken(button.dataset.revoke));
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function applySearch() {
+      const keyword = searchInput.value.trim().toLowerCase();
+      const filtered = keyword ? allTokens.filter(token => searchText(token).includes(keyword)) : allTokens;
+      renderTokens(filtered);
+      setStatus('info', keyword ? `Showing ${filtered.length} matching token(s).` : `Loaded ${allTokens.length} token(s).`);
+    }
+
+    async function loadTokens() {
+      refreshBtn.disabled = true;
+      setStatus('info', 'Loading tokens from /api/tokens...');
+      try {
+        const response = await fetch('/api/tokens', { credentials: 'same-origin' });
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return;
+        }
+        if (response.status === 403) {
+          window.location.href = '/oauth2/error?error=access_denied';
+          return;
+        }
+
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error_description || 'Failed to load tokens');
+
+        allTokens = Array.isArray(payload) ? payload : [];
+        renderStats(allTokens);
+        applySearch();
+      } catch (error) {
+        allTokens = [];
+        renderStats(allTokens);
+        renderTokens([]);
+        setStatus('error', error.message);
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    async function revokeToken(tokenId) {
+      if (!tokenId || !confirm('Revoke this access token?')) return;
+
+      try {
+        const response = await fetch(`/api/tokens/${encodeURIComponent(tokenId)}`, {
+          method: 'DELETE',
+          credentials: 'same-origin'
+        });
+        const payload = response.status === 204 ? null : await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error_description || 'Failed to revoke token');
+        await loadTokens();
+        setStatus('success', 'Token revoked.');
+      } catch (error) {
+        setStatus('error', error.message);
+      }
+    }
+
+    searchInput.addEventListener('input', applySearch);
+    refreshBtn.addEventListener('click', loadTokens);
+    loadTokens();
+  </script>
+</body>
+</html>

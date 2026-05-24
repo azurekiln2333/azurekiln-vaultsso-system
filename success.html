@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 登录成功</title>
+  <style>
+    :root {
+      --bg: #eef4ff;
+      --bg-accent: #dce8ff;
+      --card: rgba(255, 255, 255, 0.88);
+      --text: #152033;
+      --muted: #5f6c86;
+      --line: rgba(31, 62, 125, 0.12);
+      --primary: #0b57d0;
+      --primary-dark: #003d9b;
+      --success: #13824b;
+      --shadow: 0 24px 60px rgba(12, 31, 68, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(11, 87, 208, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(33, 150, 243, 0.12), transparent 28%),
+        linear-gradient(135deg, var(--bg) 0%, #f8fbff 48%, var(--bg-accent) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 960px;
+      display: grid;
+      gap: 24px;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    }
+
+    .panel,
+    .side {
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+      border-radius: 28px;
+    }
+
+    .panel {
+      padding: 40px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      top: -60px;
+      right: -60px;
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(11, 87, 208, 0.14), transparent 68%);
+      pointer-events: none;
+    }
+
+    .panel-top,
+    .side-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid var(--line);
+      color: var(--primary-dark);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-badge {
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      font-size: 16px;
+    }
+
+    .language-switch {
+      display: inline-flex;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.84);
+      border: 1px solid var(--line);
+    }
+
+    .language-switch button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      padding: 9px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+
+    .language-switch button.active {
+      color: white;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      box-shadow: 0 12px 24px rgba(11, 87, 208, 0.16);
+    }
+
+    .hero {
+      margin-top: 28px;
+      display: grid;
+      gap: 18px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .status-icon {
+      width: 92px;
+      height: 92px;
+      border-radius: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(19, 130, 75, 0.16), rgba(19, 130, 75, 0.06));
+      color: var(--success);
+      font-size: 42px;
+      box-shadow: inset 0 0 0 1px rgba(19, 130, 75, 0.08);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4vw, 44px);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--muted);
+      max-width: 60ch;
+    }
+
+    .section {
+      margin-top: 30px;
+      display: grid;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .card {
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary-dark);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .card-title {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .card-text {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .redirect-meta {
+      margin-top: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .meta-row {
+      display: grid;
+      gap: 6px;
+    }
+
+    .meta-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .meta-value {
+      font-size: 14px;
+      color: var(--text);
+      word-break: break-all;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(11, 87, 208, 0.06);
+      border: 1px solid rgba(11, 87, 208, 0.08);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .button,
+    .button-secondary,
+    .button-ghost {
+      appearance: none;
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.15s ease;
+    }
+
+    .button {
+      color: white;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      box-shadow: 0 18px 36px rgba(11, 87, 208, 0.22);
+    }
+
+    .button-secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+    }
+
+    .button-ghost {
+      color: var(--muted);
+      background: transparent;
+      border: 1px dashed rgba(95, 108, 134, 0.35);
+    }
+
+    .button:hover,
+    .button-secondary:hover,
+    .button-ghost:hover {
+      transform: translateY(-1px);
+    }
+
+    .side {
+      padding: 28px;
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+    }
+
+    .avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 20px;
+      object-fit: cover;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      flex: none;
+    }
+
+    .profile-name {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .profile-sub {
+      margin: 6px 0 0;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .list a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .list-item {
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .list-item strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .list-item span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .hint {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(11, 87, 208, 0.06);
+      border: 1px solid rgba(11, 87, 208, 0.1);
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 14px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .panel,
+      .side {
+        padding: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <main class="panel">
+      <div class="panel-top">
+        <div class="brand">
+          <span class="brand-badge">V</span>
+          <span data-i18n="common.brand">VaultSSO</span>
+        </div>
+
+        <div class="language-switch">
+          <button type="button" data-language-switch="zh" data-i18n="common.language.zh">中文</button>
+          <button type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="status-icon">&#10003;</div>
+        <div>
+          <h1 id="pageTitle"></h1>
+          <p class="lead" id="welcomeMessage"></p>
+        </div>
+      </section>
+
+      <section class="section hidden" id="redirectSection">
+        <div class="card">
+          <p class="eyebrow" data-i18n="success.redirect.eyebrow">Redirect</p>
+          <p class="card-title" data-i18n="success.redirect.title">即将回跳到应用</p>
+          <p class="card-text" id="redirectDescription"></p>
+
+          <div class="redirect-meta">
+            <div class="meta-row">
+              <span class="meta-label" data-i18n="success.redirect.client_label">目标应用</span>
+              <div class="meta-value" id="clientName"></div>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label" data-i18n="success.redirect.uri_label">回调地址</span>
+              <div class="meta-value" id="redirectUri"></div>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label" data-i18n="success.redirect.code_label">授权码</span>
+              <div class="meta-value" id="authCodeValue"></div>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label" data-i18n="success.redirect.state_label">状态值</span>
+              <div class="meta-value" id="stateValue"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="eyebrow" data-i18n="success.no_redirect.eyebrow">Session Active</p>
+          <p class="card-title" id="countdownTitle"></p>
+          <p class="card-text" data-i18n="success.redirect.manual">如果没有自动跳转，您可以手动点击下面的按钮继续。</p>
+        </div>
+
+        <div class="actions">
+          <button class="button" id="redirectNowBtn" type="button" data-i18n="common.action.redirect_now">立即跳转</button>
+          <a class="button-secondary" href="/profile" data-i18n="common.action.view_profile">查看个人信息</a>
+        </div>
+      </section>
+
+      <section class="section" id="noRedirectSection">
+        <div class="card">
+          <p class="eyebrow" data-i18n="success.no_redirect.eyebrow">Session Active</p>
+          <p class="card-title" data-i18n="success.no_redirect.title">已完成登录，没有检测到需要重定向的目标</p>
+          <p class="card-text" data-i18n="success.no_redirect.description">这通常表示您是在本系统内直接登录，或者发起登录时没有提供回调地址。当前页面就是登录成功结果页。</p>
+        </div>
+
+        <div class="actions">
+          <a class="button" href="/profile" data-i18n="common.action.view_profile">查看个人信息</a>
+          <a class="button-secondary" href="/apps.html" id="noRedirectAppsLink" data-i18n="common.action.view_apps" style="display: none;">查看应用授权</a>
+          <a class="button-ghost" href="/tokens.html" id="noRedirectTokensLink" data-i18n="common.action.view_tokens" style="display: none;">查看令牌</a>
+        </div>
+      </section>
+    </main>
+
+    <aside class="side">
+      <div class="side-top">
+        <div class="language-switch">
+          <button type="button" data-language-switch="zh" data-i18n="common.language.zh">中文</button>
+          <button type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+        </div>
+      </div>
+
+      <section class="profile">
+        <img class="avatar" id="userAvatar" alt="avatar">
+        <div>
+          <p class="profile-name" id="userName"></p>
+          <p class="profile-sub" id="profileSub"></p>
+        </div>
+      </section>
+
+      <div class="list">
+        <a href="/profile">
+          <div class="list-item">
+            <strong data-i18n="success.sidebar.profile_title">个人信息</strong>
+            <span data-i18n="success.sidebar.profile_desc">查看并修改昵称、用户名、邮箱、头像以及登录密码。</span>
+          </div>
+        </a>
+        <a href="/apps.html" id="sidebarAppsLink" style="display: none;">
+          <div class="list-item">
+            <strong data-i18n="success.sidebar.apps_title">应用管理</strong>
+            <span data-i18n="success.sidebar.apps_desc">查看已经接入 OAuth2 的应用，以及授权关系。</span>
+          </div>
+        </a>
+        <a href="/api-docs.html">
+          <div class="list-item">
+            <strong data-i18n="success.sidebar.docs_title">接口文档</strong>
+            <span data-i18n="success.sidebar.docs_desc">继续查看授权码、令牌、用户信息等端点说明。</span>
+          </div>
+        </a>
+        <a href="/oauth2/logout">
+          <div class="list-item">
+            <strong data-i18n="success.sidebar.logout_title">退出登录</strong>
+            <span data-i18n="success.sidebar.logout_desc">清除当前会话，返回登录页重新开始。</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="hint" id="hintText"></div>
+    </aside>
+  </div>
+
+  <script src="/i18n.js?v=20260416-2"></script>
+  <script>
+    const i18n = window.VaultI18n;
+    const params = new URLSearchParams(window.location.search);
+    const redirectUri = params.get('redirect_uri');
+    const clientId = params.get('client_id');
+    const clientName = params.get('client_name') || clientId || '';
+    let viewerName = params.get('user_name') || '';
+    let viewerAvatar = params.get('user_avatar') || '';
+    const authCode = params.get('code');
+    const state = params.get('state');
+
+    function buildAvatarDataUri(name) {
+      const safeName = (name || 'U').trim();
+      const initial = safeName.charAt(0).toUpperCase() || 'U';
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+          <defs>
+            <linearGradient id="avatarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#003d9b" />
+              <stop offset="100%" stop-color="#0b57d0" />
+            </linearGradient>
+          </defs>
+          <rect width="96" height="96" rx="24" fill="url(#avatarGradient)" />
+          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="40" font-family="Segoe UI, Arial, sans-serif" font-weight="700">${initial}</text>
+        </svg>
+      `;
+
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    let currentCountdown = 5;
+
+    function toggleAdminLinks(isAdmin) {
+      document.getElementById('noRedirectAppsLink').style.display = isAdmin ? '' : 'none';
+      document.getElementById('noRedirectTokensLink').style.display = isAdmin ? '' : 'none';
+      document.getElementById('sidebarAppsLink').style.display = isAdmin ? '' : 'none';
+    }
+
+    function renderPage() {
+      i18n.apply(document);
+      document.title = i18n.t('success.page.title');
+
+      const resolvedUserName = viewerName || i18n.t('common.user_fallback');
+      const resolvedClientName = clientName || i18n.t('common.app_fallback');
+
+      document.getElementById('pageTitle').textContent = redirectUri && authCode
+        ? i18n.t('success.title.oauth')
+        : i18n.t('success.title.login');
+      document.getElementById('welcomeMessage').textContent = i18n.t('success.message.login', {
+        user: resolvedUserName
+      });
+
+      document.getElementById('userName').textContent = resolvedUserName;
+      document.getElementById('profileSub').textContent = i18n.t('success.message.login', {
+        user: resolvedUserName
+      });
+
+      document.getElementById('clientName').textContent = resolvedClientName;
+      document.getElementById('redirectUri').textContent = redirectUri || i18n.t('common.not_provided');
+      document.getElementById('authCodeValue').textContent = authCode || i18n.t('common.not_generated');
+      document.getElementById('stateValue').textContent = state || i18n.t('common.none');
+      document.getElementById('redirectDescription').textContent = i18n.t('success.redirect.description_client', {
+        client: resolvedClientName
+      });
+      document.getElementById('countdownTitle').textContent = i18n.t('success.redirect.ready', {
+        count: currentCountdown
+      });
+      document.getElementById('hintText').textContent = redirectUri && authCode
+        ? i18n.t('success.hint.redirect')
+        : i18n.t('success.hint.default');
+
+      const avatarElement = document.getElementById('userAvatar');
+      avatarElement.onerror = function () {
+        avatarElement.src = buildAvatarDataUri(resolvedUserName);
+      };
+      avatarElement.src = viewerAvatar || buildAvatarDataUri(resolvedUserName);
+    }
+
+    async function loadViewerPermissions() {
+      try {
+        const response = await fetch('/api/profile', {
+          credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+          toggleAdminLinks(false);
+          return;
+        }
+
+        const payload = await response.json();
+        const profileUser = payload?.user || null;
+        toggleAdminLinks(Boolean(profileUser?.isAdmin));
+
+        if (!viewerName && profileUser) {
+          viewerName = profileUser.name || profileUser.username || '';
+          viewerAvatar = profileUser.avatar || '';
+          renderPage();
+        }
+      } catch (error) {
+        console.error('Load viewer permissions failed:', error);
+        toggleAdminLinks(false);
+      }
+    }
+
+    function enableRedirectFlow() {
+      if (!(redirectUri && authCode)) {
+        return;
+      }
+
+      document.getElementById('redirectSection').classList.remove('hidden');
+      document.getElementById('noRedirectSection').classList.add('hidden');
+
+      let finalUrl;
+      try {
+        finalUrl = new URL(redirectUri, window.location.origin);
+        finalUrl.searchParams.set('code', authCode);
+        if (state) {
+          finalUrl.searchParams.set('state', state);
+        }
+      } catch (error) {
+        document.getElementById('hintText').textContent = i18n.t('success.hint.invalid_redirect');
+        document.getElementById('redirectNowBtn').disabled = true;
+        return;
+      }
+
+      currentCountdown = 5;
+      renderPage();
+
+      const timer = window.setInterval(function () {
+        currentCountdown -= 1;
+        renderPage();
+
+        if (currentCountdown <= 0) {
+          window.clearInterval(timer);
+          window.location.href = finalUrl.toString();
+        }
+      }, 1000);
+
+      document.getElementById('redirectNowBtn').addEventListener('click', function () {
+        window.clearInterval(timer);
+        window.location.href = finalUrl.toString();
+      });
+    }
+
+    i18n.bindLanguageButtons(document);
+    toggleAdminLinks(false);
+    renderPage();
+    enableRedirectFlow();
+    loadViewerPermissions();
+
+    document.addEventListener('vaultsso:languagechange', function () {
+      renderPage();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 个人信息</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=container-queries"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="max-w-5xl mx-auto px-6 py-6 lg:px-8">
+    <section class="glass-card rounded-3xl border border-white/80 p-6 md:p-8">
+      <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between mb-6">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
+          <div>
+            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
+            <p class="text-sm text-muted" data-i18n="profile.hero.description">当前页面以资料展示为主。显示名称、头像、邮箱和密码都通过弹窗修改，用户名为只读。</p>
+          </div>
+        </div>
+
+        <div class="language-switch inline-flex items-center gap-2 rounded-full border border-line bg-white/90 p-1 self-start md:self-auto">
+          <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" type="button" data-language-switch="zh" data-i18n="common.language.zh">中文</button>
+          <button class="px-3 py-2 text-xs font-bold rounded-full text-muted" type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+        </div>
+      </div>
+
+      <div class="hidden rounded-2xl border px-4 py-3 text-sm mb-5" id="statusMessage"></div>
+      <div class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-700 font-semibold mb-5" id="loadingState" data-i18n="profile.loading">正在加载个人信息...</div>
+
+      <div id="profileContent" class="hidden space-y-5">
+        <section class="glass-card rounded-3xl border border-white/80 p-6">
+          <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div class="flex items-start gap-5 min-w-0">
+              <img class="w-24 h-24 rounded-3xl object-cover bg-primary shadow-[0_18px_36px_rgba(11,87,208,0.16)] shrink-0" id="avatarPreview" alt="avatar">
+              <div class="min-w-0">
+                <p class="font-headline text-3xl font-extrabold tracking-tight text-ink" id="profileName">...</p>
+                <p class="text-sm text-muted mt-2 break-all" id="profileMeta"></p>
+                <div class="flex flex-wrap gap-2 mt-4">
+                  <span class="rounded-full bg-primary-soft px-3 py-1.5 text-xs font-bold text-primary" id="emailVerifiedBadge"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">应用管理</a>
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">令牌管理</a>
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/oauth2/logout" data-i18n="common.action.logout">退出登录</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="grid grid-cols-1 gap-4">
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.display_name">显示名称</p>
+              <p class="text-lg font-bold text-ink break-words" id="displayNameValue"></p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.username">用户名</p>
+            <p class="text-lg font-bold text-ink break-words" id="usernameValue"></p>
+            <p class="text-sm text-muted mt-2" data-i18n="profile.field.username_hint">当前用户名已锁定，无法修改。</p>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.email">邮箱</p>
+              <p class="text-lg font-bold text-ink break-words" id="emailValue"></p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">修改邮箱</button>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.new_password">密码</p>
+              <p class="text-lg font-bold text-ink break-words" id="passwordValue" data-i18n="profile.value.password_masked">已隐藏</p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">修改密码</button>
+          </article>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.user_id">用户 ID</p>
+              <p class="text-sm font-semibold text-ink break-all" id="userIdValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.created_at">创建时间</p>
+              <p class="text-sm font-semibold text-ink break-words" id="createdAtValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.updated_at">最近更新时间</p>
+              <p class="text-sm font-semibold text-ink break-words" id="updatedAtValue"></p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="profileModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="profileModalTitle" data-i18n="profile.modal.profile_title">修改资料</h2>
+          <p class="modal-desc" data-i18n="profile.modal.profile_desc">在此更新您的显示名称和头像链接。</p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="profileModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="profileEditForm">
+        <div class="field">
+          <label for="profileNameInput" data-i18n="profile.field.display_name">显示名称</label>
+          <input id="profileNameInput" name="name" type="text" required>
+        </div>
+
+        <div class="field">
+          <label for="profileAvatarInput" data-i18n="profile.field.avatar">头像 URL</label>
+          <input id="profileAvatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
+          <small data-i18n="profile.field.avatar_hint">留空会使用系统生成的默认头像。</small>
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="profileModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="profileModalSubmit" type="submit" data-i18n="common.action.save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="emailModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="emailModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="emailModalTitle" data-i18n="profile.modal.email_title">修改邮箱</h2>
+          <p class="modal-desc" data-i18n="profile.modal.email_desc">提交后会立即更新当前账户邮箱。</p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="emailModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="emailEditForm">
+        <div class="field">
+          <label for="profileEmailInput" data-i18n="profile.field.email">邮箱</label>
+          <input id="profileEmailInput" name="email" type="email" required>
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="emailModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="emailModalSubmit" type="submit" data-i18n="common.action.save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="passwordModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="passwordModalTitle" data-i18n="profile.modal.password_title">修改密码</h2>
+          <p class="modal-desc" data-i18n="profile.modal.password_desc">请输入当前密码，并设置新的登录密码。</p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="passwordModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="passwordForm">
+        <div class="field">
+          <label for="currentPasswordInput" data-i18n="profile.field.current_password">当前密码</label>
+          <input id="currentPasswordInput" name="currentPassword" type="password" autocomplete="current-password">
+        </div>
+
+        <div class="field">
+          <label for="newPasswordInput" data-i18n="profile.field.new_password">新密码</label>
+          <input id="newPasswordInput" name="newPassword" type="password" autocomplete="new-password">
+        </div>
+
+        <div class="field">
+          <label for="confirmNewPasswordInput" data-i18n="profile.field.confirm_new_password">确认新密码</label>
+          <input id="confirmNewPasswordInput" type="password" autocomplete="new-password">
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="passwordModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="passwordModalSubmit" type="submit" data-i18n="profile.button.update_password">更新密码</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/i18n.js?v=20260416-2"></script>
+  <script>
+    const i18n = window.VaultI18n;
+    let currentUser = null;
+
+    function buildAvatarDataUri(name) {
+      const safeName = (name || 'U').trim();
+      const initial = safeName.charAt(0).toUpperCase() || 'U';
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88">
+          <defs>
+            <linearGradient id="avatarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#003d9b" />
+              <stop offset="100%" stop-color="#0b57d0" />
+            </linearGradient>
+          </defs>
+          <rect width="88" height="88" rx="18" fill="url(#avatarGradient)" />
+          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">${initial}</text>
+        </svg>
+      `;
+
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    function formatDate(value) {
+      if (!value) {
+        return i18n.t('profile.meta.date_missing');
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return i18n.t('profile.meta.date_missing');
+      }
+
+      const locale = i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US';
+      return date.toLocaleString(locale, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    function setAvatar(url, name) {
+      const avatar = document.getElementById('avatarPreview');
+      avatar.onerror = function () {
+        avatar.src = buildAvatarDataUri(name);
+      };
+      avatar.src = url || buildAvatarDataUri(name);
+    }
+
+    function toggleAdminLinks(isAdmin) {
+      document.getElementById('appsMenuLink').style.display = isAdmin ? '' : 'none';
+      document.getElementById('tokensMenuLink').style.display = isAdmin ? '' : 'none';
+    }
+
+    function setStatus(kind, message) {
+      const element = document.getElementById('statusMessage');
+      if (!kind || !message) {
+        element.className = 'status';
+        element.textContent = '';
+        return;
+      }
+
+      element.className = `status show ${kind}`;
+      element.textContent = message;
+    }
+
+    function closeModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.remove('show');
+      }
+    }
+
+    function openModal(modalId) {
+      closeAllModals();
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.add('show');
+        const firstInput = modal.querySelector('input');
+        if (firstInput) {
+          window.setTimeout(() => firstInput.focus(), 20);
+        }
+      }
+    }
+
+    function closeAllModals() {
+      document.querySelectorAll('[data-modal-backdrop]').forEach(modal => {
+        modal.classList.remove('show');
+      });
+    }
+
+    function syncUserToPage(user) {
+      currentUser = user;
+      toggleAdminLinks(Boolean(user.isAdmin));
+
+      document.getElementById('profileName').textContent = user.name || user.username;
+      document.getElementById('profileMeta').textContent = `${user.username} · ${user.email}`;
+      setAvatar(user.avatar, user.name || user.username);
+
+      document.getElementById('emailVerifiedBadge').textContent = user.emailVerified
+        ? i18n.t('profile.meta.email_verified')
+        : i18n.t('profile.meta.email_unverified');
+      document.getElementById('emailVerifiedBadge').className = user.emailVerified ? 'chip' : 'chip muted';
+
+      document.getElementById('displayNameValue').textContent = user.name || '-';
+      document.getElementById('usernameValue').textContent = user.username || '-';
+      document.getElementById('emailValue').textContent = user.email || '-';
+      document.getElementById('passwordValue').textContent = i18n.t('profile.value.password_masked');
+      document.getElementById('userIdValue').textContent = user.id || '-';
+      document.getElementById('createdAtValue').textContent = formatDate(user.createdAt);
+      document.getElementById('updatedAtValue').textContent = formatDate(user.updatedAt);
+
+      document.getElementById('profileNameInput').value = user.name || '';
+      document.getElementById('profileAvatarInput').value = user.avatar || '';
+      document.getElementById('profileEmailInput').value = user.email || '';
+    }
+
+    function renderDocument() {
+      i18n.apply(document);
+      document.title = i18n.t('profile.page.title');
+
+      if (currentUser) {
+        syncUserToPage(currentUser);
+      }
+    }
+
+    async function loadProfile() {
+      const loadingState = document.getElementById('loadingState');
+      const profileContent = document.getElementById('profileContent');
+
+      try {
+        const response = await fetch('/api/profile', {
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return;
+        }
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(i18n.resolveMessage(payload, 'server.internal'));
+        }
+
+        syncUserToPage(payload.user);
+        profileContent.classList.remove('hidden');
+      } catch (error) {
+        console.error('Load profile failed:', error);
+        setStatus('error', error.message || i18n.t('common.network_error'));
+      } finally {
+        loadingState.classList.add('hidden');
+      }
+    }
+
+    async function saveProfile(payload, submitButton, loadingKey, successKey) {
+      const originalLabel = submitButton.textContent;
+      submitButton.disabled = true;
+      submitButton.textContent = i18n.t(loadingKey);
+      setStatus('', '');
+
+      try {
+        const response = await fetch('/api/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return false;
+        }
+
+        if (!response.ok) {
+          throw new Error(i18n.resolveMessage(result, 'server.internal'));
+        }
+
+        syncUserToPage(result.user);
+        setStatus('success', i18n.resolveMessage(result, successKey));
+        return true;
+      } catch (error) {
+        console.error('Save profile failed:', error);
+        setStatus('error', error.message || i18n.t('common.network_error'));
+        return false;
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    }
+
+    document.getElementById('editProfileBtn').addEventListener('click', function () {
+      openModal('profileModal');
+    });
+
+    document.getElementById('editEmailBtn').addEventListener('click', function () {
+      openModal('emailModal');
+    });
+
+    document.getElementById('editPasswordBtn').addEventListener('click', function () {
+      openModal('passwordModal');
+    });
+
+    document.getElementById('profileEditForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+
+      const updated = await saveProfile({
+        name: document.getElementById('profileNameInput').value,
+        avatar: document.getElementById('profileAvatarInput').value
+      }, document.getElementById('profileModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
+
+      if (updated) {
+        closeModal('profileModal');
+      }
+    });
+
+    document.getElementById('emailEditForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+
+      const updated = await saveProfile({
+        email: document.getElementById('profileEmailInput').value
+      }, document.getElementById('emailModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
+
+      if (updated) {
+        closeModal('emailModal');
+      }
+    });
+
+    document.getElementById('passwordForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+
+      const currentPassword = document.getElementById('currentPasswordInput').value;
+      const newPassword = document.getElementById('newPasswordInput').value;
+      const confirmPassword = document.getElementById('confirmNewPasswordInput').value;
+
+      if (!newPassword && !currentPassword && !confirmPassword) {
+        setStatus('error', i18n.t('profile.status.password_empty'));
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        setStatus('error', i18n.t('profile.status.password_mismatch'));
+        return;
+      }
+
+      const updated = await saveProfile({
+        currentPassword,
+        newPassword
+      }, document.getElementById('passwordModalSubmit'), 'profile.status.updating_password', 'profile.status.password_updated');
+
+      if (updated) {
+        document.getElementById('currentPasswordInput').value = '';
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('confirmNewPasswordInput').value = '';
+        closeModal('passwordModal');
+      }
+    });
+
+    document.querySelectorAll('[data-close-modal]').forEach(button => {
+      button.addEventListener('click', function () {
+        closeModal(button.getAttribute('data-close-modal'));
+      });
+    });
+
+    document.querySelectorAll('[data-modal-backdrop]').forEach(backdrop => {
+      backdrop.addEventListener('click', function (event) {
+        if (event.target === backdrop) {
+          closeModal(backdrop.id);
+        }
+      });
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeAllModals();
+      }
+    });
+
+    i18n.bindLanguageButtons(document);
+    renderDocument();
+    loadProfile();
+
+    document.addEventListener('vaultsso:languagechange', function () {
+      renderDocument();
+    });
+  </script>
+</body>
+</html>

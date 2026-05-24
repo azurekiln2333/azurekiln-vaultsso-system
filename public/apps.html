@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | OAuth2 Apps</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="mx-auto max-w-7xl px-6 py-6 lg:px-8">
+    <header class="mb-8 flex flex-col gap-5 rounded-xl border border-white/80 bg-white/75 px-6 py-5 shadow-sm backdrop-blur lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
+        <div>
+          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
+          <p class="text-sm text-muted">OAuth2 client registry</p>
+        </div>
+      </div>
+
+      <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
+        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/apps.html">Apps</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/tokens.html">Tokens</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html">API Docs</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile">Profile</a>
+      </nav>
+    </header>
+
+    <section class="mb-8 rounded-xl bg-surface-container-low p-8">
+      <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+        <span class="material-symbols-outlined text-base">admin_panel_settings</span>
+        Admin
+      </p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">OAuth2 Application Management</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted">Create, edit, disable, and delete OAuth2 clients stored in MySQL.</p>
+    </section>
+
+    <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Total Clients</p>
+        <p class="text-3xl font-bold" id="statsTotal">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Active Clients</p>
+        <p class="text-3xl font-bold" id="statsActive">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Redirect URIs</p>
+        <p class="text-3xl font-bold" id="statsRedirects">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted">Unique Scopes</p>
+        <p class="text-3xl font-bold" id="statsScopes">0</p>
+      </article>
+    </section>
+
+    <div class="grid grid-cols-1 gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <section class="h-fit rounded-xl bg-white p-6 shadow-sm">
+        <div class="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 class="font-headline text-2xl font-bold" id="editorTitle">Create Client</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">Secrets can be generated in the browser or by the server.</p>
+          </div>
+          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="resetFormBtn" type="button">Reset</button>
+        </div>
+
+        <div class="mb-5 hidden rounded-lg border px-4 py-3 text-sm" id="formStatus"></div>
+
+        <form class="space-y-4" id="clientForm">
+          <input id="formMode" type="hidden" value="create">
+          <input id="currentClientId" type="hidden" value="">
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Client ID</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientId" placeholder="emlog-prod" required type="text">
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Name</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientName" placeholder="emlog" required type="text">
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Client Secret</span>
+            <div class="flex gap-3">
+              <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientSecret" placeholder="Empty means auto-generate on create" type="text">
+              <button class="rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="generateSecretBtn" type="button" title="Generate secret">
+                <span class="material-symbols-outlined text-lg">casino</span>
+              </button>
+            </div>
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Logo URL</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientLogo" placeholder="https://example.com/logo.png" type="url">
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Redirect URIs</span>
+            <textarea class="min-h-[112px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientRedirects" placeholder="One redirect URI per line" required></textarea>
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Scopes</span>
+            <textarea class="min-h-[96px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientScopes" placeholder="openid&#10;profile&#10;email" required></textarea>
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Status</span>
+            <select class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientActive">
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </label>
+
+          <div class="flex flex-wrap gap-3 pt-2">
+            <button class="primary-gradient rounded-lg px-5 py-3 text-sm font-bold text-white" id="saveBtn" type="submit">Create</button>
+            <button class="rounded-lg border border-line px-5 py-3 text-sm font-bold text-muted hover:text-primary" id="cancelBtn" type="button">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="space-y-6">
+        <div class="rounded-xl bg-white p-6 shadow-sm">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <label class="relative w-full lg:max-w-md">
+              <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
+              <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" placeholder="Search name, id, redirect URI, or scope" type="search">
+            </label>
+            <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button">
+              <span class="material-symbols-outlined text-lg">refresh</span>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar">Loading clients...</div>
+        <div class="grid grid-cols-1 gap-5 xl:grid-cols-2" id="clientGrid"></div>
+      </section>
+    </div>
+  </div>
+
+  <template id="clientCardTemplate">
+    <article class="rounded-xl bg-white p-5 shadow-sm">
+      <div class="mb-5 flex items-start justify-between gap-4">
+        <div class="flex min-w-0 items-center gap-4">
+          <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary-soft text-primary">
+            <img class="hidden h-full w-full object-cover" data-role="logo-image" alt="">
+            <span class="material-symbols-outlined text-3xl" data-role="logo-fallback">apps</span>
+          </div>
+          <div class="min-w-0">
+            <h3 class="truncate font-headline text-xl font-bold" data-role="name"></h3>
+            <p class="break-all text-sm text-muted" data-role="id"></p>
+          </div>
+        </div>
+        <span class="rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-widest" data-role="badge"></span>
+      </div>
+
+      <div class="mb-5 space-y-3 text-sm text-muted">
+        <div class="flex items-start gap-2">
+          <span class="material-symbols-outlined mt-0.5 text-base">link</span>
+          <div>
+            <p class="break-all" data-role="redirect"></p>
+            <p class="mt-1 text-xs" data-role="redirect-count"></p>
+          </div>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="material-symbols-outlined mt-0.5 text-base">vpn_key</span>
+          <div class="flex flex-wrap gap-1" data-role="scopes"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-4 border-t border-line/60 pt-4">
+        <div class="text-xs text-muted">
+          <p data-role="created"></p>
+          <p class="mt-1" data-role="updated"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" data-action="edit" type="button">Edit</button>
+          <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-action="delete" type="button">Delete</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script>
+    const statusBar = document.getElementById('statusBar');
+    const formStatus = document.getElementById('formStatus');
+    const clientGrid = document.getElementById('clientGrid');
+    const template = document.getElementById('clientCardTemplate');
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const clientForm = document.getElementById('clientForm');
+    const saveBtn = document.getElementById('saveBtn');
+    const editorTitle = document.getElementById('editorTitle');
+
+    let allClients = [];
+
+    function setStatus(element, kind, message) {
+      const classes = {
+        error: 'border-red-200 bg-red-50 text-red-700',
+        success: 'border-green-200 bg-green-50 text-green-700',
+        info: 'border-blue-200 bg-blue-50 text-blue-700'
+      };
+      element.className = `rounded-lg border px-4 py-3 text-sm shadow-sm ${classes[kind] || classes.info}`;
+      element.textContent = message;
+      element.classList.toggle('hidden', !message);
+    }
+
+    function splitList(value) {
+      return value.split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
+    }
+
+    function getFormPayload() {
+      return {
+        id: document.getElementById('clientId').value.trim(),
+        name: document.getElementById('clientName').value.trim(),
+        secret: document.getElementById('clientSecret').value.trim(),
+        logoUrl: document.getElementById('clientLogo').value.trim(),
+        redirectUris: splitList(document.getElementById('clientRedirects').value),
+        scopes: splitList(document.getElementById('clientScopes').value),
+        isActive: document.getElementById('clientActive').value === 'true'
+      };
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Not recorded';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+    }
+
+    function setEditorMode(mode, client = null) {
+      document.getElementById('formMode').value = mode;
+      document.getElementById('currentClientId').value = client?.id || '';
+      editorTitle.textContent = mode === 'edit' ? 'Edit Client' : 'Create Client';
+      saveBtn.textContent = mode === 'edit' ? 'Save Changes' : 'Create';
+      document.getElementById('clientId').disabled = mode === 'edit';
+
+      if (!client) {
+        clientForm.reset();
+        document.getElementById('clientActive').value = 'true';
+      } else {
+        document.getElementById('clientId').value = client.id;
+        document.getElementById('clientName').value = client.name || '';
+        document.getElementById('clientSecret').value = '';
+        document.getElementById('clientLogo').value = client.logoUrl || '';
+        document.getElementById('clientRedirects').value = (client.redirectUris || []).join('\n');
+        document.getElementById('clientScopes').value = (client.scopes || []).join('\n');
+        document.getElementById('clientActive').value = client.isActive !== false ? 'true' : 'false';
+      }
+
+      setStatus(formStatus, 'info', '');
+    }
+
+    function generateSecret() {
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      let binary = '';
+      bytes.forEach(byte => {
+        binary += String.fromCharCode(byte);
+      });
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function updateStats(clients) {
+      const scopes = new Set();
+      document.getElementById('statsTotal').textContent = String(clients.length);
+      document.getElementById('statsActive').textContent = String(clients.filter(client => client.isActive !== false).length);
+      document.getElementById('statsRedirects').textContent = String(clients.reduce((sum, client) => sum + (client.redirectUris?.length || 0), 0));
+      clients.forEach(client => (client.scopes || []).forEach(scope => scopes.add(scope)));
+      document.getElementById('statsScopes').textContent = String(scopes.size);
+    }
+
+    function searchText(client) {
+      return [client.id, client.name, ...(client.redirectUris || []), ...(client.scopes || [])].join(' ').toLowerCase();
+    }
+
+    function renderClients(clients) {
+      clientGrid.innerHTML = '';
+      if (!clients.length) {
+        clientGrid.innerHTML = '<div class="rounded-xl bg-white p-10 text-center text-muted shadow-sm xl:col-span-2">No clients match the current search.</div>';
+        return;
+      }
+
+      clients.forEach(client => {
+        const fragment = template.content.cloneNode(true);
+        const badge = fragment.querySelector('[data-role="badge"]');
+        const logoImage = fragment.querySelector('[data-role="logo-image"]');
+        const logoFallback = fragment.querySelector('[data-role="logo-fallback"]');
+        const scopeList = fragment.querySelector('[data-role="scopes"]');
+
+        fragment.querySelector('[data-role="name"]').textContent = client.name || client.id;
+        fragment.querySelector('[data-role="id"]').textContent = client.id;
+        fragment.querySelector('[data-role="redirect"]').textContent = client.redirectUris?.[0] || 'No redirect URI';
+        fragment.querySelector('[data-role="redirect-count"]').textContent = `${client.redirectUris?.length || 0} registered redirect URI(s)`;
+        fragment.querySelector('[data-role="created"]').textContent = `Created: ${formatDate(client.createdAt)}`;
+        fragment.querySelector('[data-role="updated"]').textContent = `Updated: ${formatDate(client.updatedAt)}`;
+
+        badge.textContent = client.isActive !== false ? 'Active' : 'Inactive';
+        badge.className = client.isActive !== false
+          ? 'rounded-lg bg-green-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-green-700'
+          : 'rounded-lg bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-600';
+
+        if (client.logoUrl) {
+          logoImage.src = client.logoUrl;
+          logoImage.alt = `${client.name || client.id} logo`;
+          logoImage.classList.remove('hidden');
+          logoImage.addEventListener('error', () => {
+            logoImage.classList.add('hidden');
+            logoFallback.textContent = (client.name || client.id || 'A').slice(0, 1).toUpperCase();
+          }, { once: true });
+        } else {
+          logoFallback.textContent = (client.name || client.id || 'A').slice(0, 1).toUpperCase();
+        }
+
+        (client.scopes || []).forEach(scope => {
+          const chip = document.createElement('span');
+          chip.className = 'rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary';
+          chip.textContent = scope;
+          scopeList.appendChild(chip);
+        });
+
+        fragment.querySelector('[data-action="edit"]').addEventListener('click', () => setEditorMode('edit', client));
+        fragment.querySelector('[data-action="delete"]').addEventListener('click', () => deleteClient(client));
+        clientGrid.appendChild(fragment);
+      });
+    }
+
+    async function request(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options
+      });
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : null;
+      if (response.status === 401) window.location.href = '/oauth2/authorize';
+      if (response.status === 403) window.location.href = '/oauth2/error?error=access_denied';
+      return { response, payload };
+    }
+
+    async function loadClients() {
+      refreshBtn.disabled = true;
+      setStatus(statusBar, 'info', 'Loading clients from /api/clients...');
+      try {
+        const { response, payload } = await request('/api/clients');
+        if (!response.ok) throw new Error(payload?.error_description || 'Failed to load clients');
+        allClients = Array.isArray(payload) ? payload : [];
+        updateStats(allClients);
+        applySearch();
+      } catch (error) {
+        allClients = [];
+        updateStats(allClients);
+        renderClients([]);
+        setStatus(statusBar, 'error', error.message);
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    function applySearch() {
+      const keyword = searchInput.value.trim().toLowerCase();
+      const clients = keyword ? allClients.filter(client => searchText(client).includes(keyword)) : allClients;
+      renderClients(clients);
+      setStatus(statusBar, 'info', keyword ? `Showing ${clients.length} matching client(s).` : `Loaded ${allClients.length} client(s).`);
+    }
+
+    async function saveClient(event) {
+      event.preventDefault();
+      const mode = document.getElementById('formMode').value;
+      const currentId = document.getElementById('currentClientId').value;
+      const payload = getFormPayload();
+      const url = mode === 'edit' ? `/api/clients/${encodeURIComponent(currentId)}` : '/api/clients';
+      saveBtn.disabled = true;
+      try {
+        const { response, payload: result } = await request(url, {
+          method: mode === 'edit' ? 'PUT' : 'POST',
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(result?.error_description || 'Save failed');
+        setEditorMode('edit', result.client);
+        if (result.clientSecret) document.getElementById('clientSecret').value = result.clientSecret;
+        setStatus(formStatus, 'success', result.clientSecret ? `Saved. Secret: ${result.clientSecret}` : 'Saved.');
+        await loadClients();
+      } catch (error) {
+        setStatus(formStatus, 'error', error.message);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    }
+
+    async function deleteClient(client) {
+      if (!confirm(`Delete ${client.name || client.id}?`)) return;
+      try {
+        const { response, payload } = await request(`/api/clients/${encodeURIComponent(client.id)}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error(payload?.error_description || 'Delete failed');
+        if (document.getElementById('currentClientId').value === client.id) setEditorMode('create');
+        await loadClients();
+        setStatus(statusBar, 'success', 'Client deleted.');
+      } catch (error) {
+        setStatus(statusBar, 'error', error.message);
+      }
+    }
+
+    searchInput.addEventListener('input', applySearch);
+    refreshBtn.addEventListener('click', loadClients);
+    clientForm.addEventListener('submit', saveClient);
+    document.getElementById('resetFormBtn').addEventListener('click', () => setEditorMode('create'));
+    document.getElementById('cancelBtn').addEventListener('click', () => setEditorMode('create'));
+    document.getElementById('generateSecretBtn').addEventListener('click', () => {
+      document.getElementById('clientSecret').value = generateSecret();
+    });
+
+    setEditorMode('create');
+    loadClients();
+  </script>
+</body>
+</html>
