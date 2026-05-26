@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html class="light" lang="en">
+<html class="light" lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VaultSSO | OAuth2 Apps</title>
+  <title data-i18n="apps.page.title">VaultSSO | OAuth2 Applications</title>
   <script src="/assets/vaultsso-tailwind.js"></script>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,43 +16,49 @@
       <div class="flex items-center gap-4">
         <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
         <div>
-          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
-          <p class="text-sm text-muted">OAuth2 client registry</p>
+          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
+          <p class="text-sm text-muted" data-i18n="apps.header.subtitle">OAuth2 client registry</p>
         </div>
       </div>
 
-      <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
-        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/apps.html">Apps</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/tokens.html">Tokens</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html">API Docs</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile">Profile</a>
-      </nav>
+      <div class="flex flex-wrap items-center gap-3">
+        <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
+          <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/apps.html" data-i18n="apps.nav.applications">Apps</a>
+          <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/tokens.html" data-i18n="apps.nav.tokens">Tokens</a>
+          <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html" data-i18n="apps.nav.docs">API Docs</a>
+          <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile" data-i18n="apps.nav.profile">Profile</a>
+        </nav>
+        <div class="language-switch inline-flex items-center gap-1 rounded-lg border border-line bg-white/90 p-1">
+          <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="zh" data-i18n="common.language.zh">中文</button>
+          <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+        </div>
+      </div>
     </header>
 
     <section class="mb-8 rounded-xl bg-surface-container-low p-8">
       <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
         <span class="material-symbols-outlined text-base">admin_panel_settings</span>
-        Admin
+        <span data-i18n="apps.hero.eyebrow">Admin</span>
       </p>
-      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">OAuth2 Application Management</h1>
-      <p class="max-w-3xl text-base leading-8 text-muted">Create, edit, disable, and delete OAuth2 clients stored in MySQL.</p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight" data-i18n="apps.hero.title">OAuth2 Application Management</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted" data-i18n="apps.hero.description">This page loads client configuration directly from the server API backed by the database. You can create, edit, delete, and search OAuth2 clients here.</p>
     </section>
 
     <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Total Clients</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.total">Total Clients</p>
         <p class="text-3xl font-bold" id="statsTotal">0</p>
       </article>
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Active Clients</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.active">Active Clients</p>
         <p class="text-3xl font-bold" id="statsActive">0</p>
       </article>
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Redirect URIs</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.redirects">Redirect URIs</p>
         <p class="text-3xl font-bold" id="statsRedirects">0</p>
       </article>
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Unique Scopes</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.scopes">Unique Scopes</p>
         <p class="text-3xl font-bold" id="statsScopes">0</p>
       </article>
     </section>
@@ -61,10 +67,10 @@
       <section class="h-fit rounded-xl bg-white p-6 shadow-sm">
         <div class="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h2 class="font-headline text-2xl font-bold" id="editorTitle">Create Client</h2>
-            <p class="mt-2 text-sm leading-6 text-muted">Secrets can be generated in the browser or by the server.</p>
+            <h2 class="font-headline text-2xl font-bold" id="editorTitle" data-i18n="apps.editor.title_create">Create Client</h2>
+            <p class="mt-2 text-sm leading-6 text-muted" data-i18n="apps.editor.desc">This form writes directly to the database-backed client API.</p>
           </div>
-          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="resetFormBtn" type="button">Reset</button>
+          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="resetFormBtn" type="button" data-i18n="common.action.reset">Reset</button>
         </div>
 
         <div class="mb-5 hidden rounded-lg border px-4 py-3 text-sm" id="formStatus"></div>
@@ -74,51 +80,54 @@
           <input id="currentClientId" type="hidden" value="">
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Client ID</span>
-            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientId" placeholder="emlog-prod" required type="text">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.id">Client ID</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientId" data-i18n-placeholder="apps.editor.placeholder.id" placeholder="For example: emlog-prod" required type="text">
           </label>
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Name</span>
-            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientName" placeholder="emlog" required type="text">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.name">Name</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientName" data-i18n-placeholder="apps.editor.placeholder.name" placeholder="For example: emlog" required type="text">
           </label>
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Client Secret</span>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.secret">Client Secret</span>
             <div class="flex gap-3">
-              <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientSecret" placeholder="Empty means auto-generate on create" type="text">
-              <button class="rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="generateSecretBtn" type="button" title="Generate secret">
+              <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientSecret" data-i18n-placeholder="apps.editor.placeholder.secret" placeholder="Leave empty on create to auto-generate; leave empty on edit to keep the current secret" type="text">
+              <button class="rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="generateSecretBtn" type="button" data-i18n-title="common.action.generate" title="Generate">
                 <span class="material-symbols-outlined text-lg">casino</span>
               </button>
             </div>
+            <span class="mt-2 block text-xs leading-5 text-muted" data-i18n="apps.editor.help_secret">The system generates a high-entropy, URL-safe secret following common OAuth practice. Leave this empty on create to generate one automatically.</span>
           </label>
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Logo URL</span>
-            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientLogo" placeholder="https://example.com/logo.png" type="url">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.logo">Logo URL</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientLogo" data-i18n-placeholder="apps.editor.placeholder.logo" placeholder="https://example.com/logo.png" type="url">
           </label>
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Redirect URIs</span>
-            <textarea class="min-h-[112px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientRedirects" placeholder="One redirect URI per line" required></textarea>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.redirects">Redirect URIs</span>
+            <textarea class="min-h-[112px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientRedirects" data-i18n-placeholder="apps.editor.placeholder.redirects" placeholder="One redirect URI per line" required></textarea>
+            <span class="mt-2 block text-xs leading-5 text-muted" data-i18n="apps.editor.help_redirects">Enter at least one full URL. Format validation runs before save.</span>
           </label>
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Scopes</span>
-            <textarea class="min-h-[96px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientScopes" placeholder="openid&#10;profile&#10;email" required></textarea>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.scopes">Scopes</span>
+            <textarea class="min-h-[96px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientScopes" data-i18n-placeholder="apps.editor.placeholder.scopes" placeholder="Separate scopes with commas or new lines, for example: openid, profile, email" required></textarea>
+            <span class="mt-2 block text-xs leading-5 text-muted" data-i18n="apps.editor.help_scopes">It is usually safest to include at least openid, profile, and email.</span>
           </label>
 
           <label class="block">
-            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted">Status</span>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.active">Active Status</span>
             <select class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientActive">
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
+              <option value="true" data-i18n="apps.editor.active_yes">Active</option>
+              <option value="false" data-i18n="apps.editor.active_no">Inactive</option>
             </select>
           </label>
 
           <div class="flex flex-wrap gap-3 pt-2">
-            <button class="primary-gradient rounded-lg px-5 py-3 text-sm font-bold text-white" id="saveBtn" type="submit">Create</button>
-            <button class="rounded-lg border border-line px-5 py-3 text-sm font-bold text-muted hover:text-primary" id="cancelBtn" type="button">Cancel</button>
+            <button class="primary-gradient rounded-lg px-5 py-3 text-sm font-bold text-white" id="saveBtn" type="submit" data-i18n="common.action.create">Create</button>
+            <button class="rounded-lg border border-line px-5 py-3 text-sm font-bold text-muted hover:text-primary" id="cancelBtn" type="button" data-i18n="common.action.cancel">Cancel</button>
           </div>
         </form>
       </section>
@@ -128,16 +137,16 @@
           <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <label class="relative w-full lg:max-w-md">
               <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
-              <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" placeholder="Search name, id, redirect URI, or scope" type="search">
+              <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" data-i18n-placeholder="apps.search.placeholder" placeholder="Search by name, id, redirect URI, or scope..." type="search">
             </label>
             <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button">
               <span class="material-symbols-outlined text-lg">refresh</span>
-              Refresh
+              <span data-i18n="common.action.refresh">Refresh</span>
             </button>
           </div>
         </div>
 
-        <div class="rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar">Loading clients...</div>
+        <div class="rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar" data-i18n="apps.status.loading">Loading applications from /api/clients...</div>
         <div class="grid grid-cols-1 gap-5 xl:grid-cols-2" id="clientGrid"></div>
       </section>
     </div>
@@ -179,14 +188,16 @@
           <p class="mt-1" data-role="updated"></p>
         </div>
         <div class="flex items-center gap-2">
-          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" data-action="edit" type="button">Edit</button>
-          <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-action="delete" type="button">Delete</button>
+          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" data-action="edit" type="button" data-i18n="common.action.edit">Edit</button>
+          <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-action="delete" type="button" data-i18n="common.action.delete">Delete</button>
         </div>
       </div>
     </article>
   </template>
 
+  <script src="/i18n.js?v=20260527-1"></script>
   <script>
+    const i18n = window.VaultI18n;
     const statusBar = document.getElementById('statusBar');
     const formStatus = document.getElementById('formStatus');
     const clientGrid = document.getElementById('clientGrid');
@@ -201,6 +212,10 @@
     let pendingDeleteClientId = '';
     let pendingDeleteTimer = null;
 
+    function translate(key, variables = {}) {
+      return i18n.t(key, variables);
+    }
+
     function setStatus(element, kind, message) {
       const classes = {
         error: 'border-red-200 bg-red-50 text-red-700',
@@ -214,16 +229,18 @@
 
     function setButtonLoading(button, isLoading, label) {
       if (!button) return;
-      if (!button.dataset.originalLabel) {
-        button.dataset.originalLabel = button.innerHTML;
-      }
 
       button.disabled = isLoading;
       button.classList.toggle('opacity-70', isLoading);
       button.classList.toggle('cursor-wait', isLoading);
-      button.innerHTML = isLoading
-        ? `<span class="material-symbols-outlined animate-spin text-lg">progress_activity</span><span>${label || 'Loading...'}</span>`
-        : button.dataset.originalLabel;
+
+      if (isLoading) {
+        button.dataset.originalHtml = button.innerHTML;
+        button.innerHTML = `<span class="material-symbols-outlined animate-spin text-lg">progress_activity</span><span>${label || translate('common.loading')}</span>`;
+      } else if (button.dataset.originalHtml) {
+        button.innerHTML = button.dataset.originalHtml;
+        delete button.dataset.originalHtml;
+      }
     }
 
     function clearPendingDelete() {
@@ -233,7 +250,7 @@
         pendingDeleteTimer = null;
       }
       document.querySelectorAll('[data-action="delete"]').forEach(button => {
-        button.textContent = 'Delete';
+        button.textContent = translate('common.action.delete');
         button.className = 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100';
       });
     }
@@ -255,19 +272,17 @@
     }
 
     function formatDate(value) {
-      if (!value) return 'Not recorded';
+      if (!value) return translate('common.not_recorded');
       const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+      return Number.isNaN(date.getTime()) ? translate('common.not_recorded') : date.toLocaleString(i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US');
     }
 
     function setEditorMode(mode, client = null) {
       document.getElementById('formMode').value = mode;
       document.getElementById('currentClientId').value = client?.id || '';
-      editorTitle.textContent = mode === 'edit' ? 'Edit Client' : 'Create Client';
-      saveBtn.textContent = mode === 'edit' ? 'Save Changes' : 'Create';
+      editorTitle.textContent = translate(mode === 'edit' ? 'apps.editor.title_edit' : 'apps.editor.title_create');
+      saveBtn.textContent = translate(mode === 'edit' ? 'common.action.save_changes' : 'common.action.create');
       document.getElementById('clientId').disabled = mode === 'edit';
-      saveBtn.textContent = mode === 'edit' ? 'Save Changes' : 'Create';
-      saveBtn.dataset.originalLabel = saveBtn.textContent;
 
       if (!client) {
         clientForm.reset();
@@ -311,7 +326,10 @@
     function renderClients(clients) {
       clientGrid.innerHTML = '';
       if (!clients.length) {
-        clientGrid.innerHTML = '<div class="rounded-xl bg-white p-10 text-center text-muted shadow-sm xl:col-span-2">No clients match the current search.</div>';
+        const empty = document.createElement('div');
+        empty.className = 'rounded-xl bg-white p-10 text-center text-muted shadow-sm xl:col-span-2';
+        empty.innerHTML = `<p class="font-bold text-ink">${translate('apps.list.empty_title')}</p><p class="mt-2">${translate('apps.list.empty_desc')}</p>`;
+        clientGrid.appendChild(empty);
         return;
       }
 
@@ -324,19 +342,21 @@
 
         fragment.querySelector('[data-role="name"]').textContent = client.name || client.id;
         fragment.querySelector('[data-role="id"]').textContent = client.id;
-        fragment.querySelector('[data-role="redirect"]').textContent = client.redirectUris?.[0] || 'No redirect URI';
-        fragment.querySelector('[data-role="redirect-count"]').textContent = `${client.redirectUris?.length || 0} registered redirect URI(s)`;
-        fragment.querySelector('[data-role="created"]').textContent = `Created: ${formatDate(client.createdAt)}`;
-        fragment.querySelector('[data-role="updated"]').textContent = `Updated: ${formatDate(client.updatedAt)}`;
+        const redirectCount = client.redirectUris?.length || 0;
+        fragment.querySelector('[data-role="id"]').textContent = translate('apps.card.client_id', { id: client.id });
+        fragment.querySelector('[data-role="redirect"]').textContent = client.redirectUris?.[0] || translate('apps.card.no_redirect');
+        fragment.querySelector('[data-role="redirect-count"]').textContent = translate(redirectCount === 1 ? 'apps.card.redirect_count_one' : 'apps.card.redirect_count', { count: redirectCount });
+        fragment.querySelector('[data-role="created"]').textContent = translate('apps.card.created', { value: formatDate(client.createdAt) });
+        fragment.querySelector('[data-role="updated"]').textContent = translate('apps.card.updated', { value: formatDate(client.updatedAt) });
 
-        badge.textContent = client.isActive !== false ? 'Active' : 'Inactive';
+        badge.textContent = translate(client.isActive !== false ? 'apps.card.active' : 'apps.card.inactive');
         badge.className = client.isActive !== false
           ? 'rounded-lg bg-green-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-green-700'
           : 'rounded-lg bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-600';
 
         if (client.logoUrl) {
           logoImage.src = client.logoUrl;
-          logoImage.alt = `${client.name || client.id} logo`;
+          logoImage.alt = translate('apps.card.logo_alt', { name: client.name || client.id });
           logoImage.classList.remove('hidden');
           logoImage.addEventListener('error', () => {
             logoImage.classList.add('hidden');
@@ -344,6 +364,13 @@
           }, { once: true });
         } else {
           logoFallback.textContent = (client.name || client.id || 'A').slice(0, 1).toUpperCase();
+        }
+
+        if (!(client.scopes || []).length) {
+          const chip = document.createElement('span');
+          chip.className = 'rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600';
+          chip.textContent = translate('apps.card.no_scopes');
+          scopeList.appendChild(chip);
         }
 
         (client.scopes || []).forEach(scope => {
@@ -373,11 +400,11 @@
     }
 
     async function loadClients() {
-      setButtonLoading(refreshBtn, true, 'Loading');
-      setStatus(statusBar, 'info', 'Loading clients from /api/clients...');
+      setButtonLoading(refreshBtn, true, translate('common.loading'));
+      setStatus(statusBar, 'info', translate('apps.status.loading'));
       try {
         const { response, payload } = await request('/api/clients');
-        if (!response.ok) throw new Error(payload?.error_description || 'Failed to load clients');
+        if (!response.ok) throw new Error(i18n.resolveMessage(payload, 'apps.status.load_failed'));
         allClients = Array.isArray(payload) ? payload : [];
         updateStats(allClients);
         applySearch();
@@ -395,7 +422,9 @@
       const keyword = searchInput.value.trim().toLowerCase();
       const clients = keyword ? allClients.filter(client => searchText(client).includes(keyword)) : allClients;
       renderClients(clients);
-      setStatus(statusBar, 'info', keyword ? `Showing ${clients.length} matching client(s).` : `Loaded ${allClients.length} client(s).`);
+      setStatus(statusBar, 'info', keyword
+        ? translate('apps.status.filtered', { count: clients.length, keyword })
+        : translate('apps.status.loaded', { count: allClients.length }));
     }
 
     async function saveClient(event) {
@@ -404,16 +433,16 @@
       const currentId = document.getElementById('currentClientId').value;
       const payload = getFormPayload();
       const url = mode === 'edit' ? `/api/clients/${encodeURIComponent(currentId)}` : '/api/clients';
-      setButtonLoading(saveBtn, true, mode === 'edit' ? 'Saving' : 'Creating');
+      setButtonLoading(saveBtn, true, translate(mode === 'edit' ? 'apps.editor.saving_update' : 'apps.editor.saving_create'));
       try {
         const { response, payload: result } = await request(url, {
           method: mode === 'edit' ? 'PUT' : 'POST',
           body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error(result?.error_description || 'Save failed');
+        if (!response.ok) throw new Error(i18n.resolveMessage(result, 'apps.editor.save_failed'));
         setEditorMode('edit', result.client);
         if (result.clientSecret) document.getElementById('clientSecret').value = result.clientSecret;
-        setStatus(formStatus, 'success', result.clientSecret ? `Saved. Secret: ${result.clientSecret}` : 'Saved.');
+        setStatus(formStatus, 'success', result.clientSecret ? translate('apps.editor.secret_notice', { secret: result.clientSecret }) : translate(mode === 'edit' ? 'apps.editor.update_success' : 'apps.editor.create_success'));
         await loadClients();
       } catch (error) {
         setStatus(formStatus, 'error', error.message);
@@ -426,21 +455,21 @@
       if (pendingDeleteClientId !== client.id) {
         clearPendingDelete();
         pendingDeleteClientId = client.id;
-        button.textContent = 'Confirm delete';
+        button.textContent = translate('common.action.confirm_delete');
         button.className = 'rounded-lg border border-red-300 bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700';
-        setStatus(statusBar, 'info', `Click Confirm delete to remove ${client.name || client.id}.`);
+        setStatus(statusBar, 'info', translate('apps.status.delete_hint', { name: client.name || client.id }));
         pendingDeleteTimer = setTimeout(clearPendingDelete, 5000);
         return;
       }
 
       clearPendingDelete();
-      setButtonLoading(button, true, 'Deleting');
+      setButtonLoading(button, true, translate('apps.editor.deleting'));
       try {
         const { response, payload } = await request(`/api/clients/${encodeURIComponent(client.id)}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error(payload?.error_description || 'Delete failed');
+        if (!response.ok) throw new Error(i18n.resolveMessage(payload, 'apps.editor.delete_failed'));
         if (document.getElementById('currentClientId').value === client.id) setEditorMode('create');
         await loadClients();
-        setStatus(statusBar, 'success', 'Client deleted.');
+        setStatus(statusBar, 'success', translate('apps.editor.delete_success'));
       } catch (error) {
         setStatus(statusBar, 'error', error.message);
       } finally {
@@ -456,7 +485,15 @@
     document.getElementById('generateSecretBtn').addEventListener('click', () => {
       document.getElementById('clientSecret').value = generateSecret();
     });
+    document.addEventListener('vaultsso:languagechange', () => {
+      document.title = translate('apps.page.title');
+      clearPendingDelete();
+      setEditorMode(document.getElementById('formMode').value, allClients.find(client => client.id === document.getElementById('currentClientId').value) || null);
+      applySearch();
+    });
 
+    i18n.bindLanguageButtons(document);
+    document.title = translate('apps.page.title');
     setEditorMode('create');
     loadClients();
   </script>
