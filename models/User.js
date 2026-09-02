@@ -35,7 +35,8 @@ class UserModel {
 
   async create(userData) {
     const id = crypto.randomUUID();
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    // Empty password means "not set yet": the user must verify email and set one before signing in.
+    const hashedPassword = userData.password ? await bcrypt.hash(userData.password, 10) : '';
     const role = await this.pickDefaultRole(userData.role);
 
     const createdAt = userData.createdAt && !Number.isNaN(new Date(userData.createdAt).getTime())

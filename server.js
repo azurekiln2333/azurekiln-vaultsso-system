@@ -1518,19 +1518,27 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   const password = String(req.body.password || '');
   const user = await User.findByUsername(username);
 
-  if (!user || !await bcrypt.compare(password, user.password)) {
-    return res.status(401).json({
-      error: 'invalid_grant',
-      error_key: 'auth.invalid_credentials',
-      error_description: '用户名或密码错误'
-    });
-  }
-
-  if (isUserBanned(user)) {
+  if (user && isUserBanned(user)) {
     return res.status(403).json({
       error: 'account_banned',
       error_key: 'auth.account_banned',
       error_description: '账户已被封禁，请联系管理员'
+    });
+  }
+
+  if (user && !user.password) {
+    return res.status(403).json({
+      error: 'password_not_set',
+      error_key: 'auth.password.not_set',
+      error_description: '该账户尚未设置密码，请先验证邮箱并设置密码'
+    });
+  }
+
+  if (!user || !user.password || !await bcrypt.compare(password, user.password)) {
+    return res.status(401).json({
+      error: 'invalid_grant',
+      error_key: 'auth.invalid_credentials',
+      error_description: '用户名或密码错误'
     });
   }
 
@@ -1862,7 +1870,8 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   if (newPassword) {
     const currentPassword = String(req.body.currentPassword || '');
 
-    if (!currentPassword || !await bcrypt.compare(currentPassword, currentUser.password)) {
+    // Accounts without a password yet (e.g. imported users) may set one directly.
+    if (currentUser.password && (!currentPassword || !await bcrypt.compare(currentPassword, currentUser.password))) {
       return res.status(400).json({
         error: 'invalid_request',
         error_key: 'profile.current_password.invalid',
@@ -2454,7 +2463,7 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
 }));
 
 const USER_IMPORT_MAX_ROWS = 200;
-const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role', 'nickname', 'photo', 'description', 'credits', 'qq_login_openid', 'ip', 'ischeck', 'create_time', 'update_time'];
+const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role', 'nickname', 'photo', 'description', 'credits', 'qq_login_openid', 'ip', 'ischeck', 'state', 'create_time', 'update_time'];
 
 function parseImportCsvLine(line) {
   const cells = [];
@@ -2564,6 +2573,7 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
     const qqOpenid = String(row.qq_login_openid ?? '').trim();
     const lastLoginIp = normalizeText(row.ip).slice(0, 64);
     const emailVerified = ['y', '1', 'true'].includes(normalizeText(row.ischeck).toLowerCase());
+    const banned = ['1', 'true', 'y'].includes(normalizeText(row.state).toLowerCase());
     const createdAt = parseImportDate(row.create_time);
     const updatedAt = parseImportDate(row.update_time);
 
@@ -2612,9 +2622,8 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
       continue;
     }
 
-    const generatedPassword = password ? '' : crypto.randomBytes(9).toString('base64url');
     const role = normalizeText(row.role).toLowerCase() === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_USER;
-    const user = await User.create({ username, email, password: generatedPassword || password, name, avatar, description, credits, role, emailVerified, lastLoginIp, createdAt, updatedAt });
+    const user = await User.create({ username, email, password: password || '', name, avatar, description, credits, role, emailVerified, banned, lastLoginIp, createdAt, updatedAt });
     if (qqOpenid) {
       await ExternalIdentity.create({
         userId: user.id,
@@ -2626,7 +2635,7 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
         profile: {}
       });
     }
-    created.push({ ...serializeUser(user), generatedPassword });
+    created.push(serializeUser(user));
   }
 
   res.json({
