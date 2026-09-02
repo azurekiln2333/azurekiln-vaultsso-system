@@ -39,9 +39,9 @@ class UserModel {
     const role = await this.pickDefaultRole(userData.role);
     
     const [result] = await this.pool.execute(
-      `INSERT INTO users (id, username, email, password, name, avatar, email_verified, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, userData.username, userData.email, hashedPassword, userData.name || null, userData.avatar || null, userData.emailVerified || false, role]
+      `INSERT INTO users (id, username, email, password, name, avatar, email_verified, banned, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, userData.username, userData.email, hashedPassword, userData.name || null, userData.avatar || null, userData.emailVerified || false, userData.banned || false, role]
     );
     
     return this.findById(id);
@@ -73,7 +73,7 @@ class UserModel {
 
   async findAll() {
     const [rows] = await this.pool.execute(
-      'SELECT id, username, email, name, avatar, email_verified, role, created_at, updated_at FROM users'
+      'SELECT id, username, email, name, avatar, email_verified, banned, role, created_at, updated_at FROM users'
     );
     return rows;
   }
@@ -101,6 +101,10 @@ class UserModel {
     if (userData.emailVerified !== undefined) {
       fields.push('email_verified = ?');
       values.push(userData.emailVerified);
+    }
+    if (userData.banned !== undefined) {
+      fields.push('banned = ?');
+      values.push(userData.banned);
     }
     if (userData.role !== undefined) {
       fields.push('role = ?');

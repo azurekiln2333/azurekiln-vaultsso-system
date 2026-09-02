@@ -513,6 +513,7 @@ function serializeUser(user) {
     avatar: user.avatar || '',
     role,
     isAdmin: role === USER_ROLE_ADMIN,
+    banned: Boolean(user.banned ?? user.is_banned),
     emailVerified: Boolean(user.emailVerified ?? user.email_verified),
     createdAt: user.createdAt || user.created_at || null,
     updatedAt: user.updatedAt || user.updated_at || null
@@ -555,11 +556,20 @@ async function getAuthenticatedUser(req) {
     return null;
   }
 
-  return User.findById(session.sub);
+  const user = await User.findById(session.sub);
+  if (!user || isUserBanned(user)) {
+    return null;
+  }
+
+  return user;
 }
 
 function isAdminUser(user) {
   return normalizeText(user?.role).toLowerCase() === USER_ROLE_ADMIN;
+}
+
+function isUserBanned(user) {
+  return Boolean(user && (user.banned ?? user.is_banned));
 }
 
 function isClientActive(client) {
@@ -1480,6 +1490,9 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
     };
     if (!claims.id) throw new Error('OIDC account did not provide a subject identifier');
     const user = await findOrCreateOidcUser(claims, cookieState.linkUserId, config);
+    if (isUserBanned(user)) {
+      return res.redirect(oidcErrorRedirect(cookieState, '账户已被封禁，请联系管理员'));
+    }
     setSessionCookie(res, user);
     return res.redirect(getOidcReturnPath(cookieState.returnTo));
   } catch (error) {
@@ -1498,6 +1511,14 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
       error: 'invalid_grant',
       error_key: 'auth.invalid_credentials',
       error_description: '用户名或密码错误'
+    });
+  }
+
+  if (isUserBanned(user)) {
+    return res.status(403).json({
+      error: 'account_banned',
+      error_key: 'auth.account_banned',
+      error_description: '账户已被封禁，请联系管理员'
     });
   }
 
@@ -1916,6 +1937,14 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
+    if (isUserBanned(user)) {
+      return res.status(403).json({
+        error: 'account_banned',
+        error_key: 'auth.account_banned',
+        error_description: '账户已被封禁，请联系管理员'
+      });
+    }
+
     await Token.deleteAuthCode(code);
 
     const accessToken = await generateAccessToken(authCodeData.user_id, clientId, authCodeData.scopes);
@@ -1975,6 +2004,15 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
         error: 'invalid_grant',
         error_key: 'oauth.refresh_token.expired',
         error_description: 'Refresh token expired'
+      });
+    }
+
+    const refreshUser = await User.findById(decoded.sub);
+    if (!refreshUser || isUserBanned(refreshUser)) {
+      return res.status(403).json({
+        error: 'account_banned',
+        error_key: 'auth.account_banned',
+        error_description: '账户已被封禁，请联系管理员'
       });
     }
 
@@ -2056,6 +2094,14 @@ app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
       error: 'user_not_found',
       error_key: 'auth.user_not_found',
       error_description: '未找到用户'
+    });
+  }
+
+  if (isUserBanned(user)) {
+    return res.status(403).json({
+      error: 'account_banned',
+      error_key: 'auth.account_banned',
+      error_description: '账户已被封禁，请联系管理员'
     });
   }
 
@@ -2268,6 +2314,17 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   const updates = { role: nextRole };
+  if (req.body.banned !== undefined) {
+    const banned = Boolean(req.body.banned);
+    if (banned && target.id === admin.id) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'users.self_ban',
+        error_description: '不能封禁当前登录的管理员账户'
+      });
+    }
+    updates.banned = banned;
+  }
   if (req.body.emailVerified !== undefined) {
     updates.emailVerified = Boolean(req.body.emailVerified);
   }
