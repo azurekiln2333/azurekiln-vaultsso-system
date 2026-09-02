@@ -33,14 +33,18 @@
       <p class="mb-3 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
         <span class="material-symbols-outlined text-base">manage_accounts</span> 管理员控制台
       </p>
-      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">用户管理</h1>
-      <p class="max-w-3xl text-base leading-8 text-muted">查看所有账户、登录来源同步的资料、邮箱验证状态和权限。修改会立即写入当前数据库。</p>
-    </section>
-
-    <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
-      <article class="rounded-xl bg-white p-5 shadow-sm"><p class="mb-2 text-sm text-muted">全部用户</p><p class="text-3xl font-bold" id="statsTotal">0</p></article>
-      <article class="rounded-xl bg-white p-5 shadow-sm"><p class="mb-2 text-sm text-muted">管理员</p><p class="text-3xl font-bold" id="statsAdmins">0</p></article>
-      <article class="rounded-xl bg-white p-5 shadow-sm"><p class="mb-2 text-sm text-muted">已验证邮箱</p><p class="text-3xl font-bold" id="statsVerified">0</p></article>
+      <div class="mb-3 flex flex-wrap items-center gap-4">
+        <h1 class="font-headline text-4xl font-extrabold tracking-tight">用户管理</h1>
+        <div aria-label="按角色筛选" class="flex flex-wrap items-center gap-2" role="group">
+          <button aria-pressed="true" class="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white transition-colors" id="tabAllUsers" type="button">
+            <span class="material-symbols-outlined text-lg">group</span>全部用户<span class="rounded-full bg-white/25 px-2 py-0.5 text-xs font-bold" id="statsTotal">0</span>
+          </button>
+          <button aria-pressed="false" class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-bold text-muted transition-colors hover:text-primary" id="tabAdminUsers" type="button">
+            <span class="material-symbols-outlined text-lg">admin_panel_settings</span>管理员<span class="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-bold text-primary" id="statsAdmins">0</span>
+          </button>
+        </div>
+      </div>
+      <p class="max-w-3xl text-base leading-8 text-muted">查看所有账户、登录来源同步的资料、邮箱验证状态和权限。修改会立即写入当前数据库，点击列表中的用户可进入详情页编辑。</p>
     </section>
 
     <section class="mb-6 rounded-xl bg-white p-5 shadow-sm">
@@ -50,9 +54,6 @@
           <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" placeholder="搜索姓名、用户名、邮箱或用户 ID" type="search">
         </label>
         <div class="flex flex-wrap items-center gap-3">
-          <select class="rounded-lg border-line py-3 pl-3 pr-9 text-sm" id="roleFilter" aria-label="按角色筛选">
-            <option value="">全部角色</option><option value="admin">管理员</option><option value="user">普通用户</option>
-          </select>
           <select class="rounded-lg border-line py-3 pl-3 pr-9 text-sm" id="verifiedFilter" aria-label="按邮箱状态筛选">
             <option value="">全部邮箱状态</option><option value="true">已验证</option><option value="false">未验证</option>
           </select>
@@ -79,12 +80,14 @@
     const tableBody = document.getElementById('userTableBody');
     const statusBar = document.getElementById('statusBar');
     const searchInput = document.getElementById('searchInput');
-    const roleFilter = document.getElementById('roleFilter');
     const verifiedFilter = document.getElementById('verifiedFilter');
     const refreshBtn = document.getElementById('refreshBtn');
+    const tabAllUsers = document.getElementById('tabAllUsers');
+    const tabAdminUsers = document.getElementById('tabAdminUsers');
     let allUsers = [];
     let pendingDeleteId = '';
     let pendingDeleteTimer = null;
+    let roleTab = 'all';
 
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function dateText(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN'); }
@@ -95,13 +98,24 @@
     function updateStats() {
       document.getElementById('statsTotal').textContent = allUsers.length;
       document.getElementById('statsAdmins').textContent = allUsers.filter(user => user.role === 'admin').length;
-      document.getElementById('statsVerified').textContent = allUsers.filter(user => user.emailVerified).length;
+    }
+    function setRoleTab(nextTab) {
+      roleTab = nextTab;
+      const activeClasses = ['bg-primary', 'text-white'];
+      const inactiveClasses = ['border', 'border-line', 'bg-white', 'text-muted', 'hover:text-primary'];
+      [tabAllUsers, tabAdminUsers].forEach(tab => {
+        const isActive = (tab === tabAllUsers) === (roleTab === 'all');
+        tab.classList.remove(...activeClasses, ...inactiveClasses);
+        tab.classList.add(...(isActive ? activeClasses : inactiveClasses));
+        tab.setAttribute('aria-pressed', String(isActive));
+      });
+      renderUsers();
     }
     function filteredUsers() {
       const keyword = searchInput.value.trim().toLowerCase();
       return allUsers.filter(user => {
         const text = [user.id, user.name, user.username, user.email].join(' ').toLowerCase();
-        return (!keyword || text.includes(keyword)) && (!roleFilter.value || user.role === roleFilter.value) && (!verifiedFilter.value || String(Boolean(user.emailVerified)) === verifiedFilter.value);
+        return (!keyword || text.includes(keyword)) && (roleTab === 'all' || user.role === 'admin') && (!verifiedFilter.value || String(Boolean(user.emailVerified)) === verifiedFilter.value);
       });
     }
     function renderUsers() {
@@ -144,7 +158,9 @@
       clearTimeout(pendingDeleteTimer);
       request(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(() => { allUsers = allUsers.filter(user => user.id !== id); updateStats(); renderUsers(); setStatus('success', '用户已删除。'); }).catch(error => setStatus('error', error.message)).finally(() => { pendingDeleteId = ''; });
     }
-    [searchInput, roleFilter, verifiedFilter].forEach(control => control.addEventListener('input', renderUsers));
+    [searchInput, verifiedFilter].forEach(control => control.addEventListener('input', renderUsers));
+    tabAllUsers.addEventListener('click', () => setRoleTab('all'));
+    tabAdminUsers.addEventListener('click', () => setRoleTab('admin'));
     refreshBtn.addEventListener('click', loadUsers);
     loadUsers();
   </script>
