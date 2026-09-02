@@ -88,6 +88,44 @@ async function sendVerificationEmail({ to, code, purpose, expiresInMinutes }) {
   return { delivered: true, mode: 'smtp' };
 }
 
+function getSmtpSettings() {
+  return {
+    host: normalizeText(process.env.SMTP_HOST),
+    port: Number(process.env.SMTP_PORT || 587),
+    user: normalizeText(process.env.SMTP_USER),
+    from: normalizeText(process.env.MAIL_FROM),
+    // The password is never returned; only whether one is stored.
+    hasPassword: String(process.env.SMTP_PASS || '') !== ''
+  };
+}
+
+function applySmtpSettings({ host, port, user, password, from }) {
+  if (host !== undefined) process.env.SMTP_HOST = normalizeText(host);
+  if (port !== undefined && Number(port) > 0) process.env.SMTP_PORT = String(Number(port));
+  if (user !== undefined) process.env.SMTP_USER = normalizeText(user);
+  if (password !== undefined) process.env.SMTP_PASS = String(password || '');
+  if (from !== undefined) process.env.MAIL_FROM = normalizeText(from);
+  // Drop the cached transporter so the next send picks up the new settings.
+  transporter = null;
+}
+
+async function sendTestEmail(to) {
+  const from = normalizeText(process.env.MAIL_FROM) || 'VaultSSO <no-reply@localhost>';
+  const smtp = getTransporter();
+  if (!smtp) {
+    throw new Error('SMTP 未配置：请先填写主机、用户名和密码');
+  }
+  await smtp.sendMail({
+    from,
+    to,
+    subject: 'VaultSSO SMTP test',
+    text: 'This is a test email from your VaultSSO SMTP settings. If you can read this, sending works.'
+  });
+}
+
 module.exports = {
-  sendVerificationEmail
+  sendVerificationEmail,
+  getSmtpSettings,
+  applySmtpSettings,
+  sendTestEmail
 };

@@ -14,7 +14,7 @@ const ClientModel = require('./models/Client');
 const TokenModel = require('./models/Token');
 const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
 const ExternalIdentityModel = require('./models/ExternalIdentity');
-const { sendVerificationEmail } = require('./services/email');
+const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail } = require('./services/email');
 
 const app = express();
 
@@ -28,7 +28,7 @@ const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html', '/user.html']);
+const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html', '/user.html', '/smtp.html']);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
 const OIDC_STATE_COOKIE = 'oidc_state';
@@ -2758,6 +2758,70 @@ app.delete('/api/clients/:id', asyncHandler(async (req, res) => {
     message_key: 'clients.deleted',
     message: '应用已删除'
   });
+}));
+
+app.get('/api/admin/smtp', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+  res.json(getSmtpSettings());
+}));
+
+app.put('/api/admin/smtp', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const host = req.body.host !== undefined ? normalizeText(req.body.host) : undefined;
+  if (host !== undefined && host && !/^[a-zA-Z0-9.-]+$/.test(host)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'smtp.host.invalid',
+      error_description: 'SMTP 主机格式无效'
+    });
+  }
+
+  const port = req.body.port !== undefined ? Number(req.body.port) : undefined;
+  if (port !== undefined && (!Number.isInteger(port) || port <= 0 || port > 65535)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'smtp.port.invalid',
+      error_description: 'SMTP 端口无效'
+    });
+  }
+
+  applySmtpSettings({
+    host,
+    port,
+    user: req.body.user,
+    password: req.body.password,
+    from: req.body.from
+  });
+
+  res.json({ ...getSmtpSettings(), message_key: 'smtp.saved', message: '发件设置已保存（运行时生效，重启后以 .env 为准）' });
+}));
+
+app.post('/api/admin/smtp/test', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const to = normalizeEmail(req.body.to);
+  if (!to || !isValidEmail(to)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'validation.email.invalid',
+      error_description: '请输入有效的收件邮箱地址'
+    });
+  }
+
+  try {
+    await sendTestEmail(to);
+    res.json({ message_key: 'smtp.test_sent', message: `测试邮件已发送到 ${to}` });
+  } catch (error) {
+    res.status(502).json({
+      error: 'smtp_failed',
+      error_key: 'smtp.test_failed',
+      error_description: `发送失败：${error.message}`
+    });
+  }
 }));
 
 app.get('/api/tokens', asyncHandler(async (req, res) => {
