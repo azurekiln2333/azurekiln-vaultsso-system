@@ -96,6 +96,14 @@ function normalizeEmail(value) {
   return normalizeText(value).toLowerCase();
 }
 
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim().slice(0, 64);
+  }
+  return String(req.socket?.remoteAddress || '').slice(0, 64);
+}
+
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -515,6 +523,9 @@ function serializeUser(user) {
     isAdmin: role === USER_ROLE_ADMIN,
     banned: Boolean(user.banned ?? user.is_banned),
     emailVerified: Boolean(user.emailVerified ?? user.email_verified),
+    description: user.description || '',
+    credits: Number(user.credits ?? 0) || 0,
+    lastLoginIp: user.last_login_ip || user.lastLoginIp || '',
     createdAt: user.createdAt || user.created_at || null,
     updatedAt: user.updatedAt || user.updated_at || null
   };
@@ -1493,6 +1504,7 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
     if (isUserBanned(user)) {
       return res.redirect(oidcErrorRedirect(cookieState, '账户已被封禁，请联系管理员'));
     }
+    await User.update(user.id, { lastLoginIp: getClientIp(req) });
     setSessionCookie(res, user);
     return res.redirect(getOidcReturnPath(cookieState.returnTo));
   } catch (error) {
@@ -1522,6 +1534,7 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
+  await User.update(user.id, { lastLoginIp: getClientIp(req) });
   setSessionCookie(res, user);
 
   const result = await buildAuthorizationResponseV2(user, req.body);
@@ -1654,7 +1667,8 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
     password,
     name: name || username,
     avatar: '',
-    emailVerified: true
+    emailVerified: true,
+    lastLoginIp: getClientIp(req)
   });
 
   setSessionCookie(res, user);
@@ -1755,11 +1769,13 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   const hasUsername = Object.prototype.hasOwnProperty.call(req.body, 'username');
   const hasEmail = Object.prototype.hasOwnProperty.call(req.body, 'email');
   const hasAvatar = Object.prototype.hasOwnProperty.call(req.body, 'avatar');
+  const hasDescription = Object.prototype.hasOwnProperty.call(req.body, 'description');
 
   let nextName = currentUser.name;
   let nextUsername = currentUser.username;
   let nextEmail = currentUser.email;
   let nextAvatar = currentUser.avatar || '';
+  let nextDescription = currentUser.description || '';
 
   if (hasName) {
     const normalizedName = normalizeText(req.body.name);
@@ -1806,6 +1822,18 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
 
   if (hasAvatar) {
     nextAvatar = normalizeText(req.body.avatar);
+  }
+
+  if (hasDescription) {
+    const nextBio = String(req.body.description ?? '').trim();
+    if (nextBio.length > 500) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'profile.description.too_long',
+        error_description: '个人简介不能超过 500 字'
+      });
+    }
+    nextDescription = nextBio;
   }
 
   const { usernameConflict, emailConflict } = await findUserConflicts({
@@ -1857,7 +1885,8 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
     name: nextName,
     username: nextUsername,
     email: nextEmail,
-    avatar: nextAvatar
+    avatar: nextAvatar,
+    description: nextDescription
   });
 
   const updatedUser = await User.findById(currentUser.id);
@@ -2361,6 +2390,28 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   if (req.body.avatar !== undefined) {
     updates.avatar = normalizeText(req.body.avatar);
   }
+  if (req.body.description !== undefined) {
+    const description = String(req.body.description ?? '').trim();
+    if (description.length > 500) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'users.description.too_long',
+        error_description: '个人简介不能超过 500 字'
+      });
+    }
+    updates.description = description;
+  }
+  if (req.body.credits !== undefined) {
+    const credits = Number(req.body.credits);
+    if (!Number.isInteger(credits) || credits < 0) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'users.credits.invalid',
+        error_description: '积分必须是不小于 0 的整数'
+      });
+    }
+    updates.credits = credits;
+  }
 
   const updated = await User.update(userId, updates);
   const identities = await ExternalIdentity.findByUserId(userId);
@@ -2403,7 +2454,7 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
 }));
 
 const USER_IMPORT_MAX_ROWS = 200;
-const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role'];
+const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role', 'nickname', 'photo', 'description', 'credits', 'qq_login_openid'];
 
 function parseImportCsvLine(line) {
   const cells = [];
@@ -2496,8 +2547,12 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
     const row = rows[index] || {};
     const email = normalizeEmail(row.email);
     const username = normalizeText(row.username) || email;
-    const name = normalizeText(row.name);
+    const name = normalizeText(row.name) || normalizeText(row.nickname);
     const password = String(row.password || '');
+    const avatar = normalizeText(row.avatar) || normalizeText(row.photo);
+    const description = String(row.description ?? '').trim();
+    const creditsRaw = String(row.credits ?? '').trim();
+    const qqOpenid = String(row.qq_login_openid ?? '').trim();
 
     if (!email || !isValidEmail(email)) {
       skipped.push({ row: index + 1, username, email, reason: '邮箱缺失或格式无效' });
@@ -2510,6 +2565,18 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
     if (password && password.length < 6) {
       skipped.push({ row: index + 1, username, email, reason: '密码长度不能少于 6 位' });
       continue;
+    }
+    if (description.length > 500) {
+      skipped.push({ row: index + 1, username, email, reason: '个人简介不能超过 500 字' });
+      continue;
+    }
+    let credits = 0;
+    if (creditsRaw) {
+      credits = Number(creditsRaw);
+      if (!Number.isInteger(credits) || credits < 0) {
+        skipped.push({ row: index + 1, username, email, reason: '积分必须是不小于 0 的整数' });
+        continue;
+      }
     }
 
     const dedupeKey = `${username.toLowerCase()}|${email}`;
@@ -2527,10 +2594,25 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
       skipped.push({ row: index + 1, username, email, reason: '邮箱已被其他账户使用' });
       continue;
     }
+    if (qqOpenid && await ExternalIdentity.findByProviderUserId('qq', qqOpenid)) {
+      skipped.push({ row: index + 1, username, email, reason: 'QQ 账号已绑定其他用户' });
+      continue;
+    }
 
     const generatedPassword = password ? '' : crypto.randomBytes(9).toString('base64url');
     const role = normalizeText(row.role).toLowerCase() === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_USER;
-    const user = await User.create({ username, email, password: generatedPassword || password, name, role, emailVerified: false });
+    const user = await User.create({ username, email, password: generatedPassword || password, name, avatar, description, credits, role, emailVerified: false });
+    if (qqOpenid) {
+      await ExternalIdentity.create({
+        userId: user.id,
+        provider: 'qq',
+        providerUserId: qqOpenid,
+        providerUsername: username,
+        displayName: name,
+        email,
+        profile: {}
+      });
+    }
     created.push({ ...serializeUser(user), generatedPassword });
   }
 

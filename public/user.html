@@ -60,7 +60,7 @@
           <div class="space-y-2" id="identityList"></div>
         </article>
 
-        <article class="grid grid-cols-2 gap-4">
+        <article class="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-xl bg-white p-4 shadow-sm">
             <p class="mb-1 text-xs font-bold uppercase tracking-widest text-muted">创建时间</p>
             <p class="text-sm font-semibold" id="detailCreatedAt">-</p>
@@ -68,6 +68,10 @@
           <div class="rounded-xl bg-white p-4 shadow-sm">
             <p class="mb-1 text-xs font-bold uppercase tracking-widest text-muted">最近更新</p>
             <p class="text-sm font-semibold" id="detailUpdatedAt">-</p>
+          </div>
+          <div class="rounded-xl bg-white p-4 shadow-sm">
+            <p class="mb-1 text-xs font-bold uppercase tracking-widest text-muted">最后登录 IP</p>
+            <p class="text-sm font-semibold break-all" id="detailLastLoginIp">-</p>
           </div>
         </article>
       </section>
@@ -90,12 +94,21 @@
                 <input class="w-full rounded-lg border-line text-sm" id="avatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
                 <span class="mt-1 block text-xs text-muted">留空将使用系统默认头像。</span>
               </label>
+              <label class="block sm:col-span-2">
+                <span class="mb-1 block text-sm font-bold text-muted">个人简介</span>
+                <textarea class="w-full rounded-lg border-line text-sm" id="descriptionInput" name="description" rows="3" maxlength="500"></textarea>
+                <span class="mt-1 block text-xs text-muted">最多 500 字。</span>
+              </label>
               <label class="block">
                 <span class="mb-1 block text-sm font-bold text-muted">角色</span>
                 <select class="w-full rounded-lg border-line py-2.5 pl-3 pr-9 text-sm" id="roleInput" name="role">
                   <option value="user">普通用户</option>
                   <option value="admin">管理员</option>
                 </select>
+              </label>
+              <label class="block">
+                <span class="mb-1 block text-sm font-bold text-muted">积分</span>
+                <input class="w-full rounded-lg border-line text-sm" id="creditsInput" name="credits" type="number" min="0" step="1">
               </label>
               <label class="flex items-center gap-3 self-end pb-2">
                 <input class="h-4 w-4 rounded accent-primary" id="verifiedInput" name="emailVerified" type="checkbox">
@@ -167,8 +180,11 @@
       document.getElementById('nameInput').value = user.name || '';
       document.getElementById('emailInput').value = user.email || '';
       document.getElementById('avatarInput').value = user.avatar || '';
+      document.getElementById('descriptionInput').value = user.description || '';
+      document.getElementById('creditsInput').value = String(user.credits ?? 0);
       document.getElementById('roleInput').value = user.role === 'admin' ? 'admin' : 'user';
       document.getElementById('verifiedInput').checked = Boolean(user.emailVerified);
+      document.getElementById('detailLastLoginIp').textContent = user.lastLoginIp || '-';
     }
     async function request(url, options = {}) {
       const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
@@ -199,6 +215,8 @@
             name: document.getElementById('nameInput').value.trim(),
             email: document.getElementById('emailInput').value.trim(),
             avatar: document.getElementById('avatarInput').value.trim(),
+            description: document.getElementById('descriptionInput').value,
+            credits: Number(document.getElementById('creditsInput').value || 0),
             role: document.getElementById('roleInput').value,
             emailVerified: document.getElementById('verifiedInput').checked,
             banned: document.getElementById('bannedInput').checked

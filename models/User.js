@@ -39,9 +39,22 @@ class UserModel {
     const role = await this.pickDefaultRole(userData.role);
     
     const [result] = await this.pool.execute(
-      `INSERT INTO users (id, username, email, password, name, avatar, email_verified, banned, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, userData.username, userData.email, hashedPassword, userData.name || null, userData.avatar || null, userData.emailVerified || false, userData.banned || false, role]
+      `INSERT INTO users (id, username, email, password, name, avatar, description, email_verified, banned, credits, last_login_ip, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        userData.username,
+        userData.email,
+        hashedPassword,
+        userData.name || null,
+        userData.avatar || null,
+        userData.description || null,
+        userData.emailVerified || false,
+        userData.banned || false,
+        Number.isFinite(Number(userData.credits)) ? Number(userData.credits) : 0,
+        userData.lastLoginIp || null,
+        role
+      ]
     );
     
     return this.findById(id);
@@ -73,7 +86,7 @@ class UserModel {
 
   async findAll() {
     const [rows] = await this.pool.execute(
-      'SELECT id, username, email, name, avatar, email_verified, banned, role, created_at, updated_at FROM users'
+      'SELECT id, username, email, name, avatar, description, email_verified, banned, credits, last_login_ip, role, created_at, updated_at FROM users'
     );
     return rows;
   }
@@ -105,6 +118,18 @@ class UserModel {
     if (userData.banned !== undefined) {
       fields.push('banned = ?');
       values.push(userData.banned);
+    }
+    if (userData.description !== undefined) {
+      fields.push('description = ?');
+      values.push(userData.description);
+    }
+    if (userData.credits !== undefined) {
+      fields.push('credits = ?');
+      values.push(userData.credits);
+    }
+    if (userData.lastLoginIp !== undefined) {
+      fields.push('last_login_ip = ?');
+      values.push(userData.lastLoginIp);
     }
     if (userData.role !== undefined) {
       fields.push('role = ?');

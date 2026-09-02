@@ -13,8 +13,11 @@ CREATE TABLE IF NOT EXISTS users (
   password VARCHAR(255) NOT NULL,
   name VARCHAR(255),
   avatar TEXT,
+  description TEXT,
   email_verified BOOLEAN DEFAULT FALSE,
   banned BOOLEAN NOT NULL DEFAULT FALSE,
+  credits INT NOT NULL DEFAULT 0,
+  last_login_ip VARCHAR(64) DEFAULT NULL,
   role VARCHAR(32) NOT NULL DEFAULT '${USER_ROLE_USER}',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -241,6 +244,9 @@ async function initDatabase() {
     await connection.query(CREATE_USER_IDENTITIES_TABLE);
     await ensureUsersRoleColumn(connection);
     await ensureColumn(connection, 'users', 'banned', 'banned BOOLEAN NOT NULL DEFAULT FALSE', 'email_verified');
+    await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');
+    await ensureColumn(connection, 'users', 'credits', 'credits INT NOT NULL DEFAULT 0', 'banned');
+    await ensureColumn(connection, 'users', 'last_login_ip', 'last_login_ip VARCHAR(64) DEFAULT NULL', 'credits');
     await ensureColumn(connection, 'auth_codes', 'code_challenge', 'code_challenge TEXT', 'scopes');
     await ensureColumn(connection, 'auth_codes', 'code_challenge_method', 'code_challenge_method VARCHAR(16)', 'code_challenge');
     await ensureColumn(connection, 'refresh_tokens', 'scopes', 'scopes TEXT', 'client_id');

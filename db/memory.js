@@ -120,8 +120,8 @@ class MemoryPool {
       return [this.users.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 1).map(user => clone(user)), []];
     }
 
-    if (lower === 'insert into users (id, username, email, password, name, avatar, email_verified, banned, role) values (?, ?, ?, ?, ?, ?, ?, ?, ?)') {
-      const [id, username, email, password, name, avatar, emailVerified, banned, role] = params;
+    if (lower === 'insert into users (id, username, email, password, name, avatar, description, email_verified, banned, credits, last_login_ip, role) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)') {
+      const [id, username, email, password, name, avatar, description, emailVerified, banned, credits, lastLoginIp, role] = params;
       const createdAt = now();
       this.users.push({
         id,
@@ -130,8 +130,11 @@ class MemoryPool {
         password,
         name,
         avatar,
+        description,
         email_verified: Boolean(emailVerified),
         banned: Boolean(banned),
+        credits: Number(credits) || 0,
+        last_login_ip: lastLoginIp,
         role,
         created_at: createdAt,
         updated_at: createdAt
@@ -151,7 +154,7 @@ class MemoryPool {
       return [this.users.filter(user => user.email === params[0]).map(user => clone(user)), []];
     }
 
-    if (lower === 'select id, username, email, name, avatar, email_verified, banned, role, created_at, updated_at from users') {
+    if (lower === 'select id, username, email, name, avatar, description, email_verified, banned, credits, last_login_ip, role, created_at, updated_at from users') {
       return [this.users.map(user => clone(user)), []];
     }
 
