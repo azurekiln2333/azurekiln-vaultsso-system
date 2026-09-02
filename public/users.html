@@ -57,6 +57,7 @@
           <select class="rounded-lg border-line py-3 pl-3 pr-9 text-sm" id="verifiedFilter" aria-label="按邮箱状态筛选">
             <option value="">全部邮箱状态</option><option value="true">已验证</option><option value="false">未验证</option>
           </select>
+          <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="importBtn" type="button"><span class="material-symbols-outlined text-lg">upload_file</span>导入用户</button>
           <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button"><span class="material-symbols-outlined text-lg">refresh</span>刷新</button>
         </div>
       </div>
@@ -76,6 +77,38 @@
     </section>
   </div>
 
+  <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4" id="importModal">
+    <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+      <div class="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 class="font-headline text-xl font-extrabold tracking-tight">导入用户</h2>
+          <p class="mt-1 text-sm text-muted">支持 CSV（表头 username,email,name,password,role）或 JSON 用户数组。密码可留空，系统会自动生成并在结果中展示一次。</p>
+        </div>
+        <button class="rounded-lg px-2 py-1 text-2xl leading-none text-muted hover:text-primary" id="importCloseBtn" type="button" aria-label="关闭">&times;</button>
+      </div>
+      <div class="mb-4 rounded-lg bg-surface-container-low px-4 py-3 text-xs leading-6 text-muted">
+        <p class="font-bold">CSV 示例</p>
+        <pre class="whitespace-pre-wrap break-all">username,email,name,password,role
+zhang.san,zhangsan@example.com,张三,Passw0rd!,user</pre>
+        <p class="mt-2 font-bold">JSON 示例</p>
+        <pre class="whitespace-pre-wrap break-all">[{"username":"zhang.san","email":"zhangsan@example.com","name":"张三","password":"Passw0rd!"}]</pre>
+      </div>
+      <label class="mb-3 block">
+        <span class="mb-1 block text-sm font-bold text-muted">选择文件（.csv / .json / .txt）</span>
+        <input accept=".csv,.json,.txt,text/csv,application/json" class="w-full rounded-lg border-line text-sm" id="importFileInput" type="file">
+      </label>
+      <label class="mb-4 block">
+        <span class="mb-1 block text-sm font-bold text-muted">或直接粘贴内容</span>
+        <textarea class="w-full rounded-lg border-line font-mono text-xs" id="importContent" placeholder="username,email,name,password,role" rows="6"></textarea>
+      </label>
+      <div class="mb-4" id="importResult" hidden></div>
+      <div class="flex justify-end gap-3">
+        <button class="rounded-lg border border-line px-4 py-2.5 text-sm font-bold text-muted hover:text-primary" id="importCancelBtn" type="button">取消</button>
+        <button class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50" id="importSubmitBtn" type="button"><span class="material-symbols-outlined text-lg">upload</span>开始导入</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const tableBody = document.getElementById('userTableBody');
     const statusBar = document.getElementById('statusBar');
@@ -84,6 +117,14 @@
     const refreshBtn = document.getElementById('refreshBtn');
     const tabAllUsers = document.getElementById('tabAllUsers');
     const tabAdminUsers = document.getElementById('tabAdminUsers');
+    const importBtn = document.getElementById('importBtn');
+    const importModal = document.getElementById('importModal');
+    const importFileInput = document.getElementById('importFileInput');
+    const importContent = document.getElementById('importContent');
+    const importSubmitBtn = document.getElementById('importSubmitBtn');
+    const importCancelBtn = document.getElementById('importCancelBtn');
+    const importCloseBtn = document.getElementById('importCloseBtn');
+    const importResult = document.getElementById('importResult');
     let allUsers = [];
     let pendingDeleteId = '';
     let pendingDeleteTimer = null;
@@ -168,6 +209,49 @@
     tabAllUsers.addEventListener('click', () => setRoleTab('all'));
     tabAdminUsers.addEventListener('click', () => setRoleTab('admin'));
     refreshBtn.addEventListener('click', loadUsers);
+    function openImportModal() {
+      importContent.value = '';
+      importFileInput.value = '';
+      importResult.hidden = true;
+      importResult.innerHTML = '';
+      importModal.classList.remove('hidden');
+      importModal.classList.add('flex');
+    }
+    function closeImportModal() {
+      importModal.classList.add('hidden');
+      importModal.classList.remove('flex');
+    }
+    importBtn.addEventListener('click', openImportModal);
+    importCancelBtn.addEventListener('click', closeImportModal);
+    importCloseBtn.addEventListener('click', closeImportModal);
+    importModal.addEventListener('click', event => { if (event.target === importModal) closeImportModal(); });
+    importFileInput.addEventListener('change', () => {
+      const file = importFileInput.files && importFileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { importContent.value = String(reader.result || ''); };
+      reader.readAsText(file, 'utf-8');
+    });
+    importSubmitBtn.addEventListener('click', async () => {
+      importSubmitBtn.disabled = true;
+      importResult.hidden = false;
+      importResult.innerHTML = '<p class="text-sm text-muted">正在导入...</p>';
+      try {
+        const result = await request('/api/users/import', { method: 'POST', body: JSON.stringify({ content: importContent.value }) });
+        const generated = result.created.filter(item => item.generatedPassword);
+        const parts = [`<p class="mb-2 text-sm font-bold ${result.skippedCount ? 'text-amber-700' : 'text-green-700'}">成功导入 ${result.createdCount} 个用户，跳过 ${result.skippedCount} 条记录。</p>`];
+        if (generated.length) {
+          parts.push(`<div class="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"><p class="mb-1 font-bold">以下用户使用自动生成的密码（仅显示一次，请立即保存）：</p><ul class="space-y-1">${generated.map(item => `<li><code>${escapeHtml(item.username)}</code>：<code class="font-bold">${escapeHtml(item.generatedPassword)}</code></li>`).join('')}</ul></div>`);
+        }
+        if (result.skippedCount) {
+          parts.push(`<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"><ul class="space-y-1">${result.skipped.map(item => `<li>第 ${item.row} 行 ${escapeHtml(item.username || item.email || '')}：${escapeHtml(item.reason)}</li>`).join('')}</ul></div>`);
+        }
+        importResult.innerHTML = parts.join('');
+        if (result.createdCount) { await loadUsers(); }
+      } catch (error) {
+        importResult.innerHTML = `<p class="text-sm text-red-700">导入失败：${escapeHtml(error.message)}</p>`;
+      } finally { importSubmitBtn.disabled = false; }
+    });
     loadUsers();
   </script>
 </body>

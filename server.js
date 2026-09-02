@@ -2345,6 +2345,146 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
   res.status(204).send();
 }));
 
+const USER_IMPORT_MAX_ROWS = 200;
+const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role'];
+
+function parseImportCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let inQuotes = false;
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+    if (inQuotes) {
+      if (char === '"' && line[index + 1] === '"') { current += '"'; index++; }
+      else if (char === '"') inQuotes = false;
+      else current += char;
+    } else if (char === '"') inQuotes = true;
+    else if (char === ',') { cells.push(current); current = ''; }
+    else current += char;
+  }
+  cells.push(current);
+  return cells.map(cell => cell.trim());
+}
+
+function parseUserImportContent(content) {
+  const text = String(content || '').trim();
+  if (!text) {
+    return { rows: [], error: '导入内容不能为空' };
+  }
+
+  if (text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text);
+      const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.users) ? parsed.users : null;
+      if (!list) {
+        return { rows: [], error: 'JSON 格式应为用户对象数组，或包含 users 数组的对象' };
+      }
+      return { rows: list, error: '' };
+    } catch (error) {
+      return { rows: [], error: 'JSON 解析失败，请检查格式' };
+    }
+  }
+
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const headers = parseImportCsvLine(lines[0]).map(header => header.toLowerCase());
+  const hasHeader = headers.some(header => USER_IMPORT_COLUMNS.includes(header));
+  const columns = hasHeader ? headers : ['username', 'email', 'name', 'password', 'role'];
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  return {
+    rows: dataLines.map(line => {
+      const cells = parseImportCsvLine(line);
+      const record = {};
+      columns.forEach((column, index) => {
+        if (USER_IMPORT_COLUMNS.includes(column)) record[column] = cells[index] || '';
+      });
+      return record;
+    }),
+    error: ''
+  };
+}
+
+app.post('/api/users/import', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const { rows, error } = parseUserImportContent(req.body.content);
+  if (error) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'users.import.invalid',
+      error_description: error
+    });
+  }
+  if (!rows.length) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'users.import.empty',
+      error_description: '没有可导入的用户记录'
+    });
+  }
+  if (rows.length > USER_IMPORT_MAX_ROWS) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'users.import.too_many',
+      error_description: `单次最多导入 ${USER_IMPORT_MAX_ROWS} 条记录`
+    });
+  }
+
+  const created = [];
+  const skipped = [];
+  const seen = new Set();
+
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index] || {};
+    const email = normalizeEmail(row.email);
+    const username = normalizeText(row.username) || email;
+    const name = normalizeText(row.name);
+    const password = String(row.password || '');
+
+    if (!email || !isValidEmail(email)) {
+      skipped.push({ row: index + 1, username, email, reason: '邮箱缺失或格式无效' });
+      continue;
+    }
+    if (!username) {
+      skipped.push({ row: index + 1, username, email, reason: '缺少用户名' });
+      continue;
+    }
+    if (password && password.length < 6) {
+      skipped.push({ row: index + 1, username, email, reason: '密码长度不能少于 6 位' });
+      continue;
+    }
+
+    const dedupeKey = `${username.toLowerCase()}|${email}`;
+    if (seen.has(dedupeKey)) {
+      skipped.push({ row: index + 1, username, email, reason: '与本次导入中的其他记录重复' });
+      continue;
+    }
+    seen.add(dedupeKey);
+
+    if (await User.findByUsername(username)) {
+      skipped.push({ row: index + 1, username, email, reason: '用户名或邮箱已存在' });
+      continue;
+    }
+    if (await User.findByEmail(email)) {
+      skipped.push({ row: index + 1, username, email, reason: '邮箱已被其他账户使用' });
+      continue;
+    }
+
+    const generatedPassword = password ? '' : crypto.randomBytes(9).toString('base64url');
+    const role = normalizeText(row.role).toLowerCase() === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_USER;
+    const user = await User.create({ username, email, password: generatedPassword || password, name, role, emailVerified: false });
+    created.push({ ...serializeUser(user), generatedPassword });
+  }
+
+  res.json({
+    createdCount: created.length,
+    skippedCount: skipped.length,
+    created,
+    skipped
+  });
+}));
+
 app.get('/api/clients', asyncHandler(async (req, res) => {
   const user = await requireAdminUser(req, res);
   if (!user) {
