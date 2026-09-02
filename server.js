@@ -28,7 +28,7 @@ const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html']);
+const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html', '/user.html']);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
 const OIDC_STATE_COOKIE = 'oidc_state';
@@ -2206,6 +2206,23 @@ app.get('/api/users', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
+app.get('/api/users/:id', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const target = await User.findById(normalizeText(req.params.id));
+  if (!target) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'users.not_found',
+      error_description: '未找到用户'
+    });
+  }
+
+  const identities = await ExternalIdentity.findByUserId(target.id);
+  res.json({ user: { ...serializeUser(target), identities: ExternalIdentity.serializeMany(identities) } });
+}));
+
 app.put('/api/users/:id', asyncHandler(async (req, res) => {
   const admin = await requireAdminUser(req, res);
   if (!admin) return;
@@ -2264,6 +2281,28 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
       });
     }
     updates.name = name;
+  }
+  if (req.body.email !== undefined) {
+    const email = normalizeEmail(req.body.email);
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'validation.email.invalid',
+        error_description: '请输入有效的邮箱地址'
+      });
+    }
+    const emailConflict = await User.findByEmail(email);
+    if (emailConflict && emailConflict.id !== target.id) {
+      return res.status(409).json({
+        error: 'conflict',
+        error_key: 'validation.email.taken',
+        error_description: '该邮箱已被其他账户使用'
+      });
+    }
+    updates.email = email;
+  }
+  if (req.body.avatar !== undefined) {
+    updates.avatar = normalizeText(req.body.avatar);
   }
 
   const updated = await User.update(userId, updates);
