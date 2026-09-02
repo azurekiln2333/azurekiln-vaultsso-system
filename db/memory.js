@@ -151,7 +151,7 @@ class MemoryPool {
       return [this.users.filter(user => user.email === params[0]).map(user => clone(user)), []];
     }
 
-    if (lower === 'select id, username, email, name, avatar, email_verified, role, created_at, updated_at from users') {
+    if (lower === 'select id, username, email, name, avatar, email_verified, banned, role, created_at, updated_at from users') {
       return [this.users.map(user => clone(user)), []];
     }
 
