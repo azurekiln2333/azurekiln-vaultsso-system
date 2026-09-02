@@ -88,7 +88,10 @@
               </div>
             </div>
 
+            <button class="text-action-button" id="showRecoveryBtn" type="button" data-i18n="auth.button.forgot_password">Forgot password?</button>
             <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.login">Sign In and Continue</button>
+            <div class="oidc-divider" id="oidcDivider" hidden><span data-i18n="auth.oidc.or">或使用</span></div>
+            <div class="grid gap-3" id="oidcProviders"></div>
           </form>
         </div>
 
@@ -125,6 +128,16 @@
               </div>
             </div>
 
+            <button class="secondary-submit" id="sendRegisterCodeBtn" type="button" data-i18n="auth.button.send_code">Send verification code</button>
+
+            <div class="field-group">
+              <label class="field-label" for="registerEmailCode" data-i18n="auth.form.email_code">Email Verification Code</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">pin</span>
+                <input class="field-input" id="registerEmailCode" name="email_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" data-i18n-placeholder="auth.placeholder.email_code" placeholder="6-digit code" required>
+              </div>
+            </div>
+
             <div class="field-group">
               <label class="field-label" for="registerPassword" data-i18n="auth.form.password">Password</label>
               <div class="field-shell">
@@ -142,6 +155,47 @@
             </div>
 
             <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.register">Create Account and Continue</button>
+          </form>
+        </div>
+
+        <div class="hidden" data-card="recover">
+          <form class="auth-form" id="recoverForm">
+            <div class="field-group">
+              <label class="field-label" for="recoverEmail" data-i18n="auth.form.email">Email</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">mail</span>
+                <input class="field-input" id="recoverEmail" name="email" type="email" data-i18n-placeholder="auth.placeholder.email" placeholder="name@company.com" required>
+              </div>
+            </div>
+
+            <button class="secondary-submit" id="sendRecoveryCodeBtn" type="button" data-i18n="auth.button.send_code">Send verification code</button>
+
+            <div class="field-group">
+              <label class="field-label" for="recoverEmailCode" data-i18n="auth.form.email_code">Email Verification Code</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">pin</span>
+                <input class="field-input" id="recoverEmailCode" name="email_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" data-i18n-placeholder="auth.placeholder.email_code" placeholder="6-digit code" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="recoverPassword" data-i18n="auth.form.new_password">New Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="recoverPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password_short" placeholder="At least 6 characters" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="recoverConfirmPassword" data-i18n="auth.form.confirm_password">Confirm Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">verified_user</span>
+                <input class="field-input" id="recoverConfirmPassword" name="confirm_password" type="password" data-i18n-placeholder="auth.placeholder.confirm_password" placeholder="Enter the password again" required>
+              </div>
+            </div>
+
+            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.reset_password">Reset Password</button>
+            <button class="text-action-button" id="backToLoginBtn" type="button" data-i18n="auth.button.back_login">Back to sign in</button>
           </form>
         </div>
       </div>
@@ -174,14 +228,41 @@
     const statusMessage = document.getElementById('statusMessage');
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
+    const recoverForm = document.getElementById('recoverForm');
     const authRegion = document.getElementById('authRegion');
     const sessionBanner = document.getElementById('sessionBanner');
     const sessionEntry = document.getElementById('sessionEntry');
     const logoutButton = document.getElementById('logoutButton');
     const oauthCard = document.getElementById('oauthCard');
+    const oidcDivider = document.getElementById('oidcDivider');
+    const oidcProviders = document.getElementById('oidcProviders');
 
     function getClientLabel() {
       return clientNames[oauthParams.client_id] || oauthParams.client_id || i18n.t('common.app_fallback');
+    }
+
+    async function hydrateOidcLogin() {
+      try {
+        const response = await fetch('/api/v1/auth/oauth/oidc/config', { credentials: 'same-origin' });
+        const config = await response.json();
+        if (!config.enabled) return;
+        const returnTo = hasOAuthRequest ? window.location.pathname + window.location.search : '';
+        const providers = Array.isArray(config.providers) && config.providers.length
+          ? config.providers
+          : [{ providerName: config.providerName, loginUrl: config.loginUrl }];
+        oidcProviders.innerHTML = providers.map(provider => {
+          const loginUrl = new URL(provider.loginUrl, window.location.origin);
+          if (returnTo) loginUrl.searchParams.set('return_to', returnTo);
+          return `<a class="oidc-submit" href="${escapeHtml(loginUrl.toString())}"><span class="material-symbols-outlined">login</span><span>${escapeHtml(i18n.t('auth.oidc.login'))} · ${escapeHtml(provider.providerName)}</span></a>`;
+        }).join('');
+        oidcDivider.hidden = false;
+      } catch (error) {
+        console.error('OIDC configuration request failed:', error);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
     function clearStatus() {
@@ -299,6 +380,7 @@
 
         loginForm.reset();
         registerForm.reset();
+        recoverForm.reset();
         setMode('login');
         setSignedInState(false);
         document.getElementById('loginUsername').focus();
@@ -358,6 +440,82 @@
       }
     }
 
+    async function sendEmailCode(email, purpose, button) {
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = i18n.t('auth.status.sending_code');
+      setStatus('', '');
+
+      try {
+        const payload = new URLSearchParams({ email, purpose });
+        const response = await fetch('/api/email-verification/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: payload
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          setStatus('error', i18n.resolveMessage(result, 'common.network_error'));
+          return;
+        }
+
+        setStatus('success', i18n.resolveMessage(result, 'auth.status.code_sent'));
+      } catch (error) {
+        console.error('Send email code failed:', error);
+        setStatus('error', i18n.t('common.network_error'));
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    }
+
+    async function submitPasswordReset() {
+      setStatus('', '');
+      const password = recoverForm.querySelector('input[name="password"]').value;
+      const confirmPassword = recoverForm.querySelector('input[name="confirm_password"]').value;
+
+      if (password !== confirmPassword) {
+        setMode('recover');
+        setStatus('error', i18n.t('auth.status.password_mismatch'));
+        return;
+      }
+
+      const submitButton = recoverForm.querySelector('.submit');
+      const originalLabel = submitButton.textContent;
+      submitButton.disabled = true;
+      submitButton.textContent = i18n.t('auth.status.resetting');
+
+      try {
+        const response = await fetch('/api/password-reset', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams(new FormData(recoverForm))
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          setStatus('error', i18n.resolveMessage(result, 'common.network_error'));
+          return;
+        }
+
+        loginForm.querySelector('input[name="username"]').value = recoverForm.querySelector('input[name="email"]').value;
+        recoverForm.reset();
+        setMode('login');
+        setStatus('success', i18n.resolveMessage(result, 'auth.status.password_reset_done'));
+      } catch (error) {
+        console.error('Password reset failed:', error);
+        setStatus('error', i18n.t('common.network_error'));
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    }
+
     tabButtons.forEach(function (button) {
       button.addEventListener('click', function () {
         setMode(button.dataset.mode);
@@ -368,6 +526,7 @@
     fillHiddenFields(registerForm);
     setMode('login');
     renderPage();
+    hydrateOidcLogin();
     i18n.bindLanguageButtons(document);
     hydrateSessionBanner();
 
@@ -379,6 +538,23 @@
     loginForm.addEventListener('submit', function (event) {
       event.preventDefault();
       submitAuthForm(loginForm, '/oauth2/authorize', 'auth.status.signing_in');
+    });
+
+    document.getElementById('showRecoveryBtn').addEventListener('click', function () {
+      recoverForm.querySelector('input[name="email"]').value = loginForm.querySelector('input[name="username"]').value;
+      setMode('recover');
+    });
+
+    document.getElementById('backToLoginBtn').addEventListener('click', function () {
+      setMode('login');
+    });
+
+    document.getElementById('sendRegisterCodeBtn').addEventListener('click', function () {
+      sendEmailCode(registerForm.querySelector('input[name="email"]').value, 'register', this);
+    });
+
+    document.getElementById('sendRecoveryCodeBtn').addEventListener('click', function () {
+      sendEmailCode(recoverForm.querySelector('input[name="email"]').value, 'password_reset', this);
     });
 
     registerForm.addEventListener('submit', function (event) {
@@ -394,6 +570,11 @@
       }
 
       submitAuthForm(registerForm, '/oauth2/register', 'auth.status.creating');
+    });
+
+    recoverForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitPasswordReset();
     });
 
     logoutButton.addEventListener('click', function () {
@@ -423,4 +604,3 @@
   </script>
 </body>
 </html>
-

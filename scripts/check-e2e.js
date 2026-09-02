@@ -47,6 +47,74 @@ async function runChecks() {
   const metadata = JSON.parse(discovery.text);
   assert(metadata.code_challenge_methods_supported.includes('S256'), 'Discovery should advertise PKCE S256');
 
+  const testEmail = `e2e-${Date.now()}@example.com`;
+  const testUsername = `e2e-${Date.now()}`;
+  const verificationCode = process.env.EMAIL_DEV_CODE || '123456';
+
+  const sendRegisterCode = await request('/api/email-verification/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      email: testEmail,
+      purpose: 'register'
+    }).toString()
+  });
+  assert(sendRegisterCode.response.status === 200, 'Register verification code request should return 200');
+
+  const register = await request('/oauth2/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      name: 'E2E User',
+      username: testUsername,
+      email: testEmail,
+      email_code: verificationCode,
+      password: 'e2e-password',
+      confirm_password: 'e2e-password'
+    }).toString()
+  });
+  assert(register.response.status === 200, 'Register with email verification code should return 200');
+  const registerCookie = parseCookies(register.response.headers);
+  assert(registerCookie.includes('session='), 'Verified registration should set a session cookie');
+
+  const registeredProfile = await request('/api/profile', {
+    headers: { Cookie: registerCookie }
+  });
+  assert(registeredProfile.response.status === 200, 'Registered profile should return 200');
+  assert(JSON.parse(registeredProfile.text).user.emailVerified === true, 'Registered email should be verified');
+
+  const sendResetCode = await request('/api/email-verification/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      email: testEmail,
+      purpose: 'password_reset'
+    }).toString()
+  });
+  assert(sendResetCode.response.status === 200, 'Password reset verification code request should return 200');
+
+  const resetPassword = await request('/api/password-reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      email: testEmail,
+      email_code: verificationCode,
+      password: 'e2e-password-2',
+      confirm_password: 'e2e-password-2'
+    }).toString()
+  });
+  assert(resetPassword.response.status === 200, 'Password reset with email verification code should return 200');
+
+  const resetLogin = await request('/oauth2/authorize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      username: testEmail,
+      password: 'e2e-password-2'
+    }).toString()
+  });
+  assert(resetLogin.response.status === 200, 'Login after password reset should return 200');
+
   const login = await request('/oauth2/authorize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -165,7 +233,8 @@ async function main() {
       ...process.env,
       DB_DRIVER: 'memory',
       PORT: String(PORT),
-      PUBLIC_BASE_URL: BASE_URL
+      PUBLIC_BASE_URL: BASE_URL,
+      EMAIL_DEV_CODE: '123456'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });

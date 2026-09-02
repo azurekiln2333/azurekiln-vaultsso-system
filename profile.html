@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/vaultsso-base.css">
+  <link rel="stylesheet" href="/assets/vaultsso-profile.css">
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <div class="max-w-5xl mx-auto px-6 py-6 lg:px-8">
@@ -48,8 +49,9 @@
             </div>
 
             <div class="flex flex-wrap gap-3">
-              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">应用管理</a>
-              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">令牌管理</a>
+            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">应用管理</a>
+            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/users.html" id="usersMenuLink" style="display:none;">用户管理</a>
+            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">令牌管理</a>
               <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/oauth2/logout" data-i18n="common.action.logout">退出登录</a>
             </div>
           </div>
@@ -62,6 +64,17 @@
               <p class="text-lg font-bold text-ink break-words" id="displayNameValue"></p>
             </div>
             <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2">第三方账号</p>
+                <p class="text-sm text-muted">已绑定的微信、QQ、华为、抖音或其他 OAuth/OIDC 账号。</p>
+              </div>
+              <div class="flex flex-wrap justify-end gap-2" id="bindIdentityButtons"><span class="text-sm text-muted">正在读取可绑定的账号...</span></div>
+            </div>
+            <div class="mt-4 grid gap-3" id="identityList"><p class="text-sm text-muted">正在加载绑定信息...</p></div>
           </article>
 
           <article class="glass-card rounded-3xl border border-white/80 p-5">
@@ -248,6 +261,7 @@
 
     function toggleAdminLinks(isAdmin) {
       document.getElementById('appsMenuLink').style.display = isAdmin ? '' : 'none';
+      document.getElementById('usersMenuLink').style.display = isAdmin ? '' : 'none';
       document.getElementById('tokensMenuLink').style.display = isAdmin ? '' : 'none';
     }
 
@@ -308,10 +322,51 @@
       document.getElementById('userIdValue').textContent = user.id || '-';
       document.getElementById('createdAtValue').textContent = formatDate(user.createdAt);
       document.getElementById('updatedAtValue').textContent = formatDate(user.updatedAt);
+      renderIdentities(user.identities || []);
 
       document.getElementById('profileNameInput').value = user.name || '';
       document.getElementById('profileAvatarInput').value = user.avatar || '';
       document.getElementById('profileEmailInput').value = user.email || '';
+    }
+
+    function renderIdentities(identities) {
+      const list = document.getElementById('identityList');
+      if (!identities.length) {
+        list.innerHTML = '<p class="text-sm text-muted">当前没有绑定第三方账号。</p>';
+        return;
+      }
+      list.innerHTML = identities.map(identity => `<div class="flex flex-col gap-3 rounded-2xl border border-line/70 bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p class="font-bold text-ink">${escapeHtml(identity.provider)}</p><p class="mt-1 break-all text-xs text-muted">${escapeHtml(identity.providerUsername || identity.displayName || identity.providerUserId)}</p></div><button class="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-unbind-id="${escapeHtml(identity.id)}" type="button">解除绑定</button></div>`).join('');
+      list.querySelectorAll('[data-unbind-id]').forEach(button => button.addEventListener('click', () => unbindIdentity(button.dataset.unbindId)));
+    }
+
+    async function loadIdentityProviders() {
+      const container = document.getElementById('bindIdentityButtons');
+      try {
+        const response = await fetch('/api/v1/auth/oauth/oidc/config', { credentials: 'same-origin' });
+        const payload = await response.json();
+        const providers = Array.isArray(payload.providers) ? payload.providers : [];
+        container.innerHTML = providers.length
+          ? providers.map(provider => `<a class="inline-flex items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" href="${escapeHtml(provider.loginUrl)}&return_to=%2Fprofile">绑定 ${escapeHtml(provider.providerName)}</a>`).join('')
+          : '<span class="text-sm text-muted">暂无可用的 OIDC Provider</span>';
+      } catch (error) {
+        container.innerHTML = '<span class="text-sm text-muted">暂时无法读取绑定入口</span>';
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    async function unbindIdentity(id) {
+      if (!window.confirm('确定解除这个第三方账号绑定吗？')) return;
+      const response = await fetch(`/api/account/identities/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setStatus('error', payload.error_description || '解除绑定失败');
+        return;
+      }
+      await loadProfile();
+      setStatus('success', '第三方账号绑定已解除');
     }
 
     function renderDocument() {
@@ -482,6 +537,7 @@
     i18n.bindLanguageButtons(document);
     renderDocument();
     loadProfile();
+    loadIdentityProviders();
 
     document.addEventListener('vaultsso:languagechange', function () {
       renderDocument();

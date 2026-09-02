@@ -41,6 +41,8 @@ class MemoryPool {
     this.authCodes = [];
     this.accessTokens = [];
     this.refreshTokens = [];
+    this.emailVerificationCodes = [];
+    this.userIdentities = [];
   }
 
   async getConnection() {
@@ -57,6 +59,45 @@ class MemoryPool {
 
     if (lower.startsWith('create table') || lower.startsWith('alter table')) {
       return [{ affectedRows: 0 }, []];
+    }
+
+    if (lower === 'insert into user_identities (id, user_id, provider, provider_user_id, provider_username, display_name, avatar, email, profile) values (?, ?, ?, ?, ?, ?, ?, ?, ?)') {
+      const [id, userId, provider, providerUserId, providerUsername, displayName, avatar, email, profile] = params;
+      const createdAt = now();
+      this.userIdentities.push({
+        id,
+        user_id: userId,
+        provider,
+        provider_user_id: providerUserId,
+        provider_username: providerUsername,
+        display_name: displayName,
+        avatar,
+        email,
+        profile,
+        created_at: createdAt,
+        updated_at: createdAt
+      });
+      return [{ affectedRows: 1, insertId: id }, []];
+    }
+
+    if (lower === 'select * from user_identities where id = ?') {
+      return [this.userIdentities.filter(identity => identity.id === params[0]).map(identity => clone(identity)), []];
+    }
+
+    if (lower === 'select * from user_identities where provider = ? and provider_user_id = ?') {
+      return [this.userIdentities.filter(identity => identity.provider === params[0] && identity.provider_user_id === params[1]).map(identity => clone(identity)), []];
+    }
+
+    if (lower === 'select * from user_identities where user_id = ? order by created_at asc') {
+      return [this.userIdentities.filter(identity => identity.user_id === params[0]).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map(identity => clone(identity)), []];
+    }
+
+    if (lower.startsWith('update user_identities set ') && lower.endsWith(' where id = ?')) {
+      return [this.updateDynamic(this.userIdentities, normalized, params, 'id'), []];
+    }
+
+    if (lower === 'delete from user_identities where id = ?') {
+      return [this.deleteRows(this.userIdentities, row => row.id === params[0]), []];
     }
 
     if (lower.startsWith('show columns from')) {
@@ -109,7 +150,7 @@ class MemoryPool {
       return [this.users.filter(user => user.email === params[0]).map(user => clone(user)), []];
     }
 
-    if (lower === 'select id, username, email, name, avatar, email_verified, role, created_at from users') {
+    if (lower === 'select id, username, email, name, avatar, email_verified, role, created_at, updated_at from users') {
       return [this.users.map(user => clone(user)), []];
     }
 
@@ -132,7 +173,63 @@ class MemoryPool {
     }
 
     if (lower === 'delete from users where id = ?') {
-      return [this.deleteRows(this.users, row => row.id === params[0]), []];
+      const userId = params[0];
+      const result = this.deleteRows(this.users, row => row.id === userId);
+      this.emailVerificationCodes = this.emailVerificationCodes.filter(row => row.user_id !== userId);
+      this.authCodes = this.authCodes.filter(row => row.user_id !== userId);
+      this.accessTokens = this.accessTokens.filter(row => row.user_id !== userId);
+      this.refreshTokens = this.refreshTokens.filter(row => row.user_id !== userId);
+      this.userIdentities = this.userIdentities.filter(row => row.user_id !== userId);
+      return [result, []];
+    }
+
+    if (lower === 'insert into email_verification_codes (id, email, user_id, purpose, code_hash, expires_at) values (?, ?, ?, ?, ?, ?)') {
+      const [id, email, userId, purpose, codeHash, expiresAt] = params;
+      this.emailVerificationCodes.push({
+        id,
+        email,
+        user_id: userId,
+        purpose,
+        code_hash: codeHash,
+        attempts: 0,
+        consumed_at: null,
+        expires_at: expiresAt,
+        created_at: now()
+      });
+      return [{ affectedRows: 1, insertId: id }, []];
+    }
+
+    if (lower === 'select * from email_verification_codes where id = ?') {
+      return [this.emailVerificationCodes.filter(row => row.id === params[0]).map(row => clone(row)), []];
+    }
+
+    if (lower === 'select * from email_verification_codes where email = ? and purpose = ? and consumed_at is null and expires_at > ? order by created_at desc limit 1') {
+      const [email, purpose, currentTime] = params;
+      return [
+        this.emailVerificationCodes
+          .filter(row => row.email === email && row.purpose === purpose && !row.consumed_at && new Date(row.expires_at) > new Date(currentTime))
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 1)
+          .map(row => clone(row)),
+        []
+      ];
+    }
+
+    if (lower === 'update email_verification_codes set attempts = attempts + 1 where id = ?') {
+      return [this.updateRows(this.emailVerificationCodes, row => row.id === params[0], row => {
+        row.attempts = Number(row.attempts || 0) + 1;
+      }), []];
+    }
+
+    if (lower === 'update email_verification_codes set consumed_at = ? where id = ?') {
+      return [this.updateRows(this.emailVerificationCodes, row => row.id === params[1], row => {
+        row.consumed_at = params[0];
+      }), []];
+    }
+
+    if (lower === 'delete from email_verification_codes where expires_at < ? or consumed_at is not null') {
+      const currentTime = params[0];
+      return [this.deleteRows(this.emailVerificationCodes, row => new Date(row.expires_at) < new Date(currentTime) || Boolean(row.consumed_at)), []];
     }
 
     if (lower === 'insert into clients (id, name, secret, redirect_uris, scopes, logo_url, is_active) values (?, ?, ?, ?, ?, ?, ?)') {

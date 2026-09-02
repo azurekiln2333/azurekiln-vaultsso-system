@@ -12,6 +12,9 @@ const { initDatabase, closePool } = require('./db/init');
 const UserModel = require('./models/User');
 const ClientModel = require('./models/Client');
 const TokenModel = require('./models/Token');
+const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
+const ExternalIdentityModel = require('./models/ExternalIdentity');
+const { sendVerificationEmail } = require('./services/email');
 
 const app = express();
 
@@ -25,12 +28,16 @@ const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html']);
+const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html']);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
+const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
+const OIDC_STATE_COOKIE = 'oidc_state';
 
 let User;
 let Client;
 let Token;
+let EmailVerificationCode;
+let ExternalIdentity;
 
 const DEMO_CLIENTS = [
   {
@@ -133,6 +140,367 @@ function parseDurationToMs(value, fallbackMs) {
 const ACCESS_TOKEN_TTL_MS = parseDurationToMs(TOKEN_EXPIRY, 60 * 60 * 1000);
 const REFRESH_TOKEN_TTL_MS = parseDurationToMs(REFRESH_TOKEN_EXPIRY, 7 * 24 * 60 * 60 * 1000);
 const SESSION_MAX_AGE = ACCESS_TOKEN_TTL_MS;
+const EMAIL_PURPOSE_REGISTER = 'register';
+const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
+const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
+const EMAIL_CODE_MAX_ATTEMPTS = Number(process.env.EMAIL_CODE_MAX_ATTEMPTS || 5);
+
+const OIDC_CONFIG = {
+  enabled: String(process.env.OIDC_ENABLED || '').trim().toLowerCase() === 'true',
+  providerName: normalizeText(process.env.OIDC_PROVIDER_NAME) || 'OIDC',
+  clientId: normalizeText(process.env.OIDC_CLIENT_ID),
+  clientSecret: String(process.env.OIDC_CLIENT_SECRET || ''),
+  issuerUrl: normalizeText(process.env.OIDC_ISSUER_URL),
+  discoveryUrl: normalizeText(process.env.OIDC_DISCOVERY_URL),
+  authorizeUrl: normalizeText(process.env.OIDC_AUTHORIZE_URL),
+  tokenUrl: normalizeText(process.env.OIDC_TOKEN_URL),
+  userinfoUrl: normalizeText(process.env.OIDC_USERINFO_URL),
+  jwksUrl: normalizeText(process.env.OIDC_JWKS_URL),
+  scopes: parseOidcScopes(process.env.OIDC_SCOPES || 'openid profile email'),
+  tokenAuthMethod: normalizeText(process.env.OIDC_TOKEN_AUTH_METHOD) || 'client_secret_basic',
+  clockTolerance: Number(process.env.OIDC_CLOCK_TOLERANCE || 60),
+  allowedAlgorithms: toStringArray(process.env.OIDC_ALLOWED_ALGS || 'RS256 ES256').flatMap(item => item.split(/\s+/)).map(item => normalizeText(item)).filter(Boolean),
+  pkceEnabled: String(process.env.OIDC_PKCE_ENABLED || 'true').trim().toLowerCase() !== 'false',
+  validateIdToken: String(process.env.OIDC_VALIDATE_ID_TOKEN || 'true').trim().toLowerCase() !== 'false',
+  requireEmailVerified: String(process.env.OIDC_REQUIRE_EMAIL_VERIFIED || '').trim().toLowerCase() === 'true',
+  userinfoEmailPath: normalizeText(process.env.OIDC_USERINFO_EMAIL_PATH) || 'email',
+  userinfoIdPath: normalizeText(process.env.OIDC_USERINFO_ID_PATH) || 'sub',
+  userinfoUsernamePath: normalizeText(process.env.OIDC_USERINFO_USERNAME_PATH) || 'preferred_username',
+  frontendCallbackPath: normalizeText(process.env.OIDC_FRONTEND_CALLBACK_PATH) || '/oauth2/success',
+  providerKey: normalizeText(process.env.OIDC_PROVIDER_KEY) || normalizeText(process.env.OIDC_ISSUER_URL) || 'oidc',
+  idTokenHmacSecret: String(process.env.OIDC_ID_TOKEN_HS_SECRET || process.env.OIDC_CLIENT_SECRET || ''),
+  emailVerifiedPath: normalizeText(process.env.OIDC_USERINFO_EMAIL_VERIFIED_PATH) || 'email_verified'
+};
+
+function parseOidcProviders() {
+  const raw = normalizeText(process.env.OIDC_PROVIDERS_JSON);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch (error) {
+    console.error('Invalid OIDC_PROVIDERS_JSON:', error.message);
+    return {};
+  }
+}
+
+const OIDC_PROVIDERS = parseOidcProviders();
+
+function parseBoolean(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'boolean') return value;
+  return !['false', '0', 'no', 'off'].includes(String(value).trim().toLowerCase());
+}
+
+function parseOidcScopes(value) {
+  return Array.from(new Set(['openid', ...parseRequestedScopes(value)]));
+}
+
+function getOidcProviderConfig(providerKey) {
+  const key = normalizeText(providerKey).toLowerCase();
+  if (!Object.keys(OIDC_PROVIDERS).length) return OIDC_CONFIG;
+  const provider = key && OIDC_PROVIDERS[key];
+  if (!key) return OIDC_CONFIG;
+  if (!provider || typeof provider !== 'object') return null;
+  return {
+    ...OIDC_CONFIG,
+    ...provider,
+    providerKey: key,
+    enabled: parseBoolean(provider.enabled, true),
+    scopes: parseOidcScopes(provider.scopes || provider.scope || OIDC_CONFIG.scopes.join(' ')),
+    allowedAlgorithms: toStringArray(provider.allowedAlgorithms || provider.allowedAlgs || OIDC_CONFIG.allowedAlgorithms.join(' ')).flatMap(item => item.split(/\s+/)).filter(Boolean),
+    pkceEnabled: parseBoolean(provider.pkceEnabled, OIDC_CONFIG.pkceEnabled),
+    validateIdToken: parseBoolean(provider.validateIdToken, OIDC_CONFIG.validateIdToken),
+    requireEmailVerified: parseBoolean(provider.requireEmailVerified, OIDC_CONFIG.requireEmailVerified),
+    tokenAuthMethod: normalizeText(provider.tokenAuthMethod) || OIDC_CONFIG.tokenAuthMethod,
+    idTokenHmacSecret: String(provider.idTokenHmacSecret || provider.idTokenHsSecret || provider.clientSecret || OIDC_CONFIG.idTokenHmacSecret),
+    userinfoEmailPath: normalizeText(provider.userinfoEmailPath) || OIDC_CONFIG.userinfoEmailPath,
+    emailVerifiedPath: normalizeText(provider.emailVerifiedPath || provider.userinfoEmailVerifiedPath) || OIDC_CONFIG.emailVerifiedPath,
+    userinfoIdPath: normalizeText(provider.userinfoIdPath) || OIDC_CONFIG.userinfoIdPath,
+    userinfoUsernamePath: normalizeText(provider.userinfoUsernamePath) || OIDC_CONFIG.userinfoUsernamePath
+  };
+}
+
+function getConfiguredOidcProviders() {
+  const keys = Object.keys(OIDC_PROVIDERS);
+  if (!keys.length) return isOidcEnabled(OIDC_CONFIG) ? [OIDC_CONFIG] : [];
+  return keys.map(getOidcProviderConfig).filter(isOidcEnabled);
+}
+
+const OIDC_STATE_MAX_AGE = 10 * 60 * 1000;
+
+function isOidcEnabled(config = OIDC_CONFIG) {
+  return Boolean(config.enabled !== false && config.clientId && config.clientSecret &&
+    (config.issuerUrl || config.discoveryUrl || config.authorizeUrl) &&
+    (config.tokenUrl || config.discoveryUrl || config.issuerUrl) &&
+    (!config.validateIdToken || config.issuerUrl || config.discoveryUrl));
+}
+
+function isHttpUrl(value) {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'https:' || protocol === 'http:';
+  } catch (error) {
+    return false;
+  }
+}
+
+function oidcDiscoveryUrl(config = OIDC_CONFIG) {
+  if (config.discoveryUrl) return config.discoveryUrl;
+  if (!config.issuerUrl) return '';
+  return `${config.issuerUrl.replace(/\/+$/, '')}/.well-known/openid-configuration`;
+}
+
+async function fetchJson(url, options = {}) {
+  if (!isHttpUrl(url)) throw new Error(`Invalid OIDC endpoint URL: ${url || '(empty)'}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: { Accept: 'application/json', ...(options.headers || {}) }
+    });
+    const text = await response.text();
+    let payload;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch (error) {
+      throw new Error(`OIDC endpoint returned invalid JSON (${response.status})`);
+    }
+    if (!response.ok) throw new Error(payload.error_description || payload.error || `OIDC endpoint returned HTTP ${response.status}`);
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveOidcEndpoints(config = OIDC_CONFIG) {
+  const discoveryAddress = oidcDiscoveryUrl(config);
+  const needsDiscovery = !config.authorizeUrl || !config.tokenUrl ||
+    (!config.userinfoUrl && !config.jwksUrl);
+  const discovery = discoveryAddress && needsDiscovery ? await fetchJson(discoveryAddress) : {};
+  const endpoints = {
+    issuer: config.issuerUrl || normalizeText(discovery.issuer),
+    authorizeUrl: config.authorizeUrl || normalizeText(discovery.authorization_endpoint),
+    tokenUrl: config.tokenUrl || normalizeText(discovery.token_endpoint),
+    userinfoUrl: config.userinfoUrl || normalizeText(discovery.userinfo_endpoint),
+    jwksUrl: config.jwksUrl || normalizeText(discovery.jwks_uri)
+  };
+  if (!endpoints.authorizeUrl || !endpoints.tokenUrl) throw new Error('OIDC authorize and token endpoints are required');
+  for (const [name, value] of Object.entries(endpoints)) {
+    if (value && name !== 'issuer' && !isHttpUrl(value)) throw new Error(`Invalid OIDC ${name}`);
+  }
+  if (config.validateIdToken && !endpoints.issuer) throw new Error('OIDC issuer is required when ID Token validation is enabled');
+  return endpoints;
+}
+
+function encodeOidcState(value) {
+  const payload = Buffer.from(JSON.stringify(value)).toString('base64url');
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function decodeOidcState(value) {
+  try {
+    const [payload, signature] = String(value || '').split('.');
+    if (!payload || !signature) return null;
+    const expected = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+    if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch (error) {
+    return null;
+  }
+}
+
+function isSafeFrontendPath(value) {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\');
+}
+
+function getOidcReturnPath(value) {
+  const candidate = normalizeText(value);
+  return isSafeFrontendPath(candidate) ? candidate : OIDC_CONFIG.frontendCallbackPath;
+}
+
+function getOidcCallbackUrl(req) {
+  return `${getBaseUrl(req).replace(/\/+$/, '')}${OIDC_CALLBACK_PATH}`;
+}
+
+function getOidcLoginUrl(req, providerKey = '') {
+  const url = `${getBaseUrl(req).replace(/\/+$/, '')}/api/v1/auth/oauth/oidc/login`;
+  return Object.keys(OIDC_PROVIDERS).length && providerKey
+    ? `${url}?provider=${encodeURIComponent(providerKey)}`
+    : url;
+}
+
+function getClaimByPath(source, pathValue) {
+  if (!source || !pathValue) return undefined;
+  const pathText = String(pathValue).trim();
+  if (pathText.startsWith('/')) {
+    return pathText.split('/').slice(1).reduce((value, key) => value == null ? undefined : value[key.replace(/~1/g, '/').replace(/~0/g, '~')], source);
+  }
+  const parts = pathText.replace(/\[([^\]]+)\]/g, '.$1').split('.').filter(Boolean);
+  return parts.reduce((value, key) => value == null ? undefined : value[key], source);
+}
+
+function claimText(source, pathValue) {
+  const value = getClaimByPath(source, pathValue);
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function claimBoolean(source, pathValue) {
+  const value = getClaimByPath(source, pathValue);
+  if (typeof value === 'boolean') return value;
+  return ['true', '1', 'yes'].includes(String(value || '').trim().toLowerCase());
+}
+
+function decodeJwt(token) {
+  const decoded = jwt.decode(token, { complete: true });
+  if (!decoded || typeof decoded !== 'object' || !decoded.header || !decoded.payload) throw new Error('OIDC ID Token is not a valid JWT');
+  return decoded;
+}
+
+async function verifyOidcIdToken(idToken, endpoints, nonce, config = OIDC_CONFIG) {
+  const decoded = decodeJwt(idToken);
+  const algorithm = normalizeText(decoded.header.alg);
+  const allowedAlgorithms = config.allowedAlgorithms.length ? config.allowedAlgorithms : ['RS256'];
+  if (!allowedAlgorithms.includes(algorithm)) throw new Error(`OIDC ID Token algorithm ${algorithm} is not allowed`);
+  if (!config.validateIdToken) return decoded.payload;
+  const verifyOptions = {
+    algorithms: allowedAlgorithms,
+    audience: config.clientId,
+    clockTolerance: Number.isFinite(config.clockTolerance) ? config.clockTolerance : 60
+  };
+  if (endpoints.issuer) verifyOptions.issuer = endpoints.issuer;
+  let verificationKey = config.idTokenHmacSecret;
+  if (!algorithm.startsWith('HS')) {
+    if (!endpoints.jwksUrl) throw new Error('OIDC JWKS URL is required for asymmetric ID Token validation');
+    const jwks = await fetchJson(endpoints.jwksUrl);
+    const keys = Array.isArray(jwks.keys) ? jwks.keys : [];
+    const jwk = keys.find(key => key.kid === decoded.header.kid && (!key.alg || key.alg === algorithm)) || (keys.length === 1 ? keys[0] : null);
+    if (!jwk) throw new Error('No matching OIDC signing key was found');
+    verificationKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  } else if (!verificationKey) {
+    throw new Error('OIDC HMAC validation secret is not configured');
+  }
+  const verified = jwt.verify(idToken, verificationKey, verifyOptions);
+  if (nonce && verified.nonce !== nonce) throw new Error('OIDC nonce mismatch');
+  return verified;
+}
+
+function appendQuery(pathname, params) {
+  const query = new URLSearchParams(params);
+  return `${pathname}${pathname.includes('?') ? '&' : '?'}${query.toString()}`;
+}
+
+function oidcErrorRedirect(state, message) {
+  return appendQuery(getOidcReturnPath(state?.returnTo), {
+    oidc_error: 'login_failed',
+    oidc_error_description: String(message || 'OIDC login failed').slice(0, 300)
+  });
+}
+
+async function exchangeOidcCode(code, codeVerifier, endpoints, redirectUri, config = OIDC_CONFIG) {
+  const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: config.clientId });
+  if (config.pkceEnabled && codeVerifier) body.set('code_verifier', codeVerifier);
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  if (config.tokenAuthMethod === 'client_secret_basic') {
+    headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`;
+    body.delete('client_id');
+  } else if (config.tokenAuthMethod === 'client_secret_post') {
+    body.set('client_secret', config.clientSecret);
+  } else {
+    throw new Error('OIDC token auth method must be client_secret_basic or client_secret_post');
+  }
+  return fetchJson(endpoints.tokenUrl, { method: 'POST', headers, body: body.toString() });
+}
+
+async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFIG) {
+  const provider = normalizeText(config.providerKey).toLowerCase();
+  const providerUserId = normalizeText(claims.id);
+  const email = normalizeEmail(claims.email);
+  if (!providerUserId) throw new Error('OIDC account did not provide a subject identifier');
+
+  const existingIdentity = await ExternalIdentity.findByProviderUserId(provider, providerUserId);
+  if (existingIdentity) {
+    const linkedUser = await User.findById(existingIdentity.user_id);
+    if (!linkedUser) throw new Error('The linked local user no longer exists');
+    if (linkUserId && existingIdentity.user_id !== linkUserId) {
+      throw new Error('This third-party account is already linked to another user');
+    }
+    await ExternalIdentity.update(existingIdentity.id, {
+      providerUsername: claims.username,
+      displayName: claims.name,
+      avatar: claims.picture,
+      email: claims.email,
+      profile: claims.profile
+    });
+    return linkedUser;
+  }
+
+  if (linkUserId) {
+    const linkedUser = await User.findById(linkUserId);
+    if (!linkedUser) throw new Error('The local account for this binding no longer exists');
+    await ExternalIdentity.create({
+      userId: linkedUser.id,
+      provider,
+      providerUserId,
+      providerUsername: claims.username,
+      displayName: claims.name,
+      avatar: claims.picture,
+      email,
+      profile: claims.profile
+    });
+    return linkedUser;
+  }
+
+  const emailVerified = Boolean(claims.emailVerified);
+  if (config.requireEmailVerified && !emailVerified) throw new Error('OIDC account email is not verified');
+  let existingUser = email && isValidEmail(email) && emailVerified ? await User.findByEmail(email) : null;
+  if (!existingUser && email && isValidEmail(email) && !emailVerified) {
+    const emailOwner = await User.findByEmail(email);
+    if (emailOwner) {
+      throw new Error('OIDC email is not verified; sign in locally before linking this account');
+    }
+  }
+  if (existingUser) {
+    await ExternalIdentity.create({
+      userId: existingUser.id,
+      provider,
+      providerUserId,
+      providerUsername: claims.username,
+      displayName: claims.name,
+      avatar: claims.picture,
+      email,
+      profile: claims.profile
+    });
+    return existingUser;
+  }
+
+  const localEmail = email && isValidEmail(email)
+    ? email
+    : `${provider}-${crypto.createHash('sha256').update(providerUserId).digest('hex').slice(0, 24)}@users.invalid`;
+  const usernameBase = (claims.username || (email ? email.split('@')[0] : '') || 'oidc-user').slice(0, 220);
+  let username = usernameBase;
+  let suffix = 0;
+  while ((await User.findByUsername(username)) && suffix < 20) {
+    suffix += 1;
+    username = `${usernameBase}-${suffix}`;
+  }
+  const user = await User.create({ username, email: localEmail, password: crypto.randomBytes(32).toString('base64url'), name: claims.name || claims.username || email || username, avatar: claims.picture || '', emailVerified });
+  await ExternalIdentity.create({
+    userId: user.id,
+    provider,
+    providerUserId,
+    providerUsername: claims.username,
+    displayName: claims.name,
+    avatar: claims.picture,
+    email,
+    profile: claims.profile
+  });
+  return user;
+}
 
 function serializeUser(user) {
   const role = normalizeText(user.role).toLowerCase() || 'user';
@@ -550,6 +918,98 @@ async function findUserConflicts({ username, email, excludeUserId }) {
   return { usernameConflict, emailConflict };
 }
 
+function normalizeEmailPurpose(value) {
+  const purpose = normalizeText(value).toLowerCase();
+  return [EMAIL_PURPOSE_REGISTER, EMAIL_PURPOSE_PASSWORD_RESET].includes(purpose) ? purpose : '';
+}
+
+function generateEmailCode() {
+  const devCode = normalizeText(process.env.EMAIL_DEV_CODE);
+  if (process.env.NODE_ENV !== 'production' && /^\d{6}$/.test(devCode)) {
+    return devCode;
+  }
+
+  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+}
+
+function hashEmailCode(email, purpose, code) {
+  return crypto
+    .createHash('sha256')
+    .update(`${JWT_SECRET}:${normalizeEmail(email)}:${purpose}:${normalizeText(code)}`)
+    .digest('hex');
+}
+
+function getEmailCodeExpiresAt() {
+  return new Date(Date.now() + EMAIL_CODE_TTL_MS);
+}
+
+function getEmailCodeExpiryMinutes() {
+  return Math.max(1, Math.ceil(EMAIL_CODE_TTL_MS / 60000));
+}
+
+async function issueEmailVerificationCode({ email, purpose, userId = null }) {
+  const code = generateEmailCode();
+  await EmailVerificationCode.deleteExpired();
+  await EmailVerificationCode.create({
+    email,
+    purpose,
+    userId,
+    codeHash: hashEmailCode(email, purpose, code),
+    expiresAt: getEmailCodeExpiresAt()
+  });
+
+  return sendVerificationEmail({
+    to: email,
+    code,
+    purpose,
+    expiresInMinutes: getEmailCodeExpiryMinutes()
+  });
+}
+
+async function verifyEmailCode({ email, purpose, code }) {
+  const normalizedCode = normalizeText(code);
+  if (!/^\d{6}$/.test(normalizedCode)) {
+    return {
+      ok: false,
+      status: 400,
+      error_key: 'email_code.invalid',
+      error_description: '验证码格式不正确'
+    };
+  }
+
+  const record = await EmailVerificationCode.findLatestActive(email, purpose);
+  if (!record) {
+    return {
+      ok: false,
+      status: 400,
+      error_key: 'email_code.expired',
+      error_description: '验证码不存在或已过期'
+    };
+  }
+
+  if (Number(record.attempts || 0) >= EMAIL_CODE_MAX_ATTEMPTS) {
+    return {
+      ok: false,
+      status: 429,
+      error_key: 'email_code.too_many_attempts',
+      error_description: '验证码尝试次数过多，请重新获取'
+    };
+  }
+
+  if (record.code_hash !== hashEmailCode(email, purpose, normalizedCode)) {
+    await EmailVerificationCode.incrementAttempts(record.id);
+    return {
+      ok: false,
+      status: 400,
+      error_key: 'email_code.invalid',
+      error_description: '验证码不正确'
+    };
+  }
+
+  await EmailVerificationCode.consume(record.id);
+  return { ok: true };
+}
+
 async function generateAccessToken(userId, clientId, scopes) {
   const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
@@ -907,6 +1367,127 @@ app.get('/login', (req, res) => {
   res.redirect('/oauth2/authorize');
 });
 
+app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
+  const config = getOidcProviderConfig(req.query.provider);
+  if (!config || !isOidcEnabled(config)) {
+    return res.status(503).json({
+      error: 'oidc_not_configured',
+      error_description: 'OIDC login is not configured'
+    });
+  }
+
+  const endpoints = await resolveOidcEndpoints(config);
+  const state = crypto.randomBytes(32).toString('base64url');
+  const nonce = crypto.randomBytes(32).toString('base64url');
+  const stateData = {
+    state,
+    nonce,
+    returnTo: getOidcReturnPath(req.query.return_to),
+    createdAt: Date.now(),
+    linkUserId: (await getAuthenticatedUser(req))?.id || '',
+    provider: config.providerKey
+  };
+  const authorizeParams = {
+    response_type: 'code',
+    client_id: config.clientId,
+    redirect_uri: getOidcCallbackUrl(req),
+    scope: config.scopes.join(' '),
+    state,
+    nonce
+  };
+
+  if (config.pkceEnabled) {
+    const codeVerifier = crypto.randomBytes(48).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    stateData.codeVerifier = codeVerifier;
+    authorizeParams.code_challenge = codeChallenge;
+    authorizeParams.code_challenge_method = 'S256';
+  }
+
+  res.cookie(OIDC_STATE_COOKIE, encodeOidcState(stateData), {
+    httpOnly: true,
+    secure: req.secure || req.get('x-forwarded-proto') === 'https',
+    sameSite: 'lax',
+    maxAge: OIDC_STATE_MAX_AGE
+  });
+  return res.redirect(`${endpoints.authorizeUrl}${endpoints.authorizeUrl.includes('?') ? '&' : '?'}${new URLSearchParams(authorizeParams).toString()}`);
+}));
+
+app.get('/api/v1/auth/oauth/oidc/config', (req, res) => {
+  const providers = getConfiguredOidcProviders().map(config => ({
+    key: config.providerKey,
+    providerName: config.providerName,
+    loginUrl: getOidcLoginUrl(req, config.providerKey)
+  }));
+  res.json({
+    enabled: providers.length > 0,
+    providerName: providers[0]?.providerName || OIDC_CONFIG.providerName,
+    loginUrl: providers[0]?.loginUrl || getOidcLoginUrl(req),
+    providers
+  });
+});
+
+app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
+  const cookieState = decodeOidcState(req.cookies[OIDC_STATE_COOKIE]);
+  res.clearCookie(OIDC_STATE_COOKIE);
+  const queryState = normalizeText(req.query.state);
+  const stateIsValid = cookieState && queryState && cookieState.state === queryState &&
+    Number(cookieState.createdAt) + OIDC_STATE_MAX_AGE >= Date.now();
+
+  if (!stateIsValid) {
+    return res.redirect(oidcErrorRedirect(cookieState, 'Invalid or expired OIDC state'));
+  }
+  if (req.query.error) {
+    return res.redirect(oidcErrorRedirect(cookieState, req.query.error_description || req.query.error));
+  }
+
+  const code = normalizeText(req.query.code);
+  if (!code) {
+    return res.redirect(oidcErrorRedirect(cookieState, 'OIDC authorization code is missing'));
+  }
+
+  try {
+    const config = getOidcProviderConfig(cookieState.provider);
+    if (!config || !isOidcEnabled(config)) throw new Error('OIDC provider is no longer configured');
+    const endpoints = await resolveOidcEndpoints(config);
+    const tokenPayload = await exchangeOidcCode(code, cookieState.codeVerifier, endpoints, getOidcCallbackUrl(req), config);
+    if (config.validateIdToken && !tokenPayload.id_token) {
+      throw new Error('OIDC token response did not include an ID Token');
+    }
+    const idTokenClaims = tokenPayload.id_token
+      ? await verifyOidcIdToken(tokenPayload.id_token, endpoints, cookieState.nonce, config)
+      : {};
+    let userinfoClaims = {};
+    if (endpoints.userinfoUrl && tokenPayload.access_token) {
+      userinfoClaims = await fetchJson(endpoints.userinfoUrl, {
+        headers: { Authorization: `Bearer ${tokenPayload.access_token}` }
+      });
+    }
+
+    const userinfoId = claimText(userinfoClaims, config.userinfoIdPath);
+    const idTokenId = claimText(idTokenClaims, 'sub');
+    if (userinfoId && idTokenId && userinfoId !== idTokenId) {
+      throw new Error('OIDC UserInfo subject does not match the ID Token subject');
+    }
+    const claims = {
+      id: userinfoId || idTokenId,
+      email: claimText(userinfoClaims, config.userinfoEmailPath) || claimText(idTokenClaims, config.userinfoEmailPath) || claimText(idTokenClaims, 'email'),
+      emailVerified: claimBoolean(userinfoClaims, config.emailVerifiedPath) || claimBoolean(idTokenClaims, config.emailVerifiedPath) || claimBoolean(idTokenClaims, 'email_verified'),
+      username: claimText(userinfoClaims, config.userinfoUsernamePath) || claimText(idTokenClaims, config.userinfoUsernamePath) || claimText(idTokenClaims, 'preferred_username'),
+      name: claimText(userinfoClaims, 'name') || claimText(idTokenClaims, 'name'),
+      picture: claimText(userinfoClaims, 'picture') || claimText(idTokenClaims, 'picture'),
+      profile: { ...idTokenClaims, ...userinfoClaims }
+    };
+    if (!claims.id) throw new Error('OIDC account did not provide a subject identifier');
+    const user = await findOrCreateOidcUser(claims, cookieState.linkUserId, config);
+    setSessionCookie(res, user);
+    return res.redirect(getOidcReturnPath(cookieState.returnTo));
+  } catch (error) {
+    console.error('OIDC callback failed:', error.message);
+    return res.redirect(oidcErrorRedirect(cookieState, error.message));
+  }
+}));
+
 app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   const username = normalizeText(req.body.username);
   const password = String(req.body.password || '');
@@ -926,12 +1507,62 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   return res.status(result.status).json(result.body);
 }));
 
+app.post('/api/email-verification/send', asyncHandler(async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const purpose = normalizeEmailPurpose(req.body.purpose);
+
+  if (!email || !isValidEmail(email)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'validation.email.invalid',
+      error_description: '请输入有效的邮箱地址'
+    });
+  }
+
+  if (!purpose) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'email_code.purpose.invalid',
+      error_description: '验证码用途无效'
+    });
+  }
+
+  const existingUser = await User.findByEmail(email);
+  if (purpose === EMAIL_PURPOSE_REGISTER && existingUser) {
+    return res.status(409).json({
+      error: 'conflict',
+      error_key: 'validation.email.taken',
+      error_description: '该邮箱已被注册'
+    });
+  }
+
+  if (purpose === EMAIL_PURPOSE_PASSWORD_RESET && !existingUser) {
+    return res.json({
+      message_key: 'email_code.sent',
+      message: '如果邮箱存在，验证码将发送到该邮箱'
+    });
+  }
+
+  const delivery = await issueEmailVerificationCode({
+    email,
+    purpose,
+    userId: existingUser?.id || null
+  });
+
+  res.json({
+    message_key: 'email_code.sent',
+    message: '验证码已发送',
+    deliveryMode: delivery.mode
+  });
+}));
+
 app.post('/oauth2/register', asyncHandler(async (req, res) => {
   const name = normalizeText(req.body.name);
   const email = normalizeEmail(req.body.email);
   const username = normalizeText(req.body.username) || email;
   const password = String(req.body.password || '');
   const confirmPassword = String(req.body.confirm_password || '');
+  const emailCode = normalizeText(req.body.email_code || req.body.verification_code);
 
   if (!email || !isValidEmail(email)) {
     return res.status(400).json({
@@ -982,19 +1613,95 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
     });
   }
 
+  const verification = await verifyEmailCode({
+    email,
+    purpose: EMAIL_PURPOSE_REGISTER,
+    code: emailCode
+  });
+
+  if (!verification.ok) {
+    return res.status(verification.status).json({
+      error: 'invalid_request',
+      error_key: verification.error_key,
+      error_description: verification.error_description
+    });
+  }
+
   const user = await User.create({
     username,
     email,
     password,
     name: name || username,
     avatar: '',
-    emailVerified: false
+    emailVerified: true
   });
 
   setSessionCookie(res, user);
 
   const result = await buildAuthorizationResponseV2(user, req.body);
   return res.status(result.status).json(result.body);
+}));
+
+app.post('/api/password-reset', asyncHandler(async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const emailCode = normalizeText(req.body.email_code || req.body.verification_code);
+  const password = String(req.body.password || '');
+  const confirmPassword = String(req.body.confirm_password || '');
+
+  if (!email || !isValidEmail(email)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'validation.email.invalid',
+      error_description: '请输入有效的邮箱地址'
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'validation.password.min_length',
+      error_description: '密码长度不能少于 6 位'
+    });
+  }
+
+  if (confirmPassword && confirmPassword !== password) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'validation.password.confirm_mismatch',
+      error_description: '两次输入的密码不一致'
+    });
+  }
+
+  const user = await User.findByEmail(email);
+  if (!user) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'email_code.expired',
+      error_description: '验证码不存在或已过期'
+    });
+  }
+
+  const verification = await verifyEmailCode({
+    email,
+    purpose: EMAIL_PURPOSE_PASSWORD_RESET,
+    code: emailCode
+  });
+
+  if (!verification.ok) {
+    return res.status(verification.status).json({
+      error: 'invalid_request',
+      error_key: verification.error_key,
+      error_description: verification.error_description
+    });
+  }
+
+  await User.updatePassword(user.id, password);
+  await User.update(user.id, { emailVerified: true });
+
+  res.json({
+    message_key: 'auth.password_reset.updated',
+    message: '密码已重置，请使用新密码登录'
+  });
 }));
 
 app.get(['/api/me', '/api/profile'], asyncHandler(async (req, res) => {
@@ -1007,8 +1714,9 @@ app.get(['/api/me', '/api/profile'], asyncHandler(async (req, res) => {
     });
   }
 
+  const identities = ExternalIdentity ? await ExternalIdentity.findByUserId(user.id) : [];
   res.json({
-    user: serializeUser(user)
+    user: { ...serializeUser(user), identities: ExternalIdentity ? ExternalIdentity.serializeMany(identities) : [] }
   });
 }));
 
@@ -1434,6 +2142,170 @@ app.get('/oauth2/logout', (req, res) => {
   res.redirect('/oauth2/authorize');
 });
 
+app.get('/api/account/identities', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  const identities = await ExternalIdentity.findByUserId(user.id);
+  res.json({ identities: ExternalIdentity.serializeMany(identities) });
+}));
+
+app.delete('/api/account/identities/:id', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  const identity = await ExternalIdentity.findById(normalizeText(req.params.id));
+  if (!identity || identity.user_id !== user.id) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'identity.not_found',
+      error_description: '未找到第三方账号绑定'
+    });
+  }
+
+  const identities = await ExternalIdentity.findByUserId(user.id);
+  if (identities.length <= 1) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'identity.last_binding',
+      error_description: '至少需要保留一个第三方账号绑定'
+    });
+  }
+
+  await ExternalIdentity.delete(identity.id);
+  res.status(204).send();
+}));
+
+app.get('/api/users/:id/identities', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const target = await User.findById(normalizeText(req.params.id));
+  if (!target) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'users.not_found',
+      error_description: '未找到用户'
+    });
+  }
+
+  const identities = await ExternalIdentity.findByUserId(target.id);
+  res.json({ identities: ExternalIdentity.serializeMany(identities) });
+}));
+
+app.get('/api/users', asyncHandler(async (req, res) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+
+  const users = await User.findAll();
+  const result = [];
+  for (const user of users) {
+    const identities = await ExternalIdentity.findByUserId(user.id);
+    result.push({ ...serializeUser(user), identities: ExternalIdentity.serializeMany(identities) });
+  }
+  res.json(result);
+}));
+
+app.put('/api/users/:id', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const userId = normalizeText(req.params.id);
+  const target = await User.findById(userId);
+  if (!target) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'users.not_found',
+      error_description: '未找到用户'
+    });
+  }
+
+  const nextRole = req.body.role === undefined
+    ? normalizeText(target.role).toLowerCase() || USER_ROLE_USER
+    : normalizeText(req.body.role).toLowerCase();
+  if (![USER_ROLE_ADMIN, USER_ROLE_USER].includes(nextRole)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'users.role.invalid',
+      error_description: '用户角色无效'
+    });
+  }
+
+  if (target.id === admin.id && nextRole !== USER_ROLE_ADMIN) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'users.self_demote',
+      error_description: '不能移除自己的管理员权限'
+    });
+  }
+
+  if (normalizeText(target.role).toLowerCase() === USER_ROLE_ADMIN && nextRole !== USER_ROLE_ADMIN) {
+    const admins = (await User.findAll()).filter(item => normalizeText(item.role).toLowerCase() === USER_ROLE_ADMIN);
+    if (admins.length <= 1) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'users.last_admin',
+        error_description: '系统至少需要一个管理员'
+      });
+    }
+  }
+
+  const updates = { role: nextRole };
+  if (req.body.emailVerified !== undefined) {
+    updates.emailVerified = Boolean(req.body.emailVerified);
+  }
+  if (req.body.name !== undefined) {
+    const name = normalizeText(req.body.name);
+    if (!name) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'users.name.required',
+        error_description: '显示名称不能为空'
+      });
+    }
+    updates.name = name;
+  }
+
+  const updated = await User.update(userId, updates);
+  const identities = await ExternalIdentity.findByUserId(userId);
+  res.json({ user: { ...serializeUser(updated), identities: ExternalIdentity.serializeMany(identities) } });
+}));
+
+app.delete('/api/users/:id', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const userId = normalizeText(req.params.id);
+  const target = await User.findById(userId);
+  if (!target) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'users.not_found',
+      error_description: '未找到用户'
+    });
+  }
+  if (target.id === admin.id) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'users.self_delete',
+      error_description: '不能删除当前登录的管理员账户'
+    });
+  }
+  if (normalizeText(target.role).toLowerCase() === USER_ROLE_ADMIN) {
+    const admins = (await User.findAll()).filter(item => normalizeText(item.role).toLowerCase() === USER_ROLE_ADMIN);
+    if (admins.length <= 1) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'users.last_admin',
+        error_description: '不能删除最后一个管理员'
+      });
+    }
+  }
+
+  await User.delete(userId);
+  res.status(204).send();
+}));
+
 app.get('/api/clients', asyncHandler(async (req, res) => {
   const user = await requireAdminUser(req, res);
   if (!user) {
@@ -1690,6 +2562,8 @@ async function bootstrap() {
   User = new UserModel(pool);
   Client = new ClientModel(pool);
   Token = new TokenModel(pool);
+  EmailVerificationCode = new EmailVerificationCodeModel(pool);
+  ExternalIdentity = new ExternalIdentityModel(pool);
 
   await ensureSystemUser();
   await seedMemoryDemoData();

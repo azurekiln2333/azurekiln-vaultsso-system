@@ -104,6 +104,44 @@ CREATE TABLE IF NOT EXISTS sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const CREATE_EMAIL_VERIFICATION_CODES_TABLE = `
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  user_id VARCHAR(36),
+  purpose VARCHAR(32) NOT NULL,
+  code_hash VARCHAR(128) NOT NULL,
+  attempts INT NOT NULL DEFAULT 0,
+  consumed_at TIMESTAMP NULL,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_email_purpose (email, purpose),
+  INDEX idx_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+// A provider-neutral relation table keeps external identities out of users.
+// Existing users are not altered; rows are added only when an identity is linked.
+const CREATE_USER_IDENTITIES_TABLE = `
+CREATE TABLE IF NOT EXISTS user_identities (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  provider VARCHAR(128) NOT NULL,
+  provider_user_id VARCHAR(512) NOT NULL,
+  provider_username VARCHAR(255),
+  display_name VARCHAR(255),
+  avatar TEXT,
+  email VARCHAR(255),
+  profile JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_identity_provider_subject (provider, provider_user_id),
+  INDEX idx_user_identities_user_id (user_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 let pool = null;
 
 async function ensureUsersRoleColumn(connection) {
@@ -198,6 +236,8 @@ async function initDatabase() {
     await connection.query(CREATE_ACCESS_TOKENS_TABLE);
     await connection.query(CREATE_REFRESH_TOKENS_TABLE);
     await connection.query(CREATE_SESSIONS_TABLE);
+    await connection.query(CREATE_EMAIL_VERIFICATION_CODES_TABLE);
+    await connection.query(CREATE_USER_IDENTITIES_TABLE);
     await ensureUsersRoleColumn(connection);
     await ensureColumn(connection, 'auth_codes', 'code_challenge', 'code_challenge TEXT', 'scopes');
     await ensureColumn(connection, 'auth_codes', 'code_challenge_method', 'code_challenge_method VARCHAR(16)', 'code_challenge');

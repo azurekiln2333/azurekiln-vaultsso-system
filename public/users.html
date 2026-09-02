@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 用户管理</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="mx-auto max-w-7xl px-6 py-6 lg:px-8">
+    <header class="mb-8 flex flex-col gap-5 rounded-xl border border-white/80 bg-white/75 px-6 py-5 shadow-sm backdrop-blur lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
+        <div>
+          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
+          <p class="text-sm text-muted">用户目录与权限管理</p>
+        </div>
+      </div>
+      <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
+        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/users.html">用户</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/apps.html">应用</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/tokens.html">令牌</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html">API 文档</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile">个人资料</a>
+      </nav>
+    </header>
+
+    <section class="mb-8 bg-surface-container-low px-1 py-2">
+      <p class="mb-3 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+        <span class="material-symbols-outlined text-base">manage_accounts</span> 管理员控制台
+      </p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">用户管理</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted">查看所有账户、登录来源同步的资料、邮箱验证状态和权限。修改会立即写入当前数据库。</p>
+    </section>
+
+    <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <article class="rounded-xl bg-white p-5 shadow-sm"><p class="mb-2 text-sm text-muted">全部用户</p><p class="text-3xl font-bold" id="statsTotal">0</p></article>
+      <article class="rounded-xl bg-white p-5 shadow-sm"><p class="mb-2 text-sm text-muted">管理员</p><p class="text-3xl font-bold" id="statsAdmins">0</p></article>
+      <article class="rounded-xl bg-white p-5 shadow-sm"><p class="mb-2 text-sm text-muted">已验证邮箱</p><p class="text-3xl font-bold" id="statsVerified">0</p></article>
+    </section>
+
+    <section class="mb-6 rounded-xl bg-white p-5 shadow-sm">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <label class="relative w-full lg:max-w-lg">
+          <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
+          <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" placeholder="搜索姓名、用户名、邮箱或用户 ID" type="search">
+        </label>
+        <div class="flex flex-wrap items-center gap-3">
+          <select class="rounded-lg border-line py-3 pl-3 pr-9 text-sm" id="roleFilter" aria-label="按角色筛选">
+            <option value="">全部角色</option><option value="admin">管理员</option><option value="user">普通用户</option>
+          </select>
+          <select class="rounded-lg border-line py-3 pl-3 pr-9 text-sm" id="verifiedFilter" aria-label="按邮箱状态筛选">
+            <option value="">全部邮箱状态</option><option value="true">已验证</option><option value="false">未验证</option>
+          </select>
+          <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button"><span class="material-symbols-outlined text-lg">refresh</span>刷新</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700" id="statusBar">正在加载用户...</div>
+
+    <section class="overflow-hidden rounded-xl bg-white shadow-sm">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-surface-container-low"><tr class="border-b border-line/70">
+            <th class="px-5 py-4 text-left font-bold text-muted">用户</th><th class="px-5 py-4 text-left font-bold text-muted">邮箱</th><th class="px-5 py-4 text-left font-bold text-muted">第三方账号</th><th class="px-5 py-4 text-left font-bold text-muted">角色</th><th class="px-5 py-4 text-left font-bold text-muted">邮箱状态</th><th class="px-5 py-4 text-left font-bold text-muted">创建时间</th><th class="px-5 py-4 text-right font-bold text-muted">操作</th>
+          </tr></thead>
+          <tbody id="userTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const tableBody = document.getElementById('userTableBody');
+    const statusBar = document.getElementById('statusBar');
+    const searchInput = document.getElementById('searchInput');
+    const roleFilter = document.getElementById('roleFilter');
+    const verifiedFilter = document.getElementById('verifiedFilter');
+    const refreshBtn = document.getElementById('refreshBtn');
+    let allUsers = [];
+    let pendingDeleteId = '';
+    let pendingDeleteTimer = null;
+
+    function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+    function dateText(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN'); }
+    function setStatus(kind, message) {
+      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm ${kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : kind === 'success' ? 'border-green-200 bg-green-50 text-green-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`;
+      statusBar.textContent = message;
+    }
+    function updateStats() {
+      document.getElementById('statsTotal').textContent = allUsers.length;
+      document.getElementById('statsAdmins').textContent = allUsers.filter(user => user.role === 'admin').length;
+      document.getElementById('statsVerified').textContent = allUsers.filter(user => user.emailVerified).length;
+    }
+    function filteredUsers() {
+      const keyword = searchInput.value.trim().toLowerCase();
+      return allUsers.filter(user => {
+        const text = [user.id, user.name, user.username, user.email].join(' ').toLowerCase();
+        return (!keyword || text.includes(keyword)) && (!roleFilter.value || user.role === roleFilter.value) && (!verifiedFilter.value || String(Boolean(user.emailVerified)) === verifiedFilter.value);
+      });
+    }
+    function renderUsers() {
+      const users = filteredUsers();
+      tableBody.innerHTML = '';
+      if (!users.length) { tableBody.innerHTML = '<tr><td class="px-5 py-12 text-center text-muted" colspan="7">没有符合条件的用户</td></tr>'; return; }
+      users.forEach(user => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-line/50 align-top';
+        const identities = Array.isArray(user.identities) ? user.identities : [];
+        const identityHtml = identities.length ? identities.map(identity => `<span class="mb-1 mr-1 inline-flex rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary" title="${escapeHtml(identity.providerUserId)}">${escapeHtml(identity.provider)}</span>`).join('') : '<span class="text-xs text-muted">未绑定</span>';
+        row.innerHTML = `<td class="px-5 py-4"><div class="flex min-w-[220px] items-center gap-3"><div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft font-bold text-primary">${escapeHtml((user.name || user.username || '?').slice(0, 1).toUpperCase())}</div><div><div class="font-semibold text-ink">${escapeHtml(user.name || '未设置姓名')}</div><div class="mt-1 break-all text-xs text-muted">${escapeHtml(user.username || '')}</div><code class="mt-1 block break-all text-[11px] text-muted">${escapeHtml(user.id || '')}</code></div></div></td><td class="px-5 py-4"><div class="min-w-[190px] break-all text-ink">${escapeHtml(user.email || '未设置邮箱')}</div></td><td class="px-5 py-4"><div class="min-w-[120px]">${identityHtml}</div></td><td class="px-5 py-4"><select class="rounded-lg border-line py-2 pl-3 pr-8 text-xs font-bold" data-role-id="${escapeHtml(user.id)}"><option value="user" ${user.role !== 'admin' ? 'selected' : ''}>普通用户</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option></select></td><td class="px-5 py-4"><button class="rounded-lg px-3 py-1 text-xs font-bold ${user.emailVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}" data-verified-id="${escapeHtml(user.id)}" type="button">${user.emailVerified ? '已验证' : '未验证'}</button></td><td class="whitespace-nowrap px-5 py-4 text-muted">${dateText(user.createdAt)}</td><td class="px-5 py-4 text-right"><button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-delete-id="${escapeHtml(user.id)}" type="button">删除</button></td>`;
+        tableBody.appendChild(row);
+      });
+      tableBody.querySelectorAll('[data-role-id]').forEach(control => control.addEventListener('change', () => updateUser(control.dataset.roleId, { role: control.value })));
+      tableBody.querySelectorAll('[data-verified-id]').forEach(control => control.addEventListener('click', () => { const user = allUsers.find(item => item.id === control.dataset.verifiedId); updateUser(control.dataset.verifiedId, { emailVerified: !user.emailVerified }); }));
+      tableBody.querySelectorAll('[data-delete-id]').forEach(control => control.addEventListener('click', () => deleteUser(control.dataset.deleteId, control)));
+    }
+    async function request(url, options = {}) {
+      const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+      const payload = response.status === 204 ? null : await response.json();
+      if (response.status === 401) { window.location.href = '/oauth2/authorize'; throw new Error('登录已过期'); }
+      if (response.status === 403) { window.location.href = '/oauth2/error?error=access_denied'; throw new Error('没有权限'); }
+      if (!response.ok) throw new Error(payload?.error_description || '请求失败');
+      return payload;
+    }
+    async function loadUsers() {
+      refreshBtn.disabled = true;
+      setStatus('info', '正在加载全部用户...');
+      try { allUsers = await request('/api/users') || []; updateStats(); renderUsers(); setStatus('success', `已加载 ${allUsers.length} 个用户，当前显示 ${filteredUsers().length} 个。`); }
+      catch (error) { allUsers = []; updateStats(); renderUsers(); setStatus('error', error.message); }
+      finally { refreshBtn.disabled = false; }
+    }
+    async function updateUser(id, changes) {
+      try { const payload = await request(`/api/users/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(changes) }); const index = allUsers.findIndex(user => user.id === id); if (index >= 0) allUsers[index] = payload.user; updateStats(); renderUsers(); setStatus('success', '用户信息已更新。'); }
+      catch (error) { setStatus('error', error.message); renderUsers(); }
+    }
+    function deleteUser(id, button) {
+      if (pendingDeleteId !== id) { pendingDeleteId = id; button.textContent = '再次点击确认'; button.className = 'rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-xs font-bold text-red-700'; pendingDeleteTimer = setTimeout(() => { pendingDeleteId = ''; renderUsers(); }, 4000); return; }
+      clearTimeout(pendingDeleteTimer);
+      request(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(() => { allUsers = allUsers.filter(user => user.id !== id); updateStats(); renderUsers(); setStatus('success', '用户已删除。'); }).catch(error => setStatus('error', error.message)).finally(() => { pendingDeleteId = ''; });
+    }
+    [searchInput, roleFilter, verifiedFilter].forEach(control => control.addEventListener('input', renderUsers));
+    refreshBtn.addEventListener('click', loadUsers);
+    loadUsers();
+  </script>
+</body>
+</html>

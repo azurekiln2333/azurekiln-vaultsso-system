@@ -73,7 +73,7 @@ class UserModel {
 
   async findAll() {
     const [rows] = await this.pool.execute(
-      'SELECT id, username, email, name, avatar, email_verified, role, created_at FROM users'
+      'SELECT id, username, email, name, avatar, email_verified, role, created_at, updated_at FROM users'
     );
     return rows;
   }
