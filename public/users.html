@@ -65,7 +65,7 @@
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
           <thead class="bg-surface-container-low"><tr class="border-b border-line/70">
-            <th class="px-5 py-4 text-left font-bold text-muted">用户</th><th class="px-5 py-4 text-left font-bold text-muted">邮箱</th><th class="px-5 py-4 text-left font-bold text-muted">第三方账号</th><th class="px-5 py-4 text-left font-bold text-muted">角色</th><th class="px-5 py-4 text-left font-bold text-muted">邮箱状态</th><th class="px-5 py-4 text-left font-bold text-muted">创建时间</th><th class="px-5 py-4 text-right font-bold text-muted">操作</th>
+            <th class="px-5 py-4 text-left font-bold text-muted">用户</th><th class="px-5 py-4 text-left font-bold text-muted">邮箱</th><th class="px-5 py-4 text-left font-bold text-muted">第三方账号</th><th class="px-5 py-4 text-left font-bold text-muted">角色</th><th class="px-5 py-4 text-left font-bold text-muted">邮箱状态</th><th class="px-5 py-4 text-left font-bold text-muted">封禁状态</th><th class="px-5 py-4 text-left font-bold text-muted">创建时间</th><th class="px-5 py-4 text-right font-bold text-muted">操作</th>
           </tr></thead>
           <tbody id="userTableBody"></tbody>
         </table>
@@ -122,6 +122,8 @@ zhang.san,zhangsan@example.com,张三,Passw0rd!,user</pre>
     let allUsers = [];
     let pendingDeleteId = '';
     let pendingDeleteTimer = null;
+    let pendingBanId = '';
+    let pendingBanTimer = null;
 
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function dateText(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN'); }
@@ -143,7 +145,7 @@ zhang.san,zhangsan@example.com,张三,Passw0rd!,user</pre>
     function renderUsers() {
       const users = filteredUsers();
       tableBody.innerHTML = '';
-      if (!users.length) { tableBody.innerHTML = '<tr><td class="px-5 py-12 text-center text-muted" colspan="7">没有符合条件的用户</td></tr>'; return; }
+      if (!users.length) { tableBody.innerHTML = '<tr><td class="px-5 py-12 text-center text-muted" colspan="8">没有符合条件的用户</td></tr>'; return; }
       users.forEach(user => {
         const row = document.createElement('tr');
         row.className = 'border-b border-line/50 align-top transition-colors hover:bg-surface-container-low';
@@ -154,11 +156,11 @@ zhang.san,zhangsan@example.com,张三,Passw0rd!,user</pre>
         });
         const identities = Array.isArray(user.identities) ? user.identities : [];
         const identityHtml = identities.length ? identities.map(identity => `<span class="mb-1 mr-1 inline-flex rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary" title="${escapeHtml(identity.providerUserId)}">${escapeHtml(identity.provider)}</span>`).join('') : '<span class="text-xs text-muted">未绑定</span>';
-        row.innerHTML = `<td class="px-5 py-4"><div class="flex min-w-[220px] items-center gap-3"><div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft font-bold text-primary">${escapeHtml((user.name || user.username || '?').slice(0, 1).toUpperCase())}</div><div><div class="font-semibold text-ink">${escapeHtml(user.name || '未设置姓名')}</div><div class="mt-1 break-all text-xs text-muted">${escapeHtml(user.username || '')}</div><code class="mt-1 block break-all text-[11px] text-muted">${escapeHtml(user.id || '')}</code></div></div></td><td class="px-5 py-4"><div class="min-w-[190px] break-all text-ink">${escapeHtml(user.email || '未设置邮箱')}</div></td><td class="px-5 py-4"><div class="min-w-[120px]">${identityHtml}</div></td><td class="px-5 py-4"><select class="rounded-lg border-line py-2 pl-3 pr-8 text-xs font-bold" data-role-id="${escapeHtml(user.id)}"><option value="user" ${user.role !== 'admin' ? 'selected' : ''}>普通用户</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option></select></td><td class="px-5 py-4"><button class="rounded-lg px-3 py-1 text-xs font-bold ${user.emailVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}" data-verified-id="${escapeHtml(user.id)}" type="button">${user.emailVerified ? '已验证' : '未验证'}</button></td><td class="whitespace-nowrap px-5 py-4 text-muted">${dateText(user.createdAt)}</td><td class="px-5 py-4 text-right whitespace-nowrap"><button class="mr-1 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary" data-detail-id="${escapeHtml(user.id)}" type="button"><span class="material-symbols-outlined text-sm">edit</span>编辑</button><button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-delete-id="${escapeHtml(user.id)}" type="button">删除</button></td>`;
+        row.innerHTML = `<td class="px-5 py-4"><div class="flex min-w-[220px] items-center gap-3"><div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft font-bold text-primary">${escapeHtml((user.name || user.username || '?').slice(0, 1).toUpperCase())}</div><div><div class="font-semibold text-ink">${escapeHtml(user.name || '未设置姓名')}</div><div class="mt-1 break-all text-xs text-muted">${escapeHtml(user.username || '')}</div><code class="mt-1 block break-all text-[11px] text-muted">${escapeHtml(user.id || '')}</code></div></div></td><td class="px-5 py-4"><div class="min-w-[190px] break-all text-ink">${escapeHtml(user.email || '未设置邮箱')}</div></td><td class="px-5 py-4"><div class="min-w-[120px]">${identityHtml}</div></td><td class="px-5 py-4"><select class="rounded-lg border-line py-2 pl-3 pr-8 text-xs font-bold" data-role-id="${escapeHtml(user.id)}"><option value="user" ${user.role !== 'admin' ? 'selected' : ''}>普通用户</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option></select></td><td class="px-5 py-4"><span class="inline-flex rounded-lg px-3 py-1 text-xs font-bold ${user.emailVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}">${user.emailVerified ? '已验证' : '未验证'}</span></td><td class="px-5 py-4"><span class="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-xs font-bold ${user.banned ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}"><span class="material-symbols-outlined text-sm">${user.banned ? 'block' : 'how_to_reg'}</span>${user.banned ? '已封禁' : '正常'}</span></td><td class="whitespace-nowrap px-5 py-4 text-muted">${dateText(user.createdAt)}</td><td class="px-5 py-4 text-right whitespace-nowrap"><button class="mr-1 rounded-lg border px-3 py-2 text-xs font-bold ${user.banned ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100' : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'}" data-ban-id="${escapeHtml(user.id)}" type="button">${user.banned ? '解封' : '封禁'}</button><button class="mr-1 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary" data-detail-id="${escapeHtml(user.id)}" type="button"><span class="material-symbols-outlined text-sm">edit</span>编辑</button><button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-delete-id="${escapeHtml(user.id)}" type="button">删除</button></td>`;
         tableBody.appendChild(row);
       });
       tableBody.querySelectorAll('[data-role-id]').forEach(control => control.addEventListener('change', () => updateUser(control.dataset.roleId, { role: control.value })));
-      tableBody.querySelectorAll('[data-verified-id]').forEach(control => control.addEventListener('click', () => { const user = allUsers.find(item => item.id === control.dataset.verifiedId); updateUser(control.dataset.verifiedId, { emailVerified: !user.emailVerified }); }));
+      tableBody.querySelectorAll('[data-ban-id]').forEach(control => control.addEventListener('click', () => toggleBan(control.dataset.banId, control)));
       tableBody.querySelectorAll('[data-detail-id]').forEach(control => control.addEventListener('click', () => { window.location.href = `/user.html?id=${encodeURIComponent(control.dataset.detailId)}`; }));
       tableBody.querySelectorAll('[data-delete-id]').forEach(control => control.addEventListener('click', () => deleteUser(control.dataset.deleteId, control)));
     }
@@ -180,6 +182,19 @@ zhang.san,zhangsan@example.com,张三,Passw0rd!,user</pre>
     async function updateUser(id, changes) {
       try { const payload = await request(`/api/users/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(changes) }); const index = allUsers.findIndex(user => user.id === id); if (index >= 0) allUsers[index] = payload.user; updateStats(); renderUsers(); setStatus('success', '用户信息已更新。'); }
       catch (error) { setStatus('error', error.message); renderUsers(); }
+    }
+    function toggleBan(id, button) {
+      const user = allUsers.find(item => item.id === id);
+      if (!user) return;
+      if (pendingBanId !== id) {
+        pendingBanId = id;
+        button.textContent = user.banned ? '确认解封？' : '确认封禁？';
+        pendingBanTimer = setTimeout(() => { pendingBanId = ''; renderUsers(); }, 4000);
+        return;
+      }
+      clearTimeout(pendingBanTimer);
+      pendingBanId = '';
+      updateUser(id, { banned: !user.banned });
     }
     function deleteUser(id, button) {
       if (pendingDeleteId !== id) { pendingDeleteId = id; button.textContent = '再次点击确认'; button.className = 'rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-xs font-bold text-red-700'; pendingDeleteTimer = setTimeout(() => { pendingDeleteId = ''; renderUsers(); }, 4000); return; }
