@@ -2454,7 +2454,7 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
 }));
 
 const USER_IMPORT_MAX_ROWS = 200;
-const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role', 'nickname', 'photo', 'description', 'credits', 'qq_login_openid'];
+const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role', 'nickname', 'photo', 'description', 'credits', 'qq_login_openid', 'ip', 'ischeck', 'create_time', 'update_time'];
 
 function parseImportCsvLine(line) {
   const cells = [];
@@ -2474,8 +2474,17 @@ function parseImportCsvLine(line) {
   return cells.map(cell => cell.trim());
 }
 
+function parseImportDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (/^\d{10}$/.test(text)) return new Date(Number(text) * 1000);
+  if (/^\d{13}$/.test(text)) return new Date(Number(text));
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function parseUserImportContent(content) {
-  const text = String(content || '').trim();
+  const text = String(content || '').replace(/^\uFEFF/, '').trim();
   if (!text) {
     return { rows: [], error: '导入内容不能为空' };
   }
@@ -2553,6 +2562,10 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
     const description = String(row.description ?? '').trim();
     const creditsRaw = String(row.credits ?? '').trim();
     const qqOpenid = String(row.qq_login_openid ?? '').trim();
+    const lastLoginIp = normalizeText(row.ip).slice(0, 64);
+    const emailVerified = ['y', '1', 'true'].includes(normalizeText(row.ischeck).toLowerCase());
+    const createdAt = parseImportDate(row.create_time);
+    const updatedAt = parseImportDate(row.update_time);
 
     if (!email || !isValidEmail(email)) {
       skipped.push({ row: index + 1, username, email, reason: '邮箱缺失或格式无效' });
@@ -2601,7 +2614,7 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
 
     const generatedPassword = password ? '' : crypto.randomBytes(9).toString('base64url');
     const role = normalizeText(row.role).toLowerCase() === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_USER;
-    const user = await User.create({ username, email, password: generatedPassword || password, name, avatar, description, credits, role, emailVerified: false });
+    const user = await User.create({ username, email, password: generatedPassword || password, name, avatar, description, credits, role, emailVerified, lastLoginIp, createdAt, updatedAt });
     if (qqOpenid) {
       await ExternalIdentity.create({
         userId: user.id,

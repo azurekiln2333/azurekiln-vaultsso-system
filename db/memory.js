@@ -120,9 +120,10 @@ class MemoryPool {
       return [this.users.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 1).map(user => clone(user)), []];
     }
 
-    if (lower === 'insert into users (id, username, email, password, name, avatar, description, email_verified, banned, credits, last_login_ip, role) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)') {
-      const [id, username, email, password, name, avatar, description, emailVerified, banned, credits, lastLoginIp, role] = params;
-      const createdAt = now();
+    if (lower === 'insert into users (id, username, email, password, name, avatar, description, email_verified, banned, credits, last_login_ip, role, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)') {
+      const [id, username, email, password, name, avatar, description, emailVerified, banned, credits, lastLoginIp, role, createdAtParam, updatedAtParam] = params;
+      const createdAt = createdAtParam ? new Date(createdAtParam).toISOString() : now();
+      const updatedAt = updatedAtParam ? new Date(updatedAtParam).toISOString() : createdAt;
       this.users.push({
         id,
         username,
@@ -137,7 +138,7 @@ class MemoryPool {
         last_login_ip: lastLoginIp,
         role,
         created_at: createdAt,
-        updated_at: createdAt
+        updated_at: updatedAt
       });
       return [{ affectedRows: 1, insertId: id }, []];
     }

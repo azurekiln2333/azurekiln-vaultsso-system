@@ -78,7 +78,7 @@
       <div class="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 class="font-headline text-xl font-extrabold tracking-tight">导入用户</h2>
-          <p class="mt-1 text-sm text-muted">支持 CSV 或 JSON 用户数组。基础表头 username,email,name,password,role；可选列：description、credits、nickname（昵称）、photo（头像）、qq_login_openid（自动绑定 QQ）。密码可留空，系统会自动生成并在结果中展示一次。</p>
+          <p class="mt-1 text-sm text-muted">支持 CSV 或 JSON 用户数组，兼容旧系统整表导出（自动去 BOM、忽略多余列）。基础表头 username,email,name,password,role；可选列：description、credits、nickname（昵称）、photo（头像）、ip（最后登录 IP）、ischeck（y/n 邮箱验证）、create_time / update_time（Unix 秒或日期字符串，会保留）、qq_login_openid（自动绑定 QQ）。uid、state 等其余列自动忽略。密码可留空，系统会自动生成并在结果中展示一次。</p>
         </div>
         <button class="rounded-lg px-2 py-1 text-2xl leading-none text-muted hover:text-primary" id="importCloseBtn" type="button" aria-label="关闭">&times;</button>
       </div>

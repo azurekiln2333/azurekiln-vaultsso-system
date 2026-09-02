@@ -37,10 +37,17 @@ class UserModel {
     const id = crypto.randomUUID();
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     const role = await this.pickDefaultRole(userData.role);
-    
+
+    const createdAt = userData.createdAt && !Number.isNaN(new Date(userData.createdAt).getTime())
+      ? new Date(userData.createdAt)
+      : new Date();
+    const updatedAt = userData.updatedAt && !Number.isNaN(new Date(userData.updatedAt).getTime())
+      ? new Date(userData.updatedAt)
+      : createdAt;
+
     const [result] = await this.pool.execute(
-      `INSERT INTO users (id, username, email, password, name, avatar, description, email_verified, banned, credits, last_login_ip, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (id, username, email, password, name, avatar, description, email_verified, banned, credits, last_login_ip, role, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         userData.username,
@@ -53,10 +60,12 @@ class UserModel {
         userData.banned || false,
         Number.isFinite(Number(userData.credits)) ? Number(userData.credits) : 0,
         userData.lastLoginIp || null,
-        role
+        role,
+        createdAt,
+        updatedAt
       ]
     );
-    
+
     return this.findById(id);
   }
 
