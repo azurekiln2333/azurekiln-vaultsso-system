@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html class="light" lang="en">
+<html class="light" lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VaultSSO | Token Audit</title>
+  <title data-i18n="tokens.page.title">VaultSSO | 令牌审计</title>
   <script src="/assets/vaultsso-tailwind.js"></script>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,44 +16,49 @@
       <div class="flex items-center gap-4">
         <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
         <div>
-          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
-          <p class="text-sm text-muted">OAuth2 access token audit</p>
+          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
+          <p class="text-sm text-muted" data-i18n="tokens.header.subtitle">OAuth2 访问令牌审计</p>
         </div>
       </div>
 
       <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/apps.html">Apps</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/users.html">Users</a>
-        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/tokens.html">Tokens</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html">API Docs</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile">Profile</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/apps.html" data-i18n="tokens.nav.applications">应用</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/users.html" data-i18n="tokens.nav.users">用户</a>
+        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/tokens.html" data-i18n="tokens.nav.tokens">令牌</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html" data-i18n="tokens.nav.docs">API 文档</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile" data-i18n="tokens.nav.profile">个人信息</a>
       </nav>
+
+      <div class="language-switch inline-flex items-center gap-1 rounded-lg border border-line bg-white/90 p-1">
+        <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="zh" data-i18n="common.language.zh">中文</button>
+        <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
+      </div>
     </header>
 
     <section class="mb-8 rounded-xl bg-surface-container-low p-8">
       <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
         <span class="material-symbols-outlined text-base">shield_lock</span>
-        Admin Audit
+        <span data-i18n="tokens.hero.eyebrow">管理员审计</span>
       </p>
-      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">Token Audit</h1>
-      <p class="max-w-3xl text-base leading-8 text-muted">Review issued access tokens, inspect expiry status, filter records, and revoke active tokens.</p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight" data-i18n="tokens.hero.title">令牌审计</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted" data-i18n="tokens.hero.description">查看已签发的访问令牌、检查过期状态、按条件筛选，并吊销仍在生效的令牌。</p>
     </section>
 
     <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Total Tokens</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.total">令牌总数</p>
         <p class="text-3xl font-bold" id="statsTotal">0</p>
       </article>
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Active</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.active">生效中</p>
         <p class="text-3xl font-bold" id="statsActive">0</p>
       </article>
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Expiring in 24h</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.expiring">24 小时内过期</p>
         <p class="text-3xl font-bold" id="statsExpiring">0</p>
       </article>
       <article class="rounded-xl bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted">Expired</p>
+        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.expired">已过期</p>
         <p class="text-3xl font-bold" id="statsExpired">0</p>
       </article>
     </section>
@@ -62,30 +67,30 @@
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <label class="relative w-full lg:max-w-md">
           <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
-          <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" placeholder="Search user, client, scope, or token ID" type="search">
+          <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" data-i18n-placeholder="tokens.search.placeholder" placeholder="搜索用户、客户端、scope 或令牌 ID" type="search">
         </label>
         <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button">
           <span class="material-symbols-outlined text-lg">refresh</span>
-          Refresh
+          <span data-i18n="common.action.refresh">刷新</span>
         </button>
       </div>
     </div>
 
-    <div class="mb-6 rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar">Loading tokens...</div>
+    <div class="mb-6 rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar" data-i18n="tokens.status.loading">正在从 /api/tokens 加载令牌...</div>
 
     <div class="overflow-hidden rounded-xl bg-white shadow-sm">
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
           <thead class="bg-surface-container-low">
             <tr class="border-b border-line/70">
-              <th class="px-5 py-4 text-left font-bold text-muted">Client</th>
-              <th class="px-5 py-4 text-left font-bold text-muted">User</th>
-              <th class="px-5 py-4 text-left font-bold text-muted">Scopes</th>
-              <th class="px-5 py-4 text-left font-bold text-muted">Created</th>
-              <th class="px-5 py-4 text-left font-bold text-muted">Expires</th>
-              <th class="px-5 py-4 text-left font-bold text-muted">Status</th>
-              <th class="px-5 py-4 text-left font-bold text-muted">Token ID</th>
-              <th class="px-5 py-4 text-right font-bold text-muted">Action</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.client">客户端</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.user">用户</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.scopes">Scopes</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.created">创建时间</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.expires">过期时间</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.status">状态</th>
+              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.token_id">令牌 ID</th>
+              <th class="px-5 py-4 text-right font-bold text-muted" data-i18n="tokens.table.action">操作</th>
             </tr>
           </thead>
           <tbody id="tokenTableBody"></tbody>
@@ -94,7 +99,9 @@
     </div>
   </div>
 
+  <script src="/i18n.js?v=20260903-1"></script>
   <script>
+    const i18n = window.VaultI18n;
     const statusBar = document.getElementById('statusBar');
     const searchInput = document.getElementById('searchInput');
     const refreshBtn = document.getElementById('refreshBtn');
@@ -103,6 +110,10 @@
     let allTokens = [];
     let pendingRevokeTokenId = '';
     let pendingRevokeTimer = null;
+
+    function translate(key, variables = {}) {
+      return i18n.t(key, variables);
+    }
 
     function setStatus(kind, message) {
       const classes = {
@@ -124,7 +135,7 @@
       button.classList.toggle('opacity-70', isLoading);
       button.classList.toggle('cursor-wait', isLoading);
       button.innerHTML = isLoading
-        ? `<span class="material-symbols-outlined animate-spin text-lg">progress_activity</span><span>${label || 'Loading...'}</span>`
+        ? `<span class="material-symbols-outlined animate-spin text-lg">progress_activity</span><span>${label || translate('common.loading')}</span>`
         : button.dataset.originalLabel;
     }
 
@@ -135,33 +146,34 @@
         pendingRevokeTimer = null;
       }
       document.querySelectorAll('[data-revoke]').forEach(button => {
-        button.textContent = 'Revoke';
+        button.textContent = translate('tokens.action.revoke');
         button.className = 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100';
       });
     }
 
     function formatDate(value) {
-      if (!value) return 'Not recorded';
+      if (!value) return translate('common.not_recorded');
       const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+      if (Number.isNaN(date.getTime())) return translate('common.not_recorded');
+      return date.toLocaleString(i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US');
     }
 
     function resolveTokenState(token) {
       const expiresAt = new Date(token.expiresAt);
       if (Number.isNaN(expiresAt.getTime())) {
-        return { key: 'unknown', label: 'Unknown', className: 'bg-slate-100 text-slate-600' };
+        return { key: 'unknown', className: 'bg-slate-100 text-slate-600' };
       }
 
       const diff = expiresAt.getTime() - Date.now();
       if (diff <= 0) {
-        return { key: 'expired', label: 'Expired', className: 'bg-slate-100 text-slate-600' };
+        return { key: 'expired', className: 'bg-slate-100 text-slate-600' };
       }
 
       if (diff <= 24 * 60 * 60 * 1000) {
-        return { key: 'expiring', label: 'Expiring', className: 'bg-amber-50 text-amber-700' };
+        return { key: 'expiring', className: 'bg-amber-50 text-amber-700' };
       }
 
-      return { key: 'active', label: 'Active', className: 'bg-green-50 text-green-700' };
+      return { key: 'active', className: 'bg-green-50 text-green-700' };
     }
 
     function searchText(token) {
@@ -196,7 +208,7 @@
     function renderTokens(tokens) {
       tokenTableBody.innerHTML = '';
       if (!tokens.length) {
-        tokenTableBody.innerHTML = '<tr><td class="px-5 py-10 text-center text-muted" colspan="8">No tokens match the current search.</td></tr>';
+        tokenTableBody.innerHTML = `<tr><td class="px-5 py-10 text-center text-muted" colspan="8">${escapeHtml(translate('tokens.table.empty'))}</td></tr>`;
         return;
       }
 
@@ -207,28 +219,28 @@
         row.className = 'border-b border-line/50 align-top';
         row.innerHTML = `
           <td class="px-5 py-4">
-            <div class="font-semibold text-ink">${escapeHtml(token.client || 'Unknown')}</div>
-            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.clientId || 'No client_id')}</div>
+            <div class="font-semibold text-ink">${escapeHtml(token.client || translate('common.unknown'))}</div>
+            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.clientId || translate('tokens.value.no_client'))}</div>
           </td>
           <td class="px-5 py-4">
-            <div class="font-semibold text-ink">${escapeHtml(token.user || 'Unknown')}</div>
-            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.userEmail || 'No email')}</div>
+            <div class="font-semibold text-ink">${escapeHtml(token.user || translate('common.unknown'))}</div>
+            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.userEmail || translate('tokens.value.no_email'))}</div>
           </td>
           <td class="px-5 py-4">
             <div class="flex flex-wrap gap-1">
               ${scopes.length
                 ? scopes.map(scope => `<span class="rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary">${escapeHtml(scope)}</span>`).join('')
-                : '<span class="text-xs text-muted">No scopes</span>'}
+                : `<span class="text-xs text-muted">${escapeHtml(translate('tokens.value.no_scopes'))}</span>`}
             </div>
           </td>
           <td class="px-5 py-4 text-muted">${formatDate(token.createdAt)}</td>
           <td class="px-5 py-4 text-muted">${formatDate(token.expiresAt)}</td>
           <td class="px-5 py-4">
-            <span class="rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-widest ${state.className}">${state.label}</span>
+            <span class="rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-widest ${state.className}">${escapeHtml(translate(`tokens.state.${state.key}`))}</span>
           </td>
           <td class="px-5 py-4"><code class="break-all text-xs text-muted">${escapeHtml(token.id || '')}</code></td>
           <td class="px-5 py-4 text-right">
-            <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-revoke="${escapeHtml(token.id || '')}" type="button">Revoke</button>
+            <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-revoke="${escapeHtml(token.id || '')}" type="button">${escapeHtml(translate('tokens.action.revoke'))}</button>
           </td>
         `;
         tokenTableBody.appendChild(row);
@@ -252,12 +264,14 @@
       const keyword = searchInput.value.trim().toLowerCase();
       const filtered = keyword ? allTokens.filter(token => searchText(token).includes(keyword)) : allTokens;
       renderTokens(filtered);
-      setStatus('info', keyword ? `Showing ${filtered.length} matching token(s).` : `Loaded ${allTokens.length} token(s).`);
+      setStatus('info', keyword
+        ? translate('tokens.status.filtered', { count: filtered.length })
+        : translate('tokens.status.loaded', { count: allTokens.length }));
     }
 
     async function loadTokens() {
-      setButtonLoading(refreshBtn, true, 'Loading');
-      setStatus('info', 'Loading tokens from /api/tokens...');
+      setButtonLoading(refreshBtn, true, translate('common.loading'));
+      setStatus('info', translate('tokens.status.loading'));
       try {
         const response = await fetch('/api/tokens', { credentials: 'same-origin' });
         if (response.status === 401) {
@@ -270,7 +284,7 @@
         }
 
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload?.error_description || 'Failed to load tokens');
+        if (!response.ok) throw new Error(payload?.error_description || translate('tokens.status.load_failed'));
 
         allTokens = Array.isArray(payload) ? payload : [];
         renderStats(allTokens);
@@ -291,24 +305,24 @@
       if (pendingRevokeTokenId !== tokenId) {
         clearPendingRevoke();
         pendingRevokeTokenId = tokenId;
-        button.textContent = 'Confirm revoke';
+        button.textContent = translate('tokens.action.confirm_revoke');
         button.className = 'rounded-lg border border-red-300 bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700';
-        setStatus('info', 'Click Confirm revoke to invalidate this access token.');
+        setStatus('info', translate('tokens.action.confirm_hint'));
         pendingRevokeTimer = setTimeout(clearPendingRevoke, 5000);
         return;
       }
 
       clearPendingRevoke();
-      setButtonLoading(button, true, 'Revoking');
+      setButtonLoading(button, true, translate('tokens.action.revoking'));
       try {
         const response = await fetch(`/api/tokens/${encodeURIComponent(tokenId)}`, {
           method: 'DELETE',
           credentials: 'same-origin'
         });
         const payload = response.status === 204 ? null : await response.json().catch(() => null);
-        if (!response.ok) throw new Error(payload?.error_description || 'Failed to revoke token');
+        if (!response.ok) throw new Error(payload?.error_description || translate('tokens.status.revoke_failed'));
         await loadTokens();
-        setStatus('success', 'Token revoked.');
+        setStatus('success', translate('tokens.status.revoked'));
       } catch (error) {
         setStatus('error', error.message);
       } finally {
@@ -316,9 +330,22 @@
       }
     }
 
+    function renderDocument() {
+      i18n.apply(document);
+      document.title = translate('tokens.page.title');
+    }
+
+    i18n.bindLanguageButtons(document);
+    renderDocument();
     searchInput.addEventListener('input', applySearch);
     refreshBtn.addEventListener('click', loadTokens);
     loadTokens();
+
+    document.addEventListener('vaultsso:languagechange', () => {
+      renderDocument();
+      renderStats(allTokens);
+      applySearch();
+    });
   </script>
 </body>
 </html>
