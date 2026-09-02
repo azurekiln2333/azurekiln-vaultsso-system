@@ -415,6 +415,16 @@
         const result = await response.json();
 
         if (!response.ok) {
+          if (result?.error_key === 'auth.password.not_set' && form === loginForm) {
+            const typedUsername = new URLSearchParams(new FormData(form)).get('username') || '';
+            if (typedUsername.includes('@')) {
+              recoverForm.querySelector('input[name="email"]').value = typedUsername;
+            }
+            loginForm.reset();
+            setMode('recover');
+            setStatus('error', i18n.resolveMessage(result, 'auth.password.not_set'));
+            return;
+          }
           setStatus('error', i18n.resolveMessage(result, 'common.network_error', {
             client: getClientLabel()
           }));
