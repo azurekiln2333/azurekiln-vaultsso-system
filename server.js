@@ -1145,7 +1145,7 @@ async function buildAuthorizationResponseV2(user, params) {
       body: {
         message_key: 'auth.login_success',
         message: 'Login successful',
-        redirect: '/oauth2/success'
+        redirect: '/profile'
       }
     };
   }
