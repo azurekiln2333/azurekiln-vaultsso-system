@@ -66,6 +66,14 @@
             <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
           </article>
 
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.description">个人简介</p>
+              <p class="text-sm text-ink break-words whitespace-pre-wrap" id="descriptionValue">-</p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editBioBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+          </article>
+
           <article class="glass-card rounded-3xl border border-white/80 p-5">
             <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
@@ -112,6 +120,14 @@
               <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.updated_at">最近更新时间</p>
               <p class="text-sm font-semibold text-ink break-words" id="updatedAtValue"></p>
             </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.credits">积分</p>
+              <p class="text-sm font-semibold text-ink break-words" id="creditsValue">0</p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.last_login_ip">最后登录 IP</p>
+              <p class="text-sm font-semibold text-ink break-words" id="lastLoginIpValue">-</p>
+            </article>
           </div>
         </section>
       </div>
@@ -138,6 +154,12 @@
           <label for="profileAvatarInput" data-i18n="profile.field.avatar">头像 URL</label>
           <input id="profileAvatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
           <small data-i18n="profile.field.avatar_hint">留空会使用系统生成的默认头像。</small>
+        </div>
+
+        <div class="field">
+          <label for="profileDescriptionInput" data-i18n="profile.field.description">个人简介</label>
+          <textarea id="profileDescriptionInput" name="description" rows="3" maxlength="500"></textarea>
+          <small data-i18n="profile.field.description_hint">最多 500 字，会展示在个人信息页。</small>
         </div>
 
         <div class="modal-actions">
@@ -316,16 +338,20 @@
       document.getElementById('emailVerifiedBadge').className = user.emailVerified ? 'chip' : 'chip muted';
 
       document.getElementById('displayNameValue').textContent = user.name || '-';
+      document.getElementById('descriptionValue').textContent = user.description || '-';
       document.getElementById('usernameValue').textContent = user.username || '-';
       document.getElementById('emailValue').textContent = user.email || '-';
       document.getElementById('passwordValue').textContent = i18n.t('profile.value.password_masked');
       document.getElementById('userIdValue').textContent = user.id || '-';
       document.getElementById('createdAtValue').textContent = formatDate(user.createdAt);
       document.getElementById('updatedAtValue').textContent = formatDate(user.updatedAt);
+      document.getElementById('creditsValue').textContent = String(user.credits ?? 0);
+      document.getElementById('lastLoginIpValue').textContent = user.lastLoginIp || '-';
       renderIdentities(user.identities || []);
 
       document.getElementById('profileNameInput').value = user.name || '';
       document.getElementById('profileAvatarInput').value = user.avatar || '';
+      document.getElementById('profileDescriptionInput').value = user.description || '';
       document.getElementById('profileEmailInput').value = user.email || '';
     }
 
@@ -464,12 +490,17 @@
 
       const updated = await saveProfile({
         name: document.getElementById('profileNameInput').value,
-        avatar: document.getElementById('profileAvatarInput').value
+        avatar: document.getElementById('profileAvatarInput').value,
+        description: document.getElementById('profileDescriptionInput').value
       }, document.getElementById('profileModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
 
       if (updated) {
         closeModal('profileModal');
       }
+    });
+
+    document.getElementById('editBioBtn').addEventListener('click', function () {
+      openModal('profileModal');
     });
 
     document.getElementById('emailEditForm').addEventListener('submit', async function (event) {
