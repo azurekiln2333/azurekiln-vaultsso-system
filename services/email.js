@@ -7,7 +7,11 @@ function normalizeText(value) {
 }
 
 function isSmtpConfigured() {
-  return Boolean(normalizeText(process.env.SMTP_HOST));
+  return Boolean(
+    normalizeText(process.env.SMTP_HOST) &&
+    normalizeText(process.env.SMTP_USER) &&
+    String(process.env.SMTP_PASS || '')
+  );
 }
 
 function getTransporter() {
@@ -22,12 +26,20 @@ function getTransporter() {
   const user = normalizeText(process.env.SMTP_USER);
   const pass = String(process.env.SMTP_PASS || '');
   const auth = user ? { user, pass } : undefined;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const secureEnv = normalizeText(process.env.SMTP_SECURE).toLowerCase();
+  // Ports 443 and 465 speak implicit TLS (e.g. SMTP2GO); other ports use STARTTLS.
+  const secure = secureEnv === 'true' ? true : secureEnv === 'false' ? false : port === 443 || port === 465;
 
   transporter = nodemailer.createTransport({
     host: normalizeText(process.env.SMTP_HOST),
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
-    auth
+    port,
+    secure,
+    requireTLS: !secure,
+    auth,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000
   });
 
   return transporter;
@@ -67,7 +79,12 @@ async function sendVerificationEmail({ to, code, purpose, expiresInMinutes }) {
     return { delivered: false, mode: 'console' };
   }
 
-  await smtp.sendMail({ from, to, subject, text });
+  try {
+    await smtp.sendMail({ from, to, subject, text });
+  } catch (error) {
+    console.error(`[email:smtp] send failed: ${error.message}`);
+    throw error;
+  }
   return { delivered: true, mode: 'smtp' };
 }
 
