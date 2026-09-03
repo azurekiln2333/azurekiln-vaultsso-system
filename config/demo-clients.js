@@ -35,5 +35,14 @@ module.exports = [
     redirectUris: ['https://portal.azure.com/oauth2/callback', 'http://localhost:3000/callback', 'http://localhost:3146/callback'],
     scopes: ['openid', 'profile', 'email', 'offline_access'],
     logoUrl: 'https://portal.azure.com/favicon.ico'
+  },
+  {
+    // AzureKiln 主站（azurekiln.cn）登录入口，首页右上角账户按钮跳转本服务
+    id: 'azurekiln-main-site',
+    name: 'AzureKilnSite',
+    secret: 'main-site-secret',
+    redirectUris: ['https://azurekiln.cn/', 'http://localhost:8093/'],
+    scopes: ['openid', 'profile', 'email'],
+    logoUrl: ''
   }
 ];
