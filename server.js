@@ -115,6 +115,9 @@ function parseDurationToMs(value, fallbackMs) {
 const ACCESS_TOKEN_TTL_MS = parseDurationToMs(TOKEN_EXPIRY, 60 * 60 * 1000);
 const REFRESH_TOKEN_TTL_MS = parseDurationToMs(REFRESH_TOKEN_EXPIRY, 7 * 24 * 60 * 60 * 1000);
 const SESSION_MAX_AGE = ACCESS_TOKEN_TTL_MS;
+// 登出后允许跳回的站点白名单（注册域名，逗号分隔；为空时保持原行为）
+const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
+  .split(',').map(item => normalizeText(item).toLowerCase()).filter(Boolean);
 const EMAIL_PURPOSE_REGISTER = 'register';
 const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
 const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
@@ -552,6 +555,34 @@ function isUserBanned(user) {
 
 function isClientActive(client) {
   return Boolean(client && client.is_active !== false && client.is_active !== 0);
+}
+/**
+ * 校验登出后的跳回地址：必须是 http(s) 绝对地址，host 等于或属于
+ * LOGOUT_REDIRECT_HOSTS 白名单中的注册域名（含子域名）；未配置白名单时返回空，
+ * 保持登出后回到本服务登录页的既有行为。
+ */
+function resolveLogoutRedirect(rawValue) {
+  const raw = normalizeText(rawValue);
+  if (!raw || LOGOUT_REDIRECT_HOSTS.length === 0) {
+    return '';
+  }
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (error) {
+    return '';
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    return '';
+  }
+  const isLocalDev = ['localhost', '127.0.0.1'].includes(url.hostname.toLowerCase());
+  if (url.protocol !== 'https:' && !isLocalDev) {
+    return '';
+  }
+  const host = url.hostname.toLowerCase();
+  const allowed = LOGOUT_REDIRECT_HOSTS.some(entry =>
+    host === entry || host.endsWith(`.${entry}`));
+  return allowed ? url.toString() : '';
 }
 
 function parseRequestedScopes(scopeValue, fallbackScopes = ['openid']) {
@@ -2190,7 +2221,8 @@ app.get('/profile', asyncHandler(async (req, res) => {
 
 app.get('/oauth2/logout', (req, res) => {
   res.clearCookie('session');
-  res.redirect('/oauth2/authorize');
+  const target = resolveLogoutRedirect(req.query.redirect);
+  res.redirect(target || '/oauth2/authorize');
 });
 
 app.get('/api/account/identities', asyncHandler(async (req, res) => {

@@ -119,7 +119,7 @@ $env:DB_DRIVER="memory"; npm start
 | `/oauth2/consent` | 授权确认页面 |
 | `/oauth2/error` | 错误展示页面 |
 | `/callback` | 本地 OAuth 回调演示页面 |
-| `/oauth2/logout` | 清除会话后返回登录页 |
+| `/oauth2/logout` | 清除会话；可选 `?redirect=`（须在 `LOGOUT_REDIRECT_HOSTS` 白名单内）返回合作站点 |
 
 ### 后端接口
 
@@ -344,7 +344,7 @@ $env:DB_DRIVER="memory"; npm start
 | `/oauth2/consent` | 授權確認頁面 |
 | `/oauth2/error` | 錯誤顯示頁面 |
 | `/callback` | 本機 OAuth 回呼示範頁面 |
-| `/oauth2/logout` | 清除工作階段後返回登入頁 |
+| `/oauth2/logout` | 清除工作階段；可選 `?redirect=`（須在 `LOGOUT_REDIRECT_HOSTS` 白名單內）返回合作站點 |
 
 ### 後端介面
 
@@ -515,7 +515,7 @@ Every seeded client includes `http://localhost:3146/callback` as a local redirec
 | `/oauth2/consent` | Consent page |
 | `/oauth2/error` | Error display page |
 | `/callback` | Local OAuth callback demo page |
-| `/oauth2/logout` | Clears the session and returns to sign-in |
+| `/oauth2/logout` | Clears the session; optional `?redirect=` (must match the `LOGOUT_REDIRECT_HOSTS` allowlist) returns to a partner site |
 
 ### Backend API
 
