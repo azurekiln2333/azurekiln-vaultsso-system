@@ -118,6 +118,8 @@ const SESSION_MAX_AGE = ACCESS_TOKEN_TTL_MS;
 // 登出后允许跳回的站点白名单（注册域名，逗号分隔；为空时保持原行为）
 const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
   .split(',').map(item => normalizeText(item).toLowerCase()).filter(Boolean);
+// 会话滑动续期阈值：会话有效时长过半后再次访问时重发 session cookie
+const SESSION_REFRESH_THRESHOLD_MS = Math.floor(ACCESS_TOKEN_TTL_MS / 2);
 const EMAIL_PURPOSE_REGISTER = 'register';
 const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
 const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
@@ -526,7 +528,7 @@ function setSessionCookie(res, user) {
   });
 }
 
-async function getAuthenticatedUser(req) {
+async function getAuthenticatedUser(req, res = null) {
   const sessionToken = req.cookies.session;
   if (!sessionToken) {
     return null;
@@ -543,6 +545,12 @@ async function getAuthenticatedUser(req) {
   }
 
   return user;
+
+
+  // 滑动续期：会话签发时长超过阈值一半时重发 session cookie，避免活跃用户被登出
+  if (res && Number(session.iat) * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
+    setSessionCookie(res, user);
+  }
 }
 
 function isAdminUser(user) {
@@ -711,7 +719,7 @@ async function authenticateClient(req, res) {
 }
 
 async function requireAuthenticatedUser(req, res) {
-  const user = await getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req, res);
   if (!user) {
     res.status(401).json({
       error: 'unauthorized',
@@ -748,7 +756,7 @@ app.use(asyncHandler(async (req, res, next) => {
     return;
   }
 
-  const user = await getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req, res);
   if (!user) {
     res.redirect('/oauth2/authorize');
     return;
@@ -1364,7 +1372,7 @@ app.get('/oauth2/authorize', asyncHandler(async (req, res) => {
       return res.redirect(`/oauth2/error?error=invalid_redirect_uri&error_description=${encodeURIComponent('无效的回调地址')}&state=${state || ''}`);
     }
 
-    const user = await getAuthenticatedUser(req);
+    const user = await getAuthenticatedUser(req, res);
     if (user) {
       const result = await buildAuthorizationResponseV2(user, {
         client_id: clientId,
@@ -1746,7 +1754,7 @@ app.post('/api/password-reset', asyncHandler(async (req, res) => {
 }));
 
 app.get(['/api/me', '/api/profile'], asyncHandler(async (req, res) => {
-  const user = await getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req, res);
   if (!user) {
     return res.status(401).json({
       error: 'unauthorized',
@@ -1762,7 +1770,7 @@ app.get(['/api/me', '/api/profile'], asyncHandler(async (req, res) => {
 }));
 
 app.put('/api/profile', asyncHandler(async (req, res) => {
-  const currentUser = await getAuthenticatedUser(req);
+  const currentUser = await getAuthenticatedUser(req, res);
   if (!currentUser) {
     return res.status(401).json({
       error: 'unauthorized',
@@ -2211,7 +2219,7 @@ app.get(['/success', '/oauth2/success'], (req, res) => {
 });
 
 app.get('/profile', asyncHandler(async (req, res) => {
-  const user = await getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req, res);
   if (!user) {
     return res.redirect('/oauth2/authorize');
   }
