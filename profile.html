@@ -49,9 +49,7 @@
             </div>
 
             <div class="flex flex-wrap gap-3">
-            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/apps.html" id="appsMenuLink" style="display:none;" data-i18n="profile.sidebar.apps_title">应用管理</a>
-            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/users.html" id="usersMenuLink" style="display:none;"><span class="material-symbols-outlined text-base">group</span><span data-i18n="profile.sidebar.users_title">用户管理</span></a>
-            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/tokens.html" id="tokensMenuLink" style="display:none;" data-i18n="profile.sidebar.tokens_title">令牌管理</a>
+            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/users.html" id="adminCenterLink" style="display:none;"><span class="material-symbols-outlined text-base">admin_panel_settings</span><span data-i18n="profile.sidebar.admin_center">管理中心</span></a>
               <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/oauth2/logout" data-i18n="common.action.logout">退出登录</a>
             </div>
           </div>
@@ -282,9 +280,7 @@
     }
 
     function toggleAdminLinks(isAdmin) {
-      document.getElementById('appsMenuLink').style.display = isAdmin ? '' : 'none';
-      document.getElementById('usersMenuLink').style.display = isAdmin ? '' : 'none';
-      document.getElementById('tokensMenuLink').style.display = isAdmin ? '' : 'none';
+      document.getElementById('adminCenterLink').style.display = isAdmin ? '' : 'none';
     }
 
     function setStatus(kind, message) {

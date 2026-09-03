@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="light" lang="zh-CN">
+<html class="light" lang="zh-CN" data-admin-page="tokens">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,33 +9,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/vaultsso-base.css">
+  <link rel="stylesheet" href="/assets/vaultsso-admin.css">
+  <script src="/assets/vaultsso-admin.js?v=20260903-1" defer></script>
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
-  <div class="mx-auto max-w-7xl px-6 py-6 lg:px-8">
-    <header class="mb-8 flex flex-col gap-5 rounded-xl border border-white/80 bg-white/75 px-6 py-5 shadow-sm backdrop-blur lg:flex-row lg:items-center lg:justify-between">
-      <div class="flex items-center gap-4">
-        <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
-        <div>
-          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
-          <p class="text-sm text-muted" data-i18n="tokens.header.subtitle">OAuth2 访问令牌审计</p>
-        </div>
-      </div>
-
-      <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/apps.html" data-i18n="tokens.nav.applications">应用</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/users.html" data-i18n="tokens.nav.users">用户</a>
-        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/tokens.html" data-i18n="tokens.nav.tokens">令牌</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/smtp.html" data-i18n="tokens.nav.smtp">发件设置</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/api-docs.html" data-i18n="tokens.nav.docs">API 文档</a>
-        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile" data-i18n="tokens.nav.profile">个人信息</a>
-      </nav>
-
-      <div class="language-switch inline-flex items-center gap-1 rounded-lg border border-line bg-white/90 p-1">
-        <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="zh" data-i18n="common.language.zh">中文</button>
-        <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="en" data-i18n="common.language.en">English</button>
-      </div>
-    </header>
-
+  <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
     <section class="mb-8 rounded-xl bg-surface-container-low p-8">
       <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
         <span class="material-symbols-outlined text-base">shield_lock</span>
