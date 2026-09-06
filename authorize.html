@@ -88,6 +88,29 @@
               </div>
             </div>
 
+            <div class="field-group" data-captcha-group hidden>
+              <label class="field-label" data-i18n="auth.captcha.label">图形验证码</label>
+              <div class="flex items-stretch gap-2">
+                <div class="field-shell flex-1">
+                  <span class="material-symbols-outlined field-icon">image_search</span>
+                  <input class="field-input" name="captcha_code" type="text" maxlength="4" autocomplete="off" data-i18n-placeholder="auth.captcha.placeholder" placeholder="Enter the 4 characters">
+                </div>
+                <div class="flex w-[132px] shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden rounded-xl border border-line bg-white" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
+                  <span class="material-symbols-outlined text-muted">refresh</span>
+                </div>
+              </div>
+              <input type="hidden" name="captcha_id">
+            </div>
+
+            <div class="field-group" id="loginEmailCodeGroup" hidden>
+              <label class="field-label" for="loginEmailCode" data-i18n="auth.login_code.label">邮箱验证码</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">mark_email_read</span>
+                <input class="field-input" id="loginEmailCode" name="email_code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-i18n-placeholder="auth.login_code.placeholder" placeholder="6 位邮箱验证码">
+              </div>
+              <p class="mt-1 text-xs text-muted" id="loginEmailCodeHint"></p>
+            </div>
+
             <button class="text-action-button" id="showRecoveryBtn" type="button" data-i18n="auth.button.forgot_password">Forgot password?</button>
             <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.login">Sign In and Continue</button>
             <div class="oidc-divider" id="oidcDivider" hidden><span data-i18n="auth.oidc.or">或使用</span></div>
@@ -152,6 +175,20 @@
                 <span class="material-symbols-outlined field-icon">verified_user</span>
                 <input class="field-input" id="registerConfirmPassword" name="confirm_password" type="password" data-i18n-placeholder="auth.placeholder.confirm_password" placeholder="Enter the password again" required>
               </div>
+            </div>
+
+            <div class="field-group" data-captcha-group hidden>
+              <label class="field-label" data-i18n="auth.captcha.label">图形验证码</label>
+              <div class="flex items-stretch gap-2">
+                <div class="field-shell flex-1">
+                  <span class="material-symbols-outlined field-icon">image_search</span>
+                  <input class="field-input" name="captcha_code" type="text" maxlength="4" autocomplete="off" data-i18n-placeholder="auth.captcha.placeholder" placeholder="Enter the 4 characters">
+                </div>
+                <div class="flex w-[132px] shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden rounded-xl border border-line bg-white" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
+                  <span class="material-symbols-outlined text-muted">refresh</span>
+                </div>
+              </div>
+              <input type="hidden" name="captcha_id">
             </div>
 
             <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.register">Create Account and Continue</button>
@@ -237,6 +274,75 @@
     const oidcDivider = document.getElementById('oidcDivider');
     const oidcProviders = document.getElementById('oidcProviders');
 
+    const authConfig = {
+      captchaLogin: false,
+      captchaRegister: false,
+      loginEmailCode: false,
+      registrationEnabled: true,
+      passwordMinLength: 6
+    };
+
+    function setupCaptchaWidget(form) {
+      const group = form.querySelector('[data-captcha-group]');
+      const box = form.querySelector('[data-captcha-box]');
+      if (!group || !box) return null;
+      const idInput = form.querySelector('input[name="captcha_id"]');
+      const codeInput = form.querySelector('input[name="captcha_code"]');
+
+      async function refresh() {
+        try {
+          const response = await fetch('/api/captcha');
+          const data = await response.json();
+          idInput.value = data.id;
+          codeInput.value = '';
+          box.innerHTML = data.svg;
+        } catch (error) {
+          box.innerHTML = '<span class="material-symbols-outlined text-muted">error</span>';
+        }
+      }
+
+      box.addEventListener('click', refresh);
+      return {
+        refresh,
+        setVisible(visible) {
+          group.hidden = !visible;
+          if (visible) {
+            refresh();
+          } else {
+            idInput.value = '';
+            codeInput.value = '';
+            box.innerHTML = '<span class="material-symbols-outlined text-muted">refresh</span>';
+          }
+        }
+      };
+    }
+
+    const loginCaptcha = setupCaptchaWidget(loginForm);
+    const registerCaptcha = setupCaptchaWidget(registerForm);
+
+    async function hydrateAuthConfig() {
+      try {
+        const response = await fetch('/api/auth/config');
+        if (response.ok) Object.assign(authConfig, await response.json());
+      } catch (error) {
+        console.error('Load auth config failed:', error);
+      }
+
+      if (loginCaptcha) loginCaptcha.setVisible(authConfig.captchaLogin);
+      if (registerCaptcha) registerCaptcha.setVisible(authConfig.captchaRegister);
+
+      const registerTab = tabButtons.find(button => button.dataset.mode === 'register');
+      if (registerTab && !authConfig.registrationEnabled) {
+        registerTab.hidden = true;
+      }
+    }
+
+    function showLoginEmailCodeStep(message) {
+      document.getElementById('loginEmailCodeGroup').hidden = false;
+      document.getElementById('loginEmailCodeHint').textContent = message || i18n.t('auth.login_code.sent');
+      document.getElementById('loginEmailCode').focus();
+    }
+
     function getClientLabel() {
       return clientNames[oauthParams.client_id] || oauthParams.client_id || i18n.t('common.app_fallback');
     }
@@ -278,6 +384,15 @@
       cards.forEach(function (card) {
         card.classList.toggle('hidden', card.dataset.card !== mode);
       });
+
+      if (mode === 'login') {
+        if (loginCaptcha && authConfig.captchaLogin) loginCaptcha.refresh();
+      } else {
+        document.getElementById('loginEmailCodeGroup').hidden = true;
+      }
+      if (mode === 'register' && registerCaptcha && authConfig.captchaRegister) {
+        registerCaptcha.refresh();
+      }
 
       clearStatus();
     }
@@ -414,6 +529,12 @@
 
         const result = await response.json();
 
+        if (result?.require_email_code && form === loginForm) {
+          showLoginEmailCodeStep(result.message);
+          setStatus('success', i18n.resolveMessage(result, 'auth.login_code.sent'));
+          return;
+        }
+
         if (!response.ok) {
           if (result?.error_key === 'auth.password.not_set' && form === loginForm) {
             const typedUsername = new URLSearchParams(new FormData(form)).get('username') || '';
@@ -425,10 +546,18 @@
             setStatus('error', i18n.resolveMessage(result, 'auth.password.not_set'));
             return;
           }
+          if (result?.error_key === 'captcha.invalid' || result?.error_key === 'captcha.expired') {
+            if (form === loginForm && loginCaptcha) loginCaptcha.refresh();
+            if (form === registerForm && registerCaptcha) registerCaptcha.refresh();
+          }
           setStatus('error', i18n.resolveMessage(result, 'common.network_error', {
             client: getClientLabel()
           }));
           return;
+        }
+
+        if (form === loginForm) {
+          document.getElementById('loginEmailCodeGroup').hidden = true;
         }
 
         if (result.redirect) {
@@ -536,9 +665,19 @@
     fillHiddenFields(registerForm);
     setMode('login');
     renderPage();
+    hydrateAuthConfig();
     hydrateOidcLogin();
     i18n.bindLanguageButtons(document);
     hydrateSessionBanner();
+
+    loginForm.addEventListener('reset', function () {
+      document.getElementById('loginEmailCodeGroup').hidden = true;
+      if (loginCaptcha && authConfig.captchaLogin) loginCaptcha.refresh();
+    });
+
+    registerForm.addEventListener('reset', function () {
+      if (registerCaptcha && authConfig.captchaRegister) registerCaptcha.refresh();
+    });
 
     document.addEventListener('vaultsso:languagechange', function () {
       renderPage();
