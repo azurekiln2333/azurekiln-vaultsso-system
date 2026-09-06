@@ -1,5 +1,4 @@
 (function () {
-  const STORAGE_KEY = 'vaultsso.lang';
   const FALLBACK_LANG = 'en';
 
   const translations = {
@@ -766,16 +765,19 @@
   }
 
   function getInitialLanguage() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return normalizeLanguage(stored);
+    // Follow the browser language automatically; there is no manual override anymore.
+    const candidates = [
+      navigator.language,
+      Array.isArray(navigator.languages) ? navigator.languages[0] : ''
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate) {
+        return normalizeLanguage(candidate);
       }
-    } catch (error) {
-      console.warn('Unable to read saved language preference:', error);
     }
 
-    return normalizeLanguage(navigator.language || FALLBACK_LANG);
+    return FALLBACK_LANG;
   }
 
   let currentLanguage = getInitialLanguage();
@@ -819,12 +821,6 @@
   function setLanguage(language) {
     currentLanguage = normalizeLanguage(language);
     document.documentElement.lang = currentLanguage === 'zh' ? 'zh-CN' : 'en';
-
-    try {
-      localStorage.setItem(STORAGE_KEY, currentLanguage);
-    } catch (error) {
-      console.warn('Unable to save language preference:', error);
-    }
 
     apply(document);
     updateLanguageButtons(document);

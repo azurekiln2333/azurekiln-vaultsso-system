@@ -40,11 +40,6 @@
     const mainNav = NAV_ITEMS.map(item => navItemHtml(item, activeId)).join('');
     const docsNav = EXTRA_ITEMS.filter(item => item.group === 'resources').map(item => navItemHtml(item, activeId)).join('');
     const footerNav = EXTRA_ITEMS.filter(item => item.group === 'footer').map(item => navItemHtml(item, activeId)).join('');
-    const languageSwitch = window.VaultI18n ? `
-      <div class="language-switch admin-language-switch mt-3 inline-flex items-center gap-1 rounded-lg border border-line bg-white p-1">
-        <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="zh">${escapeHtml(t('common.language.zh', '中文'))}</button>
-        <button class="rounded-md px-3 py-2 text-xs font-bold text-muted" type="button" data-language-switch="en">${escapeHtml(t('common.language.en', 'English'))}</button>
-      </div>` : '';
 
     return `
       <div class="admin-sidebar-head">
@@ -67,7 +62,6 @@
       </div>
       <div class="admin-sidebar-footer">
         ${footerNav}
-        ${languageSwitch}
       </div>`;
   }
 
