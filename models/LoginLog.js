@@ -18,7 +18,8 @@ class LoginLogModel {
       'totp_required',
       'totp_invalid',
       'register',
-      'admin_action'
+      'admin_action',
+      'anomaly_detected'
     ];
     return allowed.includes(result) ? result : 'invalid_credentials';
   }
@@ -36,6 +37,15 @@ class LoginLogModel {
   async findById(id) {
     const [rows] = await this.pool.execute('SELECT * FROM login_logs WHERE id = ?', [id]);
     return rows[0] || null;
+  }
+
+  async findRecentByUserId(userId, since) {
+    const [rows] = await this.pool.execute(
+      `SELECT id, username, user_id, ip, user_agent, result, detail, created_at FROM login_logs
+       WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC`,
+      [userId, new Date(since)]
+    );
+    return rows;
   }
 
   async findRecent(limit = 50) {

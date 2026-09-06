@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   banned BOOLEAN NOT NULL DEFAULT FALSE,
   totp_secret VARCHAR(64) DEFAULT NULL,
   totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  captcha_required BOOLEAN NOT NULL DEFAULT FALSE,
   recovery_codes TEXT,
   credits INT NOT NULL DEFAULT 0,
   last_login_ip VARCHAR(64) DEFAULT NULL,
@@ -275,6 +276,7 @@ async function initDatabase() {
     await ensureColumn(connection, 'users', 'totp_secret', 'totp_secret VARCHAR(64) DEFAULT NULL', 'banned');
     await ensureColumn(connection, 'users', 'totp_enabled', 'totp_enabled BOOLEAN NOT NULL DEFAULT FALSE', 'totp_secret');
     await ensureColumn(connection, 'users', 'recovery_codes', 'recovery_codes TEXT', 'totp_enabled');
+    await ensureColumn(connection, 'users', 'captcha_required', 'captcha_required BOOLEAN NOT NULL DEFAULT FALSE', 'totp_enabled');
     await ensureColumn(connection, 'sessions', 'token', 'token VARCHAR(128) NOT NULL', 'user_id');
     await ensureColumn(connection, 'sessions', 'revoked_at', 'revoked_at TIMESTAMP NULL DEFAULT NULL', 'user_agent');
     await ensureColumn(connection, 'login_logs', 'detail', 'detail VARCHAR(255)', 'result');

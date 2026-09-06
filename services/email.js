@@ -100,6 +100,34 @@ async function sendVerificationEmail({ to, code, purpose, expiresInMinutes }) {
   return { delivered: true, mode: 'smtp' };
 }
 
+async function sendBehaviorAlertEmail({ to, username, reason }) {
+  if (!isSmtpConfigured()) {
+    console.log(`[security:anomaly:mail] to=${to} user=${username} reason=${reason} (SMTP 未配置，仅打印)`);
+    return { delivered: false, mode: 'console' };
+  }
+  const from = normalizeText(process.env.MAIL_FROM) || 'VaultSSO <no-reply@localhost>';
+  const smtp = getTransporter();
+  if (!smtp) {
+    return { delivered: false, mode: 'skipped' };
+  }
+  await smtp.sendMail({
+    from,
+    to,
+    subject: 'VaultSSO 异常登录行为提醒 / Unusual sign-in activity detected',
+    text: [
+      `We detected unusual sign-in activity on your VaultSSO account (${username}):`,
+      `系统检测到您的账户（${username}）存在异常登录行为：`,
+      ``,
+      `${reason}`,
+      ``,
+      `As a precaution, the next sign-in will require a CAPTCHA.`,
+      `出于安全考虑，下次登录将需要输入图形验证码。`,
+      `如果这不是您本人的操作，请立即修改密码并联系管理员。`
+    ].join('\n')
+  });
+  return { delivered: true, mode: 'smtp' };
+}
+
 async function sendLoginAlertEmail({ to, ip, userAgent }) {
   if (!isSmtpConfigured()) {
     return { delivered: false, mode: 'skipped' };
@@ -168,5 +196,6 @@ module.exports = {
   getSmtpSettings,
   applySmtpSettings,
   sendTestEmail,
-  sendLoginAlertEmail
+  sendLoginAlertEmail,
+  sendBehaviorAlertEmail
 };

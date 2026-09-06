@@ -139,6 +139,7 @@ class MemoryPool {
         banned: Boolean(banned),
         totp_secret: null,
         totp_enabled: false,
+        captcha_required: false,
         recovery_codes: null,
         credits: Number(credits) || 0,
         last_login_ip: lastLoginIp,
@@ -277,6 +278,15 @@ class MemoryPool {
 
     if (lower === 'select * from login_logs where id = ?') {
       return [this.loginLogs.filter(row => row.id === params[0]).map(clone), []];
+    }
+
+    if (lower.startsWith("select id, username, user_id, ip, user_agent, result, detail, created_at from login_logs where user_id = ? and created_at > ? order by created_at desc")) {
+      const since = new Date(params[1]).getTime();
+      const rows = this.loginLogs
+        .filter(row => row.user_id === params[0] && new Date(row.created_at).getTime() > since)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .map(clone);
+      return [rows, []];
     }
 
     if (lower.startsWith('select id, username, user_id, ip, user_agent, result, detail, created_at from login_logs order by created_at desc limit')) {

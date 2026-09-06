@@ -564,6 +564,9 @@
             setStatus('error', i18n.resolveMessage(result, 'auth.password.not_set'));
             return;
           }
+          if (result?.error_key === 'captcha.required' && form === loginForm && loginCaptcha) {
+            loginCaptcha.setVisible(true);
+          }
           if (result?.error_key === 'captcha.invalid' || result?.error_key === 'captcha.expired') {
             if (form === loginForm && loginCaptcha) loginCaptcha.refresh();
             if (form === registerForm && registerCaptcha) registerCaptcha.refresh();

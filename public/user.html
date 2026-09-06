@@ -38,9 +38,11 @@
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="verifiedBadge"></span>
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="bannedBadge"></span>
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="totpBadge"></span>
+            <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="captchaBadge"></span>
           </div>
           <button class="mt-4 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary hidden" id="totpResetBtn" type="button"><span class="material-symbols-outlined text-sm">phonelink_erase</span>重置验证器</button>
           <button class="mt-4 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="revokeSessionsBtn" type="button"><span class="material-symbols-outlined text-sm">logout</span>强制退出所有设备</button>
+          <button class="mt-4 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary hidden" id="captchaClearBtn" type="button"><span class="material-symbols-outlined text-sm">shield</span>清除强制验证码标记</button>
           <code class="mt-4 block break-all rounded-lg bg-surface-container-low px-3 py-2 text-xs text-muted" id="detailId"></code>
         </article>
 
@@ -162,6 +164,11 @@
       totpBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.totpEnabled ? 'phonelink_lock' : 'phonelink_erase'}</span>${user.totpEnabled ? '已绑验证器' : '未绑验证器'}`;
       document.getElementById('totpResetBtn').classList.toggle('hidden', !user.totpEnabled);
 
+      const captchaBadge = document.getElementById('captchaBadge');
+      captchaBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.captchaRequired ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
+      captchaBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.captchaRequired ? 'verified_user' : 'shield'}</span>${user.captchaRequired ? '下次登录需验证码' : '无强制验证'}`;
+      document.getElementById('captchaClearBtn').classList.toggle('hidden', !user.captchaRequired);
+
       document.getElementById('detailCreatedAt').textContent = dateText(user.createdAt);
       document.getElementById('detailUpdatedAt').textContent = dateText(user.updatedAt);
 
@@ -220,6 +227,14 @@
         setStatus('success', '用户信息已保存。');
       } catch (error) { setStatus('error', error.message); }
       finally { saveBtn.disabled = false; }
+    });
+    document.getElementById('captchaClearBtn').addEventListener('click', async () => {
+      if (!currentUserId) return;
+      try {
+        await request(`/api/users/${encodeURIComponent(currentUserId)}`, { method: 'PUT', body: JSON.stringify({ captchaRequired: false }) });
+        setStatus('success', '已清除强制验证码标记。');
+        await loadUser();
+      } catch (error) { setStatus('error', error.message); }
     });
     document.getElementById('revokeSessionsBtn').addEventListener('click', async () => {
       if (!currentUserId) return;

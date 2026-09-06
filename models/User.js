@@ -153,6 +153,10 @@ class UserModel {
       fields.push('recovery_codes = ?');
       values.push(userData.recoveryCodes);
     }
+    if (userData.captchaRequired !== undefined) {
+      fields.push('captcha_required = ?');
+      values.push(userData.captchaRequired);
+    }
     if (userData.role !== undefined) {
       fields.push('role = ?');
       values.push(this.normalizeRole(userData.role));

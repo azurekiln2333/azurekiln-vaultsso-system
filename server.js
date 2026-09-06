@@ -17,7 +17,7 @@ const LoginLogModel = require('./models/LoginLog');
 const SessionModel = require('./models/Session');
 const { generateSecret, verifyTotp, buildOtpauthUri } = require('./services/totp');
 const QRCode = require('qrcode');
-const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail } = require('./services/email');
+const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail, sendBehaviorAlertEmail } = require('./services/email');
 
 const app = express();
 
@@ -185,7 +185,8 @@ const SETTING_DEFAULTS = {
   login_max_attempts: '5',
   login_lockout_minutes: '15',
   totp_allowed: 'true',
-  password_require_mixed: 'false'
+  password_require_mixed: 'false',
+  anomaly_detection: 'true'
 };
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS);
 const settingCache = new Map();
@@ -407,6 +408,57 @@ async function recordLoginLog({ username, userId = null, req, result, detail = '
     });
   } catch (error) {
     console.error('Failed to write login log:', error.message);
+  }
+}
+
+const ANOMALY_WINDOW_MS = 10 * 60 * 1000;
+const ANOMALY_DISTINCT_IP_FAILURES = 2;
+const ANOMALY_TOTAL_FAILURES = 5;
+const ANOMALY_DISTINCT_IP_SUCCESS = 3;
+
+// 行为分析：基于登录日志的滚动窗口判定。触发后给账户打上"下次登录强制图形验证码"
+// 标记，并发送警告邮件；成功通过验证码的登录会自动解除标记。
+async function detectAndFlagAnomalousLogin(user, req, event) {
+  try {
+    if ((await getSettingValue('anomaly_detection')) !== 'true') {
+      return;
+    }
+    if (user.captcha_required) {
+      return;
+    }
+
+    const since = Date.now() - ANOMALY_WINDOW_MS;
+    const logs = await LoginLog.findRecentByUserId(user.id, new Date(since));
+    const failures = logs.filter(log => log.result === 'invalid_credentials' || log.result === 'captcha_failed' || log.result === 'totp_invalid');
+    const successIps = new Set(logs.filter(log => log.result === 'success').map(log => normalizeText(log.ip)).filter(Boolean));
+    const failureIps = new Set(failures.map(log => normalizeText(log.ip)).filter(Boolean));
+    if (event === 'failure') {
+      failureIps.add(getClientIp(req));
+    }
+
+    const reasons = [];
+    if (failureIps.size >= ANOMALY_DISTINCT_IP_FAILURES) {
+      reasons.push(`多个 IP（${failureIps.size} 个）登录失败`);
+    }
+    if (failures.length >= ANOMALY_TOTAL_FAILURES) {
+      reasons.push(`短时间内失败 ${failures.length} 次`);
+    }
+    if (successIps.size >= ANOMALY_DISTINCT_IP_SUCCESS) {
+      reasons.push(`短时间内 ${successIps.size} 个不同 IP 成功登录`);
+    }
+    if (!reasons.length) {
+      return;
+    }
+
+    await User.update(user.id, { captchaRequired: true });
+    const description = reasons.join('；');
+    await recordLoginLog({ username: user.username, userId: user.id, req, result: 'anomaly_detected', detail: description });
+    if (user.email) {
+      await sendBehaviorAlertEmail({ to: user.email, username: user.username, reason: description });
+    }
+    console.log(`[security:anomaly] ${user.username}: ${description}`);
+  } catch (error) {
+    console.error('Anomaly detection failed:', error.message);
   }
 }
 
@@ -855,6 +907,7 @@ function serializeUser(user) {
     credits: Number(user.credits ?? 0) || 0,
     lastLoginIp: user.last_login_ip || user.lastLoginIp || '',
     totpEnabled: Boolean(user.totp_enabled),
+    captchaRequired: Boolean(user.captcha_required),
     createdAt: user.createdAt || user.created_at || null,
     updatedAt: user.updatedAt || user.updated_at || null
   };
@@ -1918,24 +1971,9 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
-  // The captcha grace window only covers the second-step resubmission (email or
-  // authenticator code), which carries the code from the request that already
-  // passed the captcha. A fresh login must always pass the captcha.
   const submittedEmailCode = normalizeText(req.body.email_code);
   const submittedTotpCode = normalizeText(req.body.totp_code);
   const loginCaptchaGrace = captchaGraceStore.get(attemptKey) > Date.now();
-  const captchaSkipped = loginCaptchaGrace && Boolean(submittedEmailCode || submittedTotpCode);
-  if ((await isSettingEnabled('captcha_login')) && !captchaSkipped) {
-    const captcha = verifyCaptcha(req.body);
-    if (!captcha.ok) {
-      await recordLoginLog({ username, req, result: 'captcha_failed' });
-      return res.status(400).json({
-        error: 'invalid_request',
-        error_key: captcha.error_key,
-        error_description: captcha.error_description
-      });
-    }
-  }
 
   const user = await User.findByUsername(username);
 
@@ -1957,11 +1995,34 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
+  // The captcha grace window only covers the second-step resubmission (email or
+  // authenticator code), which carries the code from the request that already
+  // passed the captcha. A fresh login must always pass the captcha — either
+  // because the global toggle is on, or because behavior analysis flagged the user.
+  const userCaptchaRequired = Boolean(user && user.captcha_required);
+  const captchaSkipped = loginCaptchaGrace && Boolean(submittedEmailCode || submittedTotpCode);
+  const captchaNeeded = ((await isSettingEnabled('captcha_login')) || userCaptchaRequired) && !captchaSkipped;
+  if (captchaNeeded) {
+    const captcha = verifyCaptcha(req.body);
+    if (!captcha.ok) {
+      await recordLoginLog({ username, userId: user?.id || null, req, result: 'captcha_failed' });
+      const fieldsMissing = !normalizeText(req.body.captcha_id) && !normalizeText(req.body.captcha_code);
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: fieldsMissing ? 'captcha.required' : captcha.error_key,
+        error_description: fieldsMissing ? '检测到异常行为，本次登录需要输入图形验证码' : captcha.error_description
+      });
+    }
+  }
+
   if (!user || !user.password || !await bcrypt.compare(password, user.password)) {
     recordLoginFailure(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
     const entry = loginAttemptStore.get(attemptKey);
     const remaining = maxAttempts - (entry ? entry.count : 1);
     await recordLoginLog({ username, userId: user?.id || null, req, result: 'invalid_credentials' });
+    if (user) {
+      await detectAndFlagAnomalousLogin(user, req, 'failure');
+    }
     return res.status(401).json({
       error: 'invalid_grant',
       error_key: 'auth.invalid_credentials',
@@ -2034,6 +2095,10 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
 
   clearLoginAttempts(attemptKey);
   captchaGraceStore.delete(attemptKey);
+  await detectAndFlagAnomalousLogin(user, req, 'success');
+  if (userCaptchaRequired) {
+    await User.update(user.id, { captchaRequired: false });
+  }
   const previousIp = normalizeText(user.last_login_ip || user.lastLoginIp);
   if (previousIp && previousIp !== ip && user.email) {
     sendLoginAlertEmail({ to: user.email, ip, userAgent: req.headers['user-agent'] }).catch(() => {});
@@ -3104,6 +3169,9 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   const updates = { role: nextRole };
+  if (req.body.captchaRequired !== undefined) {
+    updates.captchaRequired = Boolean(req.body.captchaRequired);
+  }
   if (req.body.banned !== undefined) {
     const banned = Boolean(req.body.banned);
     if (banned && target.id === admin.id) {
@@ -3609,6 +3677,7 @@ app.get('/api/admin/security', asyncHandler(async (req, res) => {
     registrationEnabled: (await getSettingValue('registration_enabled')) === 'true',
     totpAllowed: (await getSettingValue('totp_allowed')) === 'true',
     passwordRequireMixed: (await getSettingValue('password_require_mixed')) === 'true',
+    anomalyDetection: (await getSettingValue('anomaly_detection')) === 'true',
     passwordMinLength: await getSettingNumber('password_min_length', 6),
     loginMaxAttempts: await getSettingNumber('login_max_attempts', 5),
     loginLockoutMinutes: await getSettingNumber('login_lockout_minutes', 15)
@@ -3621,7 +3690,8 @@ const SECURITY_TOGGLE_KEYS = {
   loginEmailCode: 'login_email_code',
   registrationEnabled: 'registration_enabled',
   totpAllowed: 'totp_allowed',
-  passwordRequireMixed: 'password_require_mixed'
+  passwordRequireMixed: 'password_require_mixed',
+  anomalyDetection: 'anomaly_detection'
 };
 
 app.put('/api/admin/security', asyncHandler(async (req, res) => {
