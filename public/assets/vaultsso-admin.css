@@ -10,23 +10,166 @@
   border-right: 1px solid rgba(18, 32, 51, 0.08);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(12px);
+  transition: width 0.2s ease, transform 0.2s ease;
+}
+
+.admin-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 6px;
+}
+
+.admin-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid rgba(18, 32, 51, 0.12);
+  border-radius: 10px;
+  background: #ffffff;
+  color: rgba(18, 32, 51, 0.6);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-collapse-btn:hover {
+  color: #0b57d0;
+  border-color: rgba(11, 87, 208, 0.4);
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.admin-brand-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #003d9b, #0b57d0);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 18px;
+}
+
+.admin-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  color: #0b57d0;
+  font-weight: 800;
+  font-size: 17px;
+  white-space: nowrap;
+}
+
+.admin-brand-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(18, 32, 51, 0.5);
 }
 
 .admin-sidebar-scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px 14px 14px;
 }
 
 .admin-main {
   min-height: 100vh;
+  /* Fill the whole area right of the sidebar; utility classes must not cap it. */
+  max-width: none !important;
 }
 
 @media (min-width: 1024px) {
   /* !important wins over utility classes like mx-auto injected later by the Tailwind CDN. */
-  .admin-main {
+  body:not(.admin-collapsed) .admin-main {
     margin-left: 256px !important;
   }
+
+  body.admin-collapsed .admin-main {
+    margin-left: 68px !important;
+  }
+}
+
+/* Collapsed state: icon rail */
+body.admin-collapsed .admin-sidebar {
+  width: 68px;
+}
+
+body.admin-collapsed .admin-nav-label,
+body.admin-collapsed .admin-nav-group,
+body.admin-collapsed .admin-language-switch {
+  display: none;
+}
+
+body.admin-collapsed .admin-sidebar-head {
+  flex-direction: column;
+  padding-inline: 10px;
+}
+
+body.admin-collapsed .admin-collapse-btn {
+  order: 2;
+}
+
+body.admin-collapsed .admin-brand {
+  order: 1;
+}
+
+body.admin-collapsed .admin-nav-item {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+body.admin-collapsed .admin-sidebar-scroll,
+body.admin-collapsed .admin-sidebar-footer {
+  padding-inline: 10px;
+}
+
+/* Shell layout */
+html[data-admin-shell] body {
+  overflow: hidden;
+}
+
+.admin-shell-iframe-wrap {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 256px;
+  transition: left 0.2s ease;
+}
+
+body.admin-collapsed .admin-shell-iframe-wrap {
+  left: 68px;
+}
+
+.admin-shell-iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+@media (min-width: 1024px) {
+  html[data-admin-shell] .admin-shell-iframe-wrap {
+    top: 0;
+  }
+}
+
+/* Embedded pages (inside the shell iframe) have no sidebar chrome at all */
+html[data-admin-embed] .admin-main {
+  margin-left: 0 !important;
 }
 
 .admin-nav-group {
@@ -112,5 +255,10 @@
   .admin-sidebar.open {
     transform: none;
     box-shadow: 0 18px 44px rgba(10, 16, 28, 0.22);
+  }
+
+  .admin-shell-iframe-wrap {
+    left: 0 !important;
+    top: 56px;
   }
 }

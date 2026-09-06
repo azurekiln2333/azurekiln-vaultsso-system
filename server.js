@@ -29,7 +29,7 @@ const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html', '/user.html', '/smtp.html', '/security.html']);
+const ADMIN_ONLY_STATIC_PATHS = new Set(['/admin.html', '/apps.html', '/tokens.html', '/users.html', '/user.html', '/smtp.html', '/security.html']);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
 const OIDC_STATE_COOKIE = 'oidc_state';
@@ -54,7 +54,8 @@ app.use(cors({
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  // SAMEORIGIN (not DENY): the admin center shell embeds admin pages from the same origin.
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Content-Security-Policy', [
@@ -64,7 +65,7 @@ app.use((req, res, next) => {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https: http:",
     "connect-src 'self'",
-    "frame-ancestors 'none'",
+    "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'"
   ].join('; '));
