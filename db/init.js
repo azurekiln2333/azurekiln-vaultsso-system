@@ -26,6 +26,27 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const CREATE_SETTINGS_TABLE = `
+CREATE TABLE IF NOT EXISTS settings (
+  setting_key VARCHAR(64) PRIMARY KEY,
+  setting_value VARCHAR(255) NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+const CREATE_LOGIN_LOGS_TABLE = `
+CREATE TABLE IF NOT EXISTS login_logs (
+  id VARCHAR(36) PRIMARY KEY,
+  username VARCHAR(255) NOT NULL,
+  user_id VARCHAR(36) NULL,
+  ip VARCHAR(64),
+  user_agent VARCHAR(255),
+  result VARCHAR(32) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_login_logs_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 const CREATE_CLIENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS clients (
   id VARCHAR(255) PRIMARY KEY,
@@ -242,6 +263,8 @@ async function initDatabase() {
     await connection.query(CREATE_SESSIONS_TABLE);
     await connection.query(CREATE_EMAIL_VERIFICATION_CODES_TABLE);
     await connection.query(CREATE_USER_IDENTITIES_TABLE);
+    await connection.query(CREATE_SETTINGS_TABLE);
+    await connection.query(CREATE_LOGIN_LOGS_TABLE);
     await ensureUsersRoleColumn(connection);
     await ensureColumn(connection, 'users', 'banned', 'banned BOOLEAN NOT NULL DEFAULT FALSE', 'email_verified');
     await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');

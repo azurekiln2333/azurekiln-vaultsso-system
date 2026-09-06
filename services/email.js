@@ -50,13 +50,19 @@ function buildSubject(purpose) {
     return 'VaultSSO password reset code';
   }
 
+  if (purpose === 'login') {
+    return 'VaultSSO sign-in verification code';
+  }
+
   return 'VaultSSO registration verification code';
 }
 
 function buildText({ code, purpose, expiresInMinutes }) {
   const action = purpose === 'password_reset'
     ? 'reset your VaultSSO password'
-    : 'finish creating your VaultSSO account';
+    : purpose === 'login'
+      ? 'finish signing in to VaultSSO'
+      : 'finish creating your VaultSSO account';
 
   return [
     `Your verification code is: ${code}`,

@@ -14,6 +14,7 @@ const ClientModel = require('./models/Client');
 const TokenModel = require('./models/Token');
 const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
 const ExternalIdentityModel = require('./models/ExternalIdentity');
+const LoginLogModel = require('./models/LoginLog');
 const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail } = require('./services/email');
 
 const app = express();
@@ -28,7 +29,7 @@ const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html', '/user.html', '/smtp.html']);
+const ADMIN_ONLY_STATIC_PATHS = new Set(['/apps.html', '/tokens.html', '/users.html', '/user.html', '/smtp.html', '/security.html']);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
 const OIDC_STATE_COOKIE = 'oidc_state';
@@ -38,6 +39,8 @@ let Client;
 let Token;
 let EmailVerificationCode;
 let ExternalIdentity;
+let LoginLog;
+let pool = null;
 
 const DEMO_CLIENTS = require('./config/demo-clients');
 
@@ -48,6 +51,25 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https: http:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'"
+  ].join('; '));
+  next();
+});
 
 function asyncHandler(handler) {
   return (req, res, next) => {
@@ -70,6 +92,217 @@ function getClientIp(req) {
   }
   return String(req.socket?.remoteAddress || '').slice(0, 64);
 }
+
+const SETTING_DEFAULTS = {
+  captcha_login: 'false',
+  captcha_register: 'false',
+  login_email_code: 'false',
+  registration_enabled: 'true',
+  password_min_length: '6',
+  login_max_attempts: '5',
+  login_lockout_minutes: '15'
+};
+const SETTING_KEYS = Object.keys(SETTING_DEFAULTS);
+const settingCache = new Map();
+const SETTING_CACHE_TTL_MS = 15 * 1000;
+
+async function getSettingValue(key) {
+  const cached = settingCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  let value = SETTING_DEFAULTS[key];
+  if (key === 'password_min_length') value = String(getSettingNumberFromEnv());
+  try {
+    const [rows] = await pool.query('SELECT setting_value FROM settings WHERE setting_key = ?', [key]);
+    if (rows.length && normalizeText(rows[0].setting_value) !== '') {
+      value = normalizeText(rows[0].setting_value);
+    }
+  } catch (error) {
+    // Missing table (fresh deployment before init-db) falls back to defaults.
+  }
+
+  settingCache.set(key, { value, expiresAt: Date.now() + SETTING_CACHE_TTL_MS });
+  return value;
+}
+
+function getSettingNumberFromEnv() {
+  const parsed = Number(process.env.PASSWORD_MIN_LENGTH);
+  return Number.isInteger(parsed) && parsed >= 4 && parsed <= 64 ? parsed : 6;
+}
+
+async function saveSettingValue(key, value) {
+  await pool.query(
+    'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)',
+    [key, String(value)]
+  );
+  settingCache.delete(key);
+}
+
+async function isSettingEnabled(key) {
+  return (await getSettingValue(key)) === 'true';
+}
+
+async function getSettingNumber(key, fallback) {
+  const parsed = Number(await getSettingValue(key));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function getPasswordMinLength() {
+  return getSettingNumber('password_min_length', 6);
+}
+
+// --- CAPTCHA (self-hosted SVG; answers live in server memory, single use) ---
+const CAPTCHA_TTL_MS = 5 * 60 * 1000;
+const captchaStore = new Map();
+const CAPTCHA_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
+
+function pruneCaptchaStore() {
+  const now = Date.now();
+  for (const [id, entry] of captchaStore) {
+    if (entry.expiresAt < now) captchaStore.delete(id);
+  }
+}
+
+function randomCaptchaText() {
+  let text = '';
+  for (let index = 0; index < 4; index++) {
+    text += CAPTCHA_CHARS[crypto.randomInt(0, CAPTCHA_CHARS.length)];
+  }
+  return text;
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function generateCaptchaSvg(text) {
+  const width = 132;
+  const height = 44;
+  const colors = ['#0b57d0', '#2049c8', '#3b5bdb', '#1e3fae'];
+  const glyphs = text.split('').map((char, index) => {
+    const x = 18 + index * 27 + randomBetween(-3, 3);
+    const y = 29 + randomBetween(-4, 4);
+    const rotate = randomBetween(-18, 18).toFixed(1);
+    const size = (21 + randomBetween(-2, 3)).toFixed(1);
+    const fill = colors[crypto.randomInt(0, colors.length)];
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Verdana,Arial,sans-serif" font-size="${size}" font-weight="700" fill="${fill}" transform="rotate(${rotate} ${x.toFixed(1)} ${y.toFixed(1)})">${char}</text>`;
+  }).join('');
+  const lines = [0, 1, 2].map(() => {
+    const x1 = randomBetween(0, width).toFixed(0);
+    const y1 = randomBetween(0, height).toFixed(0);
+    const x2 = randomBetween(0, width).toFixed(0);
+    const y2 = randomBetween(0, height).toFixed(0);
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${colors[crypto.randomInt(0, colors.length)]}" stroke-opacity="0.35" stroke-width="1.5"/>`;
+  }).join('');
+  const dots = [0, 1, 2, 3, 4, 5].map(() => {
+    return `<circle cx="${randomBetween(0, width).toFixed(0)}" cy="${randomBetween(0, height).toFixed(0)}" r="1.4" fill="#0b57d0" fill-opacity="0.35"/>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="captcha"><rect width="${width}" height="${height}" rx="8" fill="#f4f7ff"/>${lines}${dots}${glyphs}</svg>`;
+}
+
+app.get('/api/captcha', (req, res) => {
+  pruneCaptchaStore();
+  if (captchaStore.size > 5000) captchaStore.clear();
+  const id = crypto.randomUUID();
+  const text = randomCaptchaText();
+  captchaStore.set(id, { text: text.toLowerCase(), expiresAt: Date.now() + CAPTCHA_TTL_MS });
+  res.json({ id, svg: generateCaptchaSvg(text), expiresInMinutes: Math.ceil(CAPTCHA_TTL_MS / 60000) });
+});
+
+app.get('/api/auth/config', asyncHandler(async (req, res) => {
+  res.json({
+    captchaLogin: await isSettingEnabled('captcha_login'),
+    captchaRegister: await isSettingEnabled('captcha_register'),
+    loginEmailCode: await isSettingEnabled('login_email_code'),
+    registrationEnabled: await isSettingEnabled('registration_enabled'),
+    passwordMinLength: await getPasswordMinLength()
+  });
+}));
+
+function verifyCaptcha(body) {
+  const id = normalizeText(body.captcha_id);
+  const code = normalizeText(body.captcha_code).toLowerCase();
+  const entry = id ? captchaStore.get(id) : null;
+  captchaStore.delete(id);
+  if (!entry || entry.expiresAt < Date.now()) {
+    return { ok: false, error_key: 'captcha.expired', error_description: '图形验证码已过期，请刷新后重试' };
+  }
+  if (!code || entry.text !== code) {
+    return { ok: false, error_key: 'captcha.invalid', error_description: '图形验证码不正确' };
+  }
+  return { ok: true };
+}
+
+// --- Brute force lockout (per username + IP, in process memory) ---
+const loginAttemptStore = new Map();
+const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+// Captcha grace: after captcha+password pass but email 2FA is pending, step 2 may resubmit.
+const captchaGraceStore = new Map();
+const CAPTCHA_GRACE_TTL_MS = 3 * 60 * 1000;
+
+function pruneLoginAttempts() {
+  const now = Date.now();
+  for (const [key, entry] of loginAttemptStore) {
+    if ((entry.lockedUntil && entry.lockedUntil < now) || (!entry.lockedUntil && now - entry.firstAt > LOGIN_ATTEMPT_WINDOW_MS)) {
+      loginAttemptStore.delete(key);
+    }
+  }
+  for (const [key, expiresAt] of captchaGraceStore) {
+    if (expiresAt < now) captchaGraceStore.delete(key);
+  }
+}
+
+function loginAttemptKey(username, ip) {
+  return `${normalizeText(username).toLowerCase()}|${ip || 'unknown'}`;
+}
+
+function isLoginLocked(entry) {
+  return Boolean(entry && entry.lockedUntil > Date.now());
+}
+
+function recordLoginFailure(key, maxAttempts, lockoutMs) {
+  const now = Date.now();
+  const entry = loginAttemptStore.get(key);
+  if (!entry || now - entry.firstAt > LOGIN_ATTEMPT_WINDOW_MS) {
+    loginAttemptStore.set(key, { count: 1, firstAt: now, lockedUntil: 0 });
+    return;
+  }
+  entry.count += 1;
+  if (entry.count >= maxAttempts) {
+    entry.lockedUntil = now + lockoutMs;
+  }
+}
+
+function clearLoginAttempts(key) {
+  loginAttemptStore.delete(key);
+}
+
+function maskEmail(email) {
+  const text = normalizeText(email);
+  const atIndex = text.indexOf('@');
+  if (atIndex <= 0) return text;
+  const local = text.slice(0, atIndex);
+  const masked = local.length <= 2 ? `${local[0]}*` : `${local.slice(0, 2)}***`;
+  return `${masked}${text.slice(atIndex)}`;
+}
+
+async function recordLoginLog({ username, userId = null, req, result }) {
+  try {
+    await LoginLog.create({
+      username: username || '-',
+      userId,
+      ip: getClientIp(req),
+      userAgent: req.headers['user-agent'] || '',
+      result
+    });
+  } catch (error) {
+    console.error('Failed to write login log:', error.message);
+  }
+}
+
+setInterval(() => { pruneCaptchaStore(); pruneLoginAttempts(); }, 60 * 1000).unref();
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -122,6 +355,7 @@ const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
 const SESSION_REFRESH_THRESHOLD_MS = Math.floor(ACCESS_TOKEN_TTL_MS / 2);
 const EMAIL_PURPOSE_REGISTER = 'register';
 const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
+const EMAIL_PURPOSE_LOGIN = 'login';
 const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
 const EMAIL_CODE_MAX_ATTEMPTS = Number(process.env.EMAIL_CODE_MAX_ATTEMPTS || 5);
 
@@ -947,7 +1181,7 @@ async function findUserConflicts({ username, email, excludeUserId }) {
 
 function normalizeEmailPurpose(value) {
   const purpose = normalizeText(value).toLowerCase();
-  return [EMAIL_PURPOSE_REGISTER, EMAIL_PURPOSE_PASSWORD_RESET].includes(purpose) ? purpose : '';
+  return [EMAIL_PURPOSE_REGISTER, EMAIL_PURPOSE_PASSWORD_RESET, EMAIL_PURPOSE_LOGIN].includes(purpose) ? purpose : '';
 }
 
 function generateEmailCode() {
@@ -1522,9 +1756,38 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
 app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   const username = normalizeText(req.body.username);
   const password = String(req.body.password || '');
+  const ip = getClientIp(req);
+  const attemptKey = loginAttemptKey(username, ip);
+
+  const maxAttempts = await getSettingNumber('login_max_attempts', 5);
+  const lockoutMinutes = await getSettingNumber('login_lockout_minutes', 15);
+  const lockedEntry = loginAttemptStore.get(attemptKey);
+  if (isLoginLocked(lockedEntry)) {
+    const minutes = Math.max(1, Math.ceil((lockedEntry.lockedUntil - Date.now()) / 60000));
+    await recordLoginLog({ username, req, result: 'locked' });
+    return res.status(429).json({
+      error: 'too_many_attempts',
+      error_key: 'auth.locked',
+      error_description: `登录失败次数过多，请 ${minutes} 分钟后再试`
+    });
+  }
+
+  if (await isSettingEnabled('captcha_login') && captchaGraceStore.get(attemptKey) <= Date.now()) {
+    const captcha = verifyCaptcha(req.body);
+    if (!captcha.ok) {
+      await recordLoginLog({ username, req, result: 'captcha_failed' });
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: captcha.error_key,
+        error_description: captcha.error_description
+      });
+    }
+  }
+
   const user = await User.findByUsername(username);
 
   if (user && isUserBanned(user)) {
+    await recordLoginLog({ username, userId: user.id, req, result: 'banned' });
     return res.status(403).json({
       error: 'account_banned',
       error_key: 'auth.account_banned',
@@ -1533,6 +1796,7 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   }
 
   if (user && !user.password) {
+    await recordLoginLog({ username, userId: user.id, req, result: 'password_not_set' });
     return res.status(403).json({
       error: 'password_not_set',
       error_key: 'auth.password.not_set',
@@ -1541,14 +1805,56 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   }
 
   if (!user || !user.password || !await bcrypt.compare(password, user.password)) {
+    recordLoginFailure(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
+    const entry = loginAttemptStore.get(attemptKey);
+    const remaining = maxAttempts - (entry ? entry.count : 1);
+    await recordLoginLog({ username, userId: user?.id || null, req, result: 'invalid_credentials' });
     return res.status(401).json({
       error: 'invalid_grant',
       error_key: 'auth.invalid_credentials',
       error_description: '用户名或密码错误'
+        + (remaining > 0 && remaining <= 2 ? `，还可尝试 ${remaining} 次` : '')
     });
   }
 
-  await User.update(user.id, { lastLoginIp: getClientIp(req) });
+  if (await isSettingEnabled('login_email_code')) {
+    const emailCode = normalizeText(req.body.email_code);
+    if (!emailCode) {
+      try {
+        await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
+      } catch (error) {
+        console.error('Failed to send login code:', error.message);
+        return res.status(502).json({
+          error: 'email_delivery_failed',
+          error_key: 'smtp.test_failed',
+          error_description: '验证码邮件发送失败，请稍后再试或联系管理员检查发件设置'
+        });
+      }
+      await recordLoginLog({ username, userId: user.id, req, result: 'email_code_required' });
+      captchaGraceStore.set(attemptKey, Date.now() + CAPTCHA_GRACE_TTL_MS);
+      return res.json({
+        require_email_code: true,
+        email_masked: maskEmail(user.email),
+        message_key: 'auth.login_code.sent',
+        message: `验证码已发送至邮箱 ${maskEmail(user.email)}，请输入以完成登录`
+      });
+    }
+
+    const verification = await verifyEmailCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, code: emailCode });
+    if (!verification.ok) {
+      await recordLoginLog({ username, userId: user.id, req, result: 'email_code_invalid' });
+      return res.status(verification.status).json({
+        error: 'invalid_request',
+        error_key: verification.error_key,
+        error_description: verification.error_description
+      });
+    }
+  }
+
+  clearLoginAttempts(attemptKey);
+  captchaGraceStore.delete(attemptKey);
+  await User.update(user.id, { lastLoginIp: ip });
+  await recordLoginLog({ username, userId: user.id, req, result: 'success' });
   setSessionCookie(res, user);
 
   const result = await buildAuthorizationResponseV2(user, req.body);
@@ -1591,6 +1897,15 @@ app.post('/api/email-verification/send', asyncHandler(async (req, res) => {
     });
   }
 
+  const latestCode = await EmailVerificationCode.findLatestActive(email, purpose);
+  if (latestCode && Date.now() - new Date(latestCode.created_at).getTime() < 60 * 1000) {
+    return res.status(429).json({
+      error: 'too_many_requests',
+      error_key: 'email_code.cooldown',
+      error_description: '发送过于频繁，请 1 分钟后再试'
+    });
+  }
+
   const delivery = await issueEmailVerificationCode({
     email,
     purpose,
@@ -1605,12 +1920,32 @@ app.post('/api/email-verification/send', asyncHandler(async (req, res) => {
 }));
 
 app.post('/oauth2/register', asyncHandler(async (req, res) => {
+  if (!(await isSettingEnabled('registration_enabled'))) {
+    return res.status(403).json({
+      error: 'forbidden',
+      error_key: 'auth.registration.disabled',
+      error_description: '系统已关闭注册，请联系管理员'
+    });
+  }
+
+  if (await isSettingEnabled('captcha_register')) {
+    const captcha = verifyCaptcha(req.body);
+    if (!captcha.ok) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: captcha.error_key,
+        error_description: captcha.error_description
+      });
+    }
+  }
+
   const name = normalizeText(req.body.name);
   const email = normalizeEmail(req.body.email);
   const username = normalizeText(req.body.username) || email;
   const password = String(req.body.password || '');
   const confirmPassword = String(req.body.confirm_password || '');
   const emailCode = normalizeText(req.body.email_code || req.body.verification_code);
+  const passwordMinLength = await getPasswordMinLength();
 
   if (!email || !isValidEmail(email)) {
     return res.status(400).json({
@@ -1628,11 +1963,11 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
     });
   }
 
-  if (password.length < 6) {
+  if (password.length < passwordMinLength) {
     return res.status(400).json({
       error: 'invalid_request',
       error_key: 'validation.password.min_length',
-      error_description: '密码长度不能少于 6 位'
+      error_description: `密码长度不能少于 ${passwordMinLength} 位`
     });
   }
 
@@ -1705,11 +2040,11 @@ app.post('/api/password-reset', asyncHandler(async (req, res) => {
     });
   }
 
-  if (password.length < 6) {
+  if (password.length < await getPasswordMinLength()) {
     return res.status(400).json({
       error: 'invalid_request',
       error_key: 'validation.password.min_length',
-      error_description: '密码长度不能少于 6 位'
+      error_description: `密码长度不能少于 ${await getPasswordMinLength()} 位`
     });
   }
 
@@ -1885,11 +2220,11 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
       });
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.length < await getPasswordMinLength()) {
       return res.status(400).json({
         error: 'invalid_request',
         error_key: 'profile.password.min_length',
-        error_description: '新密码长度不能少于 6 位'
+        error_description: `新密码长度不能少于 ${await getPasswordMinLength()} 位`
       });
     }
 
@@ -2592,8 +2927,8 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
       skipped.push({ row: index + 1, username, email, reason: '缺少用户名' });
       continue;
     }
-    if (password && password.length < 6) {
-      skipped.push({ row: index + 1, username, email, reason: '密码长度不能少于 6 位' });
+    if (password && password.length < await getPasswordMinLength()) {
+      skipped.push({ row: index + 1, username, email, reason: '密码长度不满足系统要求' });
       continue;
     }
     if (description.length > 500) {
@@ -2831,6 +3166,92 @@ app.post('/api/admin/smtp/test', asyncHandler(async (req, res) => {
   }
 }));
 
+app.get('/api/admin/security', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  res.json({
+    captchaLogin: (await getSettingValue('captcha_login')) === 'true',
+    captchaRegister: (await getSettingValue('captcha_register')) === 'true',
+    loginEmailCode: (await getSettingValue('login_email_code')) === 'true',
+    registrationEnabled: (await getSettingValue('registration_enabled')) === 'true',
+    passwordMinLength: await getSettingNumber('password_min_length', 6),
+    loginMaxAttempts: await getSettingNumber('login_max_attempts', 5),
+    loginLockoutMinutes: await getSettingNumber('login_lockout_minutes', 15)
+  });
+}));
+
+const SECURITY_TOGGLE_KEYS = {
+  captchaLogin: 'captcha_login',
+  captchaRegister: 'captcha_register',
+  loginEmailCode: 'login_email_code',
+  registrationEnabled: 'registration_enabled'
+};
+
+app.put('/api/admin/security', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  for (const [bodyKey, settingKey] of Object.entries(SECURITY_TOGGLE_KEYS)) {
+    if (req.body[bodyKey] !== undefined) {
+      await saveSettingValue(settingKey, req.body[bodyKey] === true || req.body[bodyKey] === 'true' ? 'true' : 'false');
+    }
+  }
+
+  if (req.body.passwordMinLength !== undefined) {
+    const value = Number(req.body.passwordMinLength);
+    if (!Number.isInteger(value) || value < 4 || value > 64) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'security.password_min_length.invalid',
+        error_description: '密码最小长度必须是 4-64 之间的整数'
+      });
+    }
+    await saveSettingValue('password_min_length', String(value));
+  }
+
+  if (req.body.loginMaxAttempts !== undefined) {
+    const value = Number(req.body.loginMaxAttempts);
+    if (!Number.isInteger(value) || value < 1 || value > 100) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'security.login_max_attempts.invalid',
+        error_description: '登录失败次数上限必须是 1-100 之间的整数'
+      });
+    }
+    await saveSettingValue('login_max_attempts', String(value));
+  }
+
+  if (req.body.loginLockoutMinutes !== undefined) {
+    const value = Number(req.body.loginLockoutMinutes);
+    if (!Number.isInteger(value) || value < 1 || value > 1440) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'security.login_lockout_minutes.invalid',
+        error_description: '锁定时长必须是 1-1440 之间的整数（分钟）'
+      });
+    }
+    await saveSettingValue('login_lockout_minutes', String(value));
+  }
+
+  res.json({ message_key: 'security.saved', message: '安全设置已保存，立即生效' });
+}));
+
+app.get('/api/admin/security/logs', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const logs = await LoginLog.findRecent(Number(req.query.limit) || 50);
+  res.json(logs.map(log => ({
+    id: log.id,
+    username: log.username,
+    ip: log.ip || '',
+    userAgent: log.user_agent || '',
+    result: log.result,
+    createdAt: log.created_at || log.createdAt || null
+  })));
+}));
+
 app.get('/api/tokens', asyncHandler(async (req, res) => {
   const user = await requireAdminUser(req, res);
   if (!user) {
@@ -2968,13 +3389,14 @@ app.use((err, req, res, next) => {
 });
 
 async function bootstrap() {
-  const pool = await initDatabase();
+  pool = await initDatabase();
 
   User = new UserModel(pool);
   Client = new ClientModel(pool);
   Token = new TokenModel(pool);
   EmailVerificationCode = new EmailVerificationCodeModel(pool);
   ExternalIdentity = new ExternalIdentityModel(pool);
+  LoginLog = new LoginLogModel(pool);
 
   await ensureSystemUser();
   await seedMemoryDemoData();

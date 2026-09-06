@@ -43,6 +43,8 @@ class MemoryPool {
     this.refreshTokens = [];
     this.emailVerificationCodes = [];
     this.userIdentities = [];
+    this.settings = [];
+    this.loginLogs = [];
   }
 
   async getConnection() {
@@ -206,6 +208,38 @@ class MemoryPool {
 
     if (lower === 'select * from email_verification_codes where id = ?') {
       return [this.emailVerificationCodes.filter(row => row.id === params[0]).map(row => clone(row)), []];
+    }
+
+    if (lower === 'select setting_value from settings where setting_key = ?') {
+      return [this.settings.filter(row => row.setting_key === params[0]).map(row => ({ setting_value: row.setting_value })), []];
+    }
+
+    if (lower === "insert into settings (setting_key, setting_value) values (?, ?) on duplicate key update setting_value = values(setting_value)") {
+      const [key, value] = params;
+      const existing = this.settings.find(row => row.setting_key === key);
+      if (existing) {
+        existing.setting_value = value;
+        existing.updated_at = now();
+      } else {
+        this.settings.push({ setting_key: key, setting_value: value, updated_at: now() });
+      }
+      return [{ affectedRows: 1, insertId: 0 }, []];
+    }
+
+    if (lower === 'insert into login_logs (id, username, user_id, ip, user_agent, result) values (?, ?, ?, ?, ?, ?)') {
+      const [id, username, userId, ip, userAgent, result] = params;
+      this.loginLogs.push({ id, username, user_id: userId, ip, user_agent: userAgent, result, created_at: now() });
+      return [{ affectedRows: 1, insertId: id }, []];
+    }
+
+    if (lower === 'select * from login_logs where id = ?') {
+      return [this.loginLogs.filter(row => row.id === params[0]).map(clone), []];
+    }
+
+    if (lower.startsWith('select id, username, user_id, ip, user_agent, result, created_at from login_logs order by created_at desc limit')) {
+      const limit = Math.max(1, Number(params[0]) || 50);
+      const rows = this.loginLogs.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, limit).map(clone);
+      return [rows, []];
     }
 
     if (lower === 'select * from email_verification_codes where email = ? and purpose = ? and consumed_at is null and expires_at > ? order by created_at desc limit 1') {
