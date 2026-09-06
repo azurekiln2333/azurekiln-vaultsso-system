@@ -352,6 +352,9 @@ const SESSION_MAX_AGE = ACCESS_TOKEN_TTL_MS;
 // 登出后允许跳回的站点白名单（注册域名，逗号分隔；为空时保持原行为）
 const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
   .split(',').map(item => normalizeText(item).toLowerCase()).filter(Boolean);
+// 会话 Cookie 作用域：配置为注册域名（如 .azurekiln.cn）后，主站/管理后台等
+// 子域可共享登录态；留空保持默认的主机级 Cookie（仅 SSO 自身域名可见）
+const COOKIE_DOMAIN = normalizeText(process.env.COOKIE_DOMAIN);
 // 会话滑动续期阈值：会话有效时长过半后再次访问时重发 session cookie
 const SESSION_REFRESH_THRESHOLD_MS = Math.floor(ACCESS_TOKEN_TTL_MS / 2);
 const EMAIL_PURPOSE_REGISTER = 'register';
@@ -754,13 +757,21 @@ function createSessionToken(user) {
   );
 }
 
-function setSessionCookie(res, user) {
-  res.cookie('session', createSessionToken(user), {
+function sessionCookieOptions() {
+  const options = {
     httpOnly: true,
     secure: false,
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE
-  });
+  };
+  if (COOKIE_DOMAIN) {
+    options.domain = COOKIE_DOMAIN;
+  }
+  return options;
+}
+
+function setSessionCookie(res, user) {
+  res.cookie('session', createSessionToken(user), sessionCookieOptions());
 }
 
 async function getAuthenticatedUser(req, res = null) {
@@ -2564,7 +2575,7 @@ app.get('/profile', asyncHandler(async (req, res) => {
 }));
 
 app.get('/oauth2/logout', (req, res) => {
-  res.clearCookie('session');
+  res.clearCookie('session', COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : undefined);
   const target = resolveLogoutRedirect(req.query.redirect);
   res.redirect(target || '/oauth2/authorize');
 });
