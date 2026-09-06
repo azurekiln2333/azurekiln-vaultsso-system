@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VaultSSO | 发件设置</title>
-  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="/assets/vaultsso-tailwind.js?v=20260907-1"></script>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
@@ -16,11 +16,16 @@
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
     <section class="mb-8 rounded-xl bg-surface-container-low p-8">
-      <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
-        <span class="material-symbols-outlined text-base">outgoing_mail</span> 管理员控制台
-      </p>
-      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">发件设置</h1>
-      <p class="max-w-3xl text-base leading-8 text-muted">配置用于发送验证码邮件的 SMTP 服务。设置保存后立即生效（无需重启），但重启后以 .env 文件中的值为准；如需长期生效请同步更新 .env。443 / 465 端口自动使用隐式 TLS，其余端口使用 STARTTLS。</p>
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+            <span class="material-symbols-outlined text-base">outgoing_mail</span> 管理员控制台
+          </p>
+          <h1 class="font-headline text-4xl font-extrabold tracking-tight">发件设置</h1>
+          <p class="mt-3 max-w-3xl text-base leading-8 text-muted">配置用于发送验证码邮件的 SMTP 服务。设置保存后立即生效（无需重启），但重启后以 .env 文件中的值为准；如需长期生效请同步更新 .env。443 / 465 端口自动使用隐式 TLS，其余端口使用 STARTTLS。</p>
+        </div>
+        <button class="inline-flex shrink-0 items-center gap-2 self-start rounded-lg bg-primary px-5 py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50 lg:self-center" form="smtpForm" id="saveBtn" type="submit"><span class="material-symbols-outlined text-lg">save</span>保存设置</button>
+      </div>
     </section>
 
     <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700" id="statusBar">正在加载发件设置...</div>
@@ -53,9 +58,7 @@
                 <span class="mt-1 block text-xs text-muted" id="passwordHint"></span>
               </label>
             </div>
-            <div class="flex flex-wrap gap-3">
-              <button class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50" id="saveBtn" type="submit"><span class="material-symbols-outlined text-lg">save</span>保存设置</button>
-            </div>
+            <p class="text-xs text-muted">修改后点击页面右上角的「保存设置」即可生效。</p>
           </form>
         </article>
       </section>
