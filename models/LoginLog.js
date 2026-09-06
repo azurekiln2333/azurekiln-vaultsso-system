@@ -16,17 +16,19 @@ class LoginLogModel {
       'email_code_required',
       'email_code_invalid',
       'totp_required',
-      'totp_invalid'
+      'totp_invalid',
+      'register',
+      'admin_action'
     ];
     return allowed.includes(result) ? result : 'invalid_credentials';
   }
 
-  async create({ username, userId = null, ip = '', userAgent = '', result }) {
+  async create({ username, userId = null, ip = '', userAgent = '', result, detail = '' }) {
     const id = crypto.randomUUID();
     await this.pool.execute(
-      `INSERT INTO login_logs (id, username, user_id, ip, user_agent, result)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, String(username || '-').slice(0, 255), userId, String(ip || '').slice(0, 64), String(userAgent || '').slice(0, 255), this.normalizeResult(result)]
+      `INSERT INTO login_logs (id, username, user_id, ip, user_agent, result, detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, String(username || '-').slice(0, 255), userId, String(ip || '').slice(0, 64), String(userAgent || '').slice(0, 255), this.normalizeResult(result), String(detail || '').slice(0, 255)]
     );
     return this.findById(id);
   }
@@ -39,7 +41,7 @@ class LoginLogModel {
   async findRecent(limit = 50) {
     const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
     const [rows] = await this.pool.execute(
-      'SELECT id, username, user_id, ip, user_agent, result, created_at FROM login_logs ORDER BY created_at DESC LIMIT ?',
+      'SELECT id, username, user_id, ip, user_agent, result, detail, created_at FROM login_logs ORDER BY created_at DESC LIMIT ?',
       [safeLimit]
     );
     return rows;

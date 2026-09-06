@@ -129,7 +129,9 @@
       email_code_required: ['发送登录验证码', 'bg-blue-50 text-blue-700'],
       email_code_invalid: ['验证码错误', 'bg-red-50 text-red-600']
       totp_required: ['等待动态码', 'bg-blue-50 text-blue-700'],
-      totp_invalid: ['动态码错误', 'bg-red-50 text-red-600']
+      totp_invalid: ['动态码错误', 'bg-red-50 text-red-600'],
+      register: ['注册', 'bg-blue-50 text-blue-700'],
+      admin_action: ['管理员操作', 'bg-purple-50 text-purple-700']
     };
 
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
@@ -195,6 +197,7 @@
               <span class="truncate text-sm font-bold text-ink" title="${escapeHtml(log.username)}">${escapeHtml(log.username)}</span>
               <span class="shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-bold ${className}">${label}</span>
             </div>
+            ${log.detail ? `<p class="mt-1 break-all text-[11px] text-muted">${escapeHtml(log.detail)}</p>` : ''}
             <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted">
               <span class="truncate">${escapeHtml(log.ip || '未知 IP')}</span>
               <span class="shrink-0">${timeText}</span>

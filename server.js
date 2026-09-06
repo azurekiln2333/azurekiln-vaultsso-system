@@ -5,7 +5,6 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
-const cors = require('cors');
 const path = require('path');
 
 const { initDatabase, closePool } = require('./db/init');
@@ -24,6 +23,11 @@ const app = express();
 
 const PORT = Number(process.env.PORT || 3146);
 const JWT_SECRET = process.env.JWT_SECRET || 'vaultsso-jwt-secret-key-2024-change-in-production';
+if (String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+    && JWT_SECRET === 'vaultsso-jwt-secret-key-2024-change-in-production') {
+  console.error('❌ Refusing to start: set a strong JWT_SECRET in production.');
+  process.exit(1);
+}
 const TOKEN_EXPIRY = process.env.TOKEN_EXPIRY || '1h';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '7d';
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').trim();
@@ -51,10 +55,42 @@ const DEMO_CLIENTS = require('./config/demo-clients');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
+// CORS: credentialed requests are only allowed for same-origin (the request's own
+// host) or PUBLIC_BASE_URL. Reflecting arbitrary origins with credentials would let
+// any website read authenticated API responses cross-site.
+const TRUSTED_ORIGINS = new Set(
+  process.env.PUBLIC_BASE_URL ? [process.env.PUBLIC_BASE_URL.replace(/\/+$/, '')] : []
+);
+
+// CORS: credentialed requests are only allowed for same-origin (the request's own
+// host) or PUBLIC_BASE_URL. Reflecting arbitrary origins with credentials would let
+// any website read authenticated API responses cross-site.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    let allowed = false;
+    try {
+      const normalized = origin.replace(/\/+$/, '');
+      if (TRUSTED_ORIGINS.has(normalized) || new URL(origin).host === req.headers.host) {
+        allowed = true;
+      }
+    } catch (error) {
+      // Malformed origin stays disallowed.
+    }
+    if (allowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Vary', 'Origin');
+    }
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type');
+    res.status(204).end();
+    return;
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -133,7 +169,8 @@ function consumeRecoveryCode(user, code) {
   if (!normalized) return false;
   const hash = hashRecoveryCode(normalized);
   const hashes = getRecoveryHashes(user);
-  const index = hashes.indexOf(hash);
+  const index = hashes.findIndex(stored => stored.length === hash.length
+    && crypto.timingSafeEqual(Buffer.from(stored), Buffer.from(hash)));
   if (index < 0) return false;
   hashes.splice(index, 1);
   return User.update(user.id, { recoveryCodes: JSON.stringify(hashes) }).then(() => true);
@@ -358,18 +395,29 @@ function maskEmail(email) {
   return `${masked}${text.slice(atIndex)}`;
 }
 
-async function recordLoginLog({ username, userId = null, req, result }) {
+async function recordLoginLog({ username, userId = null, req, result, detail = '' }) {
   try {
     await LoginLog.create({
       username: username || '-',
       userId,
       ip: getClientIp(req),
       userAgent: req.headers['user-agent'] || '',
-      result
+      result,
+      detail
     });
   } catch (error) {
     console.error('Failed to write login log:', error.message);
   }
+}
+
+async function recordAdminLog({ admin, req, action, detail = '' }) {
+  await recordLoginLog({
+    username: `admin:${normalizeText(admin.username) || admin.id}`,
+    userId: admin.id,
+    req,
+    result: 'admin_action',
+    detail: [action, detail].filter(Boolean).join(' | ').slice(0, 255)
+  });
 }
 
 setInterval(() => { pruneCaptchaStore(); pruneLoginAttempts(); Session.deleteExpired().catch(() => {}); }, 60 * 1000).unref();
@@ -831,7 +879,7 @@ function createSessionToken(user, sid) {
 function sessionCookieOptions() {
   const options = {
     httpOnly: true,
-    secure: false,
+    secure: String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true',
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE
   };
@@ -1940,6 +1988,7 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
       recoveryOk = await consumeRecoveryCode(user, submittedTotpCode);
     }
     if (!totpOk && !recoveryOk) {
+      recordLoginFailure(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
       await recordLoginLog({ username, userId: user.id, req, result: 'totp_invalid' });
       return res.status(400).json({
         error: 'invalid_request',
@@ -2156,6 +2205,7 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
     lastLoginIp: getClientIp(req)
   });
 
+  await recordLoginLog({ username, userId: user.id, req, result: 'register', detail: email });
   await setSessionCookie(req, res, user);
 
   const result = await buildAuthorizationResponseV2(user, req.body);
@@ -2816,6 +2866,7 @@ app.post('/api/users/:id/revoke-sessions', asyncHandler(async (req, res) => {
   }
 
   await Session.revokeAllForUser(target.id);
+  await recordAdminLog({ admin, req, action: 'revoke_sessions', detail: target.username });
   res.json({ message_key: 'users.sessions_revoked', message: '已强制该用户退出所有设备' });
 }));
 
@@ -2875,6 +2926,14 @@ app.post('/api/account/totp/setup', asyncHandler(async (req, res) => {
 app.post('/api/account/totp/enable', asyncHandler(async (req, res) => {
   const user = await requireAuthenticatedUser(req, res);
   if (!user) return;
+
+  if (!(await isSettingEnabled('totp_allowed'))) {
+    return res.status(403).json({
+      error: 'forbidden',
+      error_key: 'auth.totp.disabled',
+      error_description: '管理员已关闭验证器两步验证'
+    });
+  }
 
   if (!user.totp_secret) {
     return res.status(400).json({
@@ -3116,6 +3175,7 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   const updated = await User.update(userId, updates);
+  await recordAdminLog({ admin, req, action: 'update_user', detail: `${target.username} -> ${Object.keys(updates).join(',')}` });
   const identities = await ExternalIdentity.findByUserId(userId);
   res.json({ user: { ...serializeUser(updated), identities: ExternalIdentity.serializeMany(identities) } });
 }));
@@ -3152,6 +3212,7 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   await User.delete(userId);
+  await recordAdminLog({ admin, req, action: 'delete_user', detail: target.username });
   res.status(204).send();
 }));
 
@@ -3331,6 +3392,7 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
     created.push(serializeUser(user));
   }
 
+  await recordAdminLog({ admin, req, action: 'import_users', detail: `created:${created.length} skipped:${skipped.length}` });
   res.json({
     createdCount: created.length,
     skippedCount: skipped.length,
@@ -3489,6 +3551,7 @@ app.put('/api/admin/smtp', asyncHandler(async (req, res) => {
     from: req.body.from
   });
 
+  await recordAdminLog({ admin, req, action: 'update_smtp_settings', detail: `host:${normalizeText(req.body.host) || 'unchanged'} port:${port ?? 'unchanged'}` });
   res.json({ ...getSmtpSettings(), message_key: 'smtp.saved', message: '发件设置已保存（运行时生效，重启后以 .env 为准）' });
 }));
 
@@ -3531,6 +3594,7 @@ app.post('/api/users/:id/totp/reset', asyncHandler(async (req, res) => {
   }
 
   await User.update(target.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
+  await recordAdminLog({ admin, req, action: 'reset_totp', detail: target.username });
   res.json({ message_key: 'users.totp.reset', message: '已重置该用户的验证器绑定' });
 }));
 
@@ -3606,6 +3670,7 @@ app.put('/api/admin/security', asyncHandler(async (req, res) => {
     await saveSettingValue('login_lockout_minutes', String(value));
   }
 
+  await recordAdminLog({ admin, req, action: 'update_security_settings', detail: Object.keys(req.body).filter(key => req.body[key] !== undefined).join(',') });
   res.json({ message_key: 'security.saved', message: '安全设置已保存，立即生效' });
 }));
 
@@ -3620,6 +3685,7 @@ app.get('/api/admin/security/logs', asyncHandler(async (req, res) => {
     ip: log.ip || '',
     userAgent: log.user_agent || '',
     result: log.result,
+    detail: log.detail || '',
     createdAt: log.created_at || log.createdAt || null
   })));
 }));

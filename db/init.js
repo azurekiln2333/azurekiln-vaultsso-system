@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS login_logs (
   ip VARCHAR(64),
   user_agent VARCHAR(255),
   result VARCHAR(32) NOT NULL,
+  detail VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_login_logs_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -276,6 +277,7 @@ async function initDatabase() {
     await ensureColumn(connection, 'users', 'recovery_codes', 'recovery_codes TEXT', 'totp_enabled');
     await ensureColumn(connection, 'sessions', 'token', 'token VARCHAR(128) NOT NULL', 'user_id');
     await ensureColumn(connection, 'sessions', 'revoked_at', 'revoked_at TIMESTAMP NULL DEFAULT NULL', 'user_agent');
+    await ensureColumn(connection, 'login_logs', 'detail', 'detail VARCHAR(255)', 'result');
     await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');
     await ensureColumn(connection, 'users', 'credits', 'credits INT NOT NULL DEFAULT 0', 'banned');
     await ensureColumn(connection, 'users', 'last_login_ip', 'last_login_ip VARCHAR(64) DEFAULT NULL', 'credits');
