@@ -15,6 +15,8 @@ const TokenModel = require('./models/Token');
 const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
 const ExternalIdentityModel = require('./models/ExternalIdentity');
 const LoginLogModel = require('./models/LoginLog');
+const { generateSecret, verifyTotp, buildOtpauthUri } = require('./services/totp');
+const QRCode = require('qrcode');
 const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail } = require('./services/email');
 
 const app = express();
@@ -101,7 +103,8 @@ const SETTING_DEFAULTS = {
   registration_enabled: 'true',
   password_min_length: '6',
   login_max_attempts: '5',
-  login_lockout_minutes: '15'
+  login_lockout_minutes: '15',
+  totp_allowed: 'true'
 };
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS);
 const settingCache = new Map();
@@ -736,6 +739,7 @@ function serializeUser(user) {
     description: user.description || '',
     credits: Number(user.credits ?? 0) || 0,
     lastLoginIp: user.last_login_ip || user.lastLoginIp || '',
+    totpEnabled: Boolean(user.totp_enabled),
     createdAt: user.createdAt || user.created_at || null,
     updatedAt: user.updatedAt || user.updated_at || null
   };
@@ -1784,12 +1788,13 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
-  // The captcha grace window only covers the email-code resubmission (step 2),
-  // which carries the code from the request that already passed the captcha.
-  // A fresh login must always pass the captcha, even within the grace window.
+  // The captcha grace window only covers the second-step resubmission (email or
+  // authenticator code), which carries the code from the request that already
+  // passed the captcha. A fresh login must always pass the captcha.
   const submittedEmailCode = normalizeText(req.body.email_code);
+  const submittedTotpCode = normalizeText(req.body.totp_code);
   const loginCaptchaGrace = captchaGraceStore.get(attemptKey) > Date.now();
-  const captchaSkipped = loginCaptchaGrace && Boolean(submittedEmailCode);
+  const captchaSkipped = loginCaptchaGrace && Boolean(submittedEmailCode || submittedTotpCode);
   if ((await isSettingEnabled('captcha_login')) && !captchaSkipped) {
     const captcha = verifyCaptcha(req.body);
     if (!captcha.ok) {
@@ -1835,7 +1840,29 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
-  if (await isSettingEnabled('login_email_code')) {
+  // Authenticator (TOTP) verification takes precedence over the email code.
+  const totpActive = (await isSettingEnabled('totp_allowed')) && user.totp_enabled && user.totp_secret;
+  if (totpActive) {
+    if (!submittedTotpCode) {
+      await recordLoginLog({ username, userId: user.id, req, result: 'totp_required' });
+      captchaGraceStore.set(attemptKey, Date.now() + CAPTCHA_GRACE_TTL_MS);
+      return res.json({
+        require_totp: true,
+        message_key: 'auth.totp.required',
+        message: '请输入验证器 App 中的 6 位动态码'
+      });
+    }
+    if (!verifyTotp(user.totp_secret, submittedTotpCode)) {
+      await recordLoginLog({ username, userId: user.id, req, result: 'totp_invalid' });
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'auth.totp.invalid',
+        error_description: '动态验证码不正确或已过期'
+      });
+    }
+  }
+
+  if (!totpActive && (await isSettingEnabled('login_email_code'))) {
     const emailCode = submittedEmailCode;
     if (!emailCode) {
       try {
@@ -2586,6 +2613,73 @@ app.get('/oauth2/logout', (req, res) => {
   res.redirect(target || '/oauth2/authorize');
 });
 
+app.get('/api/account/totp', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  res.json({ totpEnabled: Boolean(user.totp_enabled) });
+}));
+
+app.post('/api/account/totp/setup', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  if (!(await isSettingEnabled('totp_allowed'))) {
+    return res.status(403).json({
+      error: 'forbidden',
+      error_key: 'auth.totp.disabled',
+      error_description: '管理员已关闭验证器两步验证'
+    });
+  }
+
+  const secret = generateSecret();
+  await User.update(user.id, { totpSecret: secret });
+  const otpauthUri = buildOtpauthUri({ secret, account: user.email || user.username });
+  const qrDataUrl = await QRCode.toDataURL(otpauthUri, { margin: 1, width: 220 });
+  res.json({ secret, otpauthUri, qrDataUrl });
+}));
+
+app.post('/api/account/totp/enable', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  if (!user.totp_secret) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.totp.setup_required',
+      error_description: '请先扫描二维码获取绑定信息'
+    });
+  }
+
+  const code = normalizeText(req.body.code);
+  if (!verifyTotp(user.totp_secret, code)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.totp.invalid',
+      error_description: '动态验证码不正确，请确认验证器时间后重试'
+    });
+  }
+
+  await User.update(user.id, { totpEnabled: true });
+  res.json({ totpEnabled: true, message_key: 'auth.totp.enabled', message: '验证器绑定成功，下次登录需要输入动态码' });
+}));
+
+app.post('/api/account/totp/disable', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  if (user.totp_secret && !verifyTotp(user.totp_secret, normalizeText(req.body.code))) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.totp.invalid',
+      error_description: '动态验证码不正确，无法解绑'
+    });
+  }
+
+  await User.update(user.id, { totpSecret: null, totpEnabled: false });
+  res.json({ totpEnabled: false, message_key: 'auth.totp.disabled_ok', message: '验证器已解绑' });
+}));
+
 app.get('/api/account/identities', asyncHandler(async (req, res) => {
   const user = await requireAuthenticatedUser(req, res);
   if (!user) return;
@@ -3184,6 +3278,23 @@ app.post('/api/admin/smtp/test', asyncHandler(async (req, res) => {
   }
 }));
 
+app.post('/api/users/:id/totp/reset', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const target = await User.findById(normalizeText(req.params.id));
+  if (!target) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'users.not_found',
+      error_description: '未找到用户'
+    });
+  }
+
+  await User.update(target.id, { totpSecret: null, totpEnabled: false });
+  res.json({ message_key: 'users.totp.reset', message: '已重置该用户的验证器绑定' });
+}));
+
 app.get('/api/admin/security', asyncHandler(async (req, res) => {
   const admin = await requireAdminUser(req, res);
   if (!admin) return;
@@ -3193,6 +3304,7 @@ app.get('/api/admin/security', asyncHandler(async (req, res) => {
     captchaRegister: (await getSettingValue('captcha_register')) === 'true',
     loginEmailCode: (await getSettingValue('login_email_code')) === 'true',
     registrationEnabled: (await getSettingValue('registration_enabled')) === 'true',
+    totpAllowed: (await getSettingValue('totp_allowed')) === 'true',
     passwordMinLength: await getSettingNumber('password_min_length', 6),
     loginMaxAttempts: await getSettingNumber('login_max_attempts', 5),
     loginLockoutMinutes: await getSettingNumber('login_lockout_minutes', 15)
@@ -3203,7 +3315,8 @@ const SECURITY_TOGGLE_KEYS = {
   captchaLogin: 'captcha_login',
   captchaRegister: 'captcha_register',
   loginEmailCode: 'login_email_code',
-  registrationEnabled: 'registration_enabled'
+  registrationEnabled: 'registration_enabled',
+  totpAllowed: 'totp_allowed'
 };
 
 app.put('/api/admin/security', asyncHandler(async (req, res) => {

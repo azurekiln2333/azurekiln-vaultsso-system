@@ -14,7 +14,9 @@ class LoginLogModel {
       'locked',
       'captcha_failed',
       'email_code_required',
-      'email_code_invalid'
+      'email_code_invalid',
+      'totp_required',
+      'totp_invalid'
     ];
     return allowed.includes(result) ? result : 'invalid_credentials';
   }

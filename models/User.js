@@ -141,6 +141,14 @@ class UserModel {
       fields.push('last_login_ip = ?');
       values.push(userData.lastLoginIp);
     }
+    if (userData.totpSecret !== undefined) {
+      fields.push('totp_secret = ?');
+      values.push(userData.totpSecret);
+    }
+    if (userData.totpEnabled !== undefined) {
+      fields.push('totp_enabled = ?');
+      values.push(userData.totpEnabled);
+    }
     if (userData.role !== undefined) {
       fields.push('role = ?');
       values.push(this.normalizeRole(userData.role));

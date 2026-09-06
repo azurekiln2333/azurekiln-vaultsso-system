@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
   description TEXT,
   email_verified BOOLEAN DEFAULT FALSE,
   banned BOOLEAN NOT NULL DEFAULT FALSE,
+  totp_secret VARCHAR(64) DEFAULT NULL,
+  totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   credits INT NOT NULL DEFAULT 0,
   last_login_ip VARCHAR(64) DEFAULT NULL,
   role VARCHAR(32) NOT NULL DEFAULT '${USER_ROLE_USER}',
@@ -267,6 +269,8 @@ async function initDatabase() {
     await connection.query(CREATE_LOGIN_LOGS_TABLE);
     await ensureUsersRoleColumn(connection);
     await ensureColumn(connection, 'users', 'banned', 'banned BOOLEAN NOT NULL DEFAULT FALSE', 'email_verified');
+    await ensureColumn(connection, 'users', 'totp_secret', 'totp_secret VARCHAR(64) DEFAULT NULL', 'banned');
+    await ensureColumn(connection, 'users', 'totp_enabled', 'totp_enabled BOOLEAN NOT NULL DEFAULT FALSE', 'totp_secret');
     await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');
     await ensureColumn(connection, 'users', 'credits', 'credits INT NOT NULL DEFAULT 0', 'banned');
     await ensureColumn(connection, 'users', 'last_login_ip', 'last_login_ip VARCHAR(64) DEFAULT NULL', 'credits');

@@ -37,7 +37,9 @@
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="roleBadge"></span>
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="verifiedBadge"></span>
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="bannedBadge"></span>
+            <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="totpBadge"></span>
           </div>
+          <button class="mt-4 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary hidden" id="totpResetBtn" type="button"><span class="material-symbols-outlined text-sm">phonelink_erase</span>重置验证器</button>
           <code class="mt-4 block break-all rounded-lg bg-surface-container-low px-3 py-2 text-xs text-muted" id="detailId"></code>
         </article>
 
@@ -154,6 +156,11 @@
       bannedBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.banned ? 'block' : 'how_to_reg'}</span>${user.banned ? '已封禁' : '正常'}`;
       document.getElementById('bannedInput').checked = Boolean(user.banned);
 
+      const totpBadge = document.getElementById('totpBadge');
+      totpBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.totpEnabled ? 'bg-green-50 text-green-700' : 'bg-surface-container-low text-muted'}`;
+      totpBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.totpEnabled ? 'phonelink_lock' : 'phonelink_erase'}</span>${user.totpEnabled ? '已绑验证器' : '未绑验证器'}`;
+      document.getElementById('totpResetBtn').classList.toggle('hidden', !user.totpEnabled);
+
       document.getElementById('detailCreatedAt').textContent = dateText(user.createdAt);
       document.getElementById('detailUpdatedAt').textContent = dateText(user.updatedAt);
 
@@ -212,6 +219,15 @@
         setStatus('success', '用户信息已保存。');
       } catch (error) { setStatus('error', error.message); }
       finally { saveBtn.disabled = false; }
+    });
+    document.getElementById('totpResetBtn').addEventListener('click', async () => {
+      if (!currentUserId) return;
+      if (!window.confirm('确定重置该用户的验证器绑定吗？重置后该用户可直接重新绑定。')) return;
+      try {
+        await request(`/api/users/${encodeURIComponent(currentUserId)}/totp/reset`, { method: 'POST' });
+        setStatus('success', '已重置该用户的验证器绑定。');
+        await loadUser();
+      } catch (error) { setStatus('error', error.message); }
     });
     loadUser();
   </script>

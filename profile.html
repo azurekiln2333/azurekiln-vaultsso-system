@@ -71,6 +71,37 @@
           <article class="glass-card rounded-3xl border border-white/80 p-5">
             <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.totp.title">两步验证（验证器）</p>
+                <p class="text-sm text-muted" data-i18n="profile.totp.desc">绑定 Google Authenticator 等验证器 App 后，登录需要在密码之外输入 6 位动态码。</p>
+              </div>
+              <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                <span class="rounded-full px-3 py-1.5 text-xs font-bold" id="totpStatusChip"></span>
+                <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="totpActionBtn" type="button"></button>
+              </div>
+            </div>
+            <div id="totpSetupArea" class="mt-4 hidden">
+              <div class="flex flex-col gap-4 rounded-2xl border border-line/70 bg-white/70 p-4 sm:flex-row sm:items-center">
+                <img id="totpQrImage" alt="QR" class="h-[180px] w-[180px] rounded-xl border border-line bg-white p-1">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-bold text-ink" data-i18n="profile.totp.qr_title">1. 用验证器 App 扫描二维码</p>
+                  <p class="mt-1 text-xs text-muted" data-i18n="profile.totp.qr_desc">无法扫码时，可手动输入以下密钥：</p>
+                  <code class="mt-1 block break-all rounded-lg bg-surface-container-low px-3 py-2 text-xs" id="totpSecretText"></code>
+                  <label class="mt-3 block">
+                    <span class="mb-1 block text-xs font-bold text-muted" data-i18n="profile.totp.code_label">2. 输入 App 中的 6 位动态码确认绑定</span>
+                    <input class="w-full rounded-xl border-line text-sm" id="totpEnableCode" inputmode="numeric" maxlength="6" placeholder="123456">
+                  </label>
+                  <div class="mt-3 flex gap-2">
+                    <button class="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50" id="totpEnableBtn" type="button" data-i18n="common.action.confirm">确认绑定</button>
+                    <button class="rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-bold text-muted hover:text-primary" id="totpCancelBtn" type="button" data-i18n="common.action.cancel">取消</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
                 <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2">第三方账号</p>
                 <p class="text-sm text-muted">已绑定的微信、QQ、华为、抖音或其他 OAuth/OIDC 账号。</p>
               </div>
@@ -340,6 +371,7 @@
       document.getElementById('creditsValue').textContent = String(user.credits ?? 0);
       document.getElementById('lastLoginIpValue').textContent = user.lastLoginIp || '-';
       renderIdentities(user.identities || []);
+      renderTotpStatus(user);
 
       document.getElementById('profileNameInput').value = user.name || '';
       document.getElementById('profileAvatarInput').value = user.avatar || '';
@@ -356,6 +388,82 @@
       list.innerHTML = identities.map(identity => `<div class="flex flex-col gap-3 rounded-2xl border border-line/70 bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p class="font-bold text-ink">${escapeHtml(identity.provider)}</p><p class="mt-1 break-all text-xs text-muted">${escapeHtml(identity.providerUsername || identity.displayName || identity.providerUserId)}</p></div><button class="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-unbind-id="${escapeHtml(identity.id)}" type="button">解除绑定</button></div>`).join('');
       list.querySelectorAll('[data-unbind-id]').forEach(button => button.addEventListener('click', () => unbindIdentity(button.dataset.unbindId)));
     }
+
+    function renderTotpStatus(user) {
+      const chip = document.getElementById('totpStatusChip');
+      const btn = document.getElementById('totpActionBtn');
+      const enabled = Boolean(user.totpEnabled);
+      chip.textContent = enabled ? i18n.t('profile.totp.status_on') : i18n.t('profile.totp.status_off');
+      chip.className = enabled
+        ? 'rounded-full px-3 py-1.5 text-xs font-bold bg-green-50 text-green-700'
+        : 'rounded-full px-3 py-1.5 text-xs font-bold bg-surface-container-low text-muted';
+      btn.textContent = enabled ? i18n.t('profile.totp.unbind_btn') : i18n.t('profile.totp.bind_btn');
+      btn.dataset.mode = enabled ? 'unbind' : 'bind';
+      btn.disabled = false;
+      document.getElementById('totpSetupArea').classList.add('hidden');
+    }
+
+    function hideTotpSetup() {
+      document.getElementById('totpSetupArea').classList.add('hidden');
+      document.getElementById('totpActionBtn').disabled = false;
+    }
+
+    async function totpRequest(endpoint, body) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body || {})
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(i18n.resolveMessage(payload, 'server.internal'));
+      }
+      return payload;
+    }
+
+    document.getElementById('totpActionBtn').addEventListener('click', async function () {
+      if (this.dataset.mode === 'unbind') {
+        const code = window.prompt(i18n.t('profile.totp.unbind_prompt'));
+        if (!code) return;
+        this.disabled = true;
+        try {
+          const payload = await totpRequest('/api/account/totp/disable', { code: code.trim() });
+          setStatus('success', i18n.resolveMessage(payload, 'auth.totp.disabled_ok'));
+          renderTotpStatus({ totpEnabled: false });
+        } catch (error) {
+          this.disabled = false;
+          setStatus('error', error.message);
+        }
+        return;
+      }
+
+      this.disabled = true;
+      try {
+        const payload = await totpRequest('/api/account/totp/setup');
+        document.getElementById('totpQrImage').src = payload.qrDataUrl;
+        document.getElementById('totpSecretText').textContent = payload.secret;
+        document.getElementById('totpEnableCode').value = '';
+        document.getElementById('totpSetupArea').classList.remove('hidden');
+      } catch (error) {
+        setStatus('error', error.message);
+        this.disabled = false;
+      }
+    });
+
+    document.getElementById('totpEnableBtn').addEventListener('click', async function () {
+      this.disabled = true;
+      try {
+        const payload = await totpRequest('/api/account/totp/enable', { code: document.getElementById('totpEnableCode').value.trim() });
+        setStatus('success', i18n.resolveMessage(payload, 'auth.totp.enabled'));
+        renderTotpStatus({ totpEnabled: true });
+      } catch (error) {
+        this.disabled = false;
+        setStatus('error', error.message);
+      }
+    });
+
+    document.getElementById('totpCancelBtn').addEventListener('click', hideTotpSetup);
 
     async function loadIdentityProviders() {
       const container = document.getElementById('bindIdentityButtons');

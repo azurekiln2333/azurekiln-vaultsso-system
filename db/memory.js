@@ -136,6 +136,8 @@ class MemoryPool {
         description,
         email_verified: Boolean(emailVerified),
         banned: Boolean(banned),
+        totp_secret: null,
+        totp_enabled: false,
         credits: Number(credits) || 0,
         last_login_ip: lastLoginIp,
         role,
