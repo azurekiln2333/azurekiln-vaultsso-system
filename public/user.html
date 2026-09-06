@@ -40,6 +40,7 @@
             <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold" id="totpBadge"></span>
           </div>
           <button class="mt-4 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary hidden" id="totpResetBtn" type="button"><span class="material-symbols-outlined text-sm">phonelink_erase</span>重置验证器</button>
+          <button class="mt-4 inline-flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="revokeSessionsBtn" type="button"><span class="material-symbols-outlined text-sm">logout</span>强制退出所有设备</button>
           <code class="mt-4 block break-all rounded-lg bg-surface-container-low px-3 py-2 text-xs text-muted" id="detailId"></code>
         </article>
 
@@ -219,6 +220,14 @@
         setStatus('success', '用户信息已保存。');
       } catch (error) { setStatus('error', error.message); }
       finally { saveBtn.disabled = false; }
+    });
+    document.getElementById('revokeSessionsBtn').addEventListener('click', async () => {
+      if (!currentUserId) return;
+      if (!window.confirm('确定强制该用户退出所有设备吗？')) return;
+      try {
+        await request(`/api/users/${encodeURIComponent(currentUserId)}/revoke-sessions`, { method: 'POST' });
+        setStatus('success', '已强制该用户退出所有设备。');
+      } catch (error) { setStatus('error', error.message); }
     });
     document.getElementById('totpResetBtn').addEventListener('click', async () => {
       if (!currentUserId) return;

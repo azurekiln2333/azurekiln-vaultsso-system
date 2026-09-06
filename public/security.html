@@ -80,6 +80,13 @@
               <span class="mb-1 block text-sm font-bold text-muted">密码最小长度（位）</span>
               <input class="w-full rounded-lg border-line text-sm" id="passwordMinLength" type="number" min="4" max="64">
             </label>
+            <label class="flex items-start justify-between gap-4 rounded-lg border border-line/70 px-4 py-3 sm:col-span-2">
+              <span>
+                <span class="block text-sm font-bold text-ink">密码必须同时包含字母和数字</span>
+                <span class="mt-1 block text-xs text-muted">注册、重置和修改密码时强制校验；另内置常见弱密码黑名单（123456、password 等）。</span>
+              </span>
+              <input class="mt-1 h-5 w-5 shrink-0 rounded accent-primary" id="passwordRequireMixed" type="checkbox">
+            </label>
             <label class="block">
               <span class="mb-1 block text-sm font-bold text-muted">登录失败次数上限</span>
               <input class="w-full rounded-lg border-line text-sm" id="loginMaxAttempts" type="number" min="1" max="100">
@@ -145,6 +152,7 @@
         document.getElementById('captchaRegister').checked = config.captchaRegister;
         document.getElementById('loginEmailCode').checked = config.loginEmailCode;
         document.getElementById('totpAllowed').checked = config.totpAllowed;
+        document.getElementById('passwordRequireMixed').checked = config.passwordRequireMixed;
         document.getElementById('registrationEnabled').checked = config.registrationEnabled;
         document.getElementById('passwordMinLength').value = config.passwordMinLength;
         document.getElementById('loginMaxAttempts').value = config.loginMaxAttempts;
@@ -162,6 +170,7 @@
             captchaRegister: document.getElementById('captchaRegister').checked,
             loginEmailCode: document.getElementById('loginEmailCode').checked,
             totpAllowed: document.getElementById('totpAllowed').checked,
+            passwordRequireMixed: document.getElementById('passwordRequireMixed').checked,
             registrationEnabled: document.getElementById('registrationEnabled').checked,
             passwordMinLength: Number(document.getElementById('passwordMinLength').value),
             loginMaxAttempts: Number(document.getElementById('loginMaxAttempts').value),

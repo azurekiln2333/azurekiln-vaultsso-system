@@ -54,6 +54,10 @@ function buildSubject(purpose) {
     return 'VaultSSO sign-in verification code';
   }
 
+  if (purpose === 'email_change') {
+    return 'VaultSSO email change verification code';
+  }
+
   return 'VaultSSO registration verification code';
 }
 
@@ -62,7 +66,9 @@ function buildText({ code, purpose, expiresInMinutes }) {
     ? 'reset your VaultSSO password'
     : purpose === 'login'
       ? 'finish signing in to VaultSSO'
-      : 'finish creating your VaultSSO account';
+      : purpose === 'email_change'
+        ? 'confirm your new VaultSSO email address'
+        : 'finish creating your VaultSSO account';
 
   return [
     `Your verification code is: ${code}`,
@@ -91,6 +97,34 @@ async function sendVerificationEmail({ to, code, purpose, expiresInMinutes }) {
     console.error(`[email:smtp] send failed: ${error.message}`);
     throw error;
   }
+  return { delivered: true, mode: 'smtp' };
+}
+
+async function sendLoginAlertEmail({ to, ip, userAgent }) {
+  if (!isSmtpConfigured()) {
+    return { delivered: false, mode: 'skipped' };
+  }
+  const from = normalizeText(process.env.MAIL_FROM) || 'VaultSSO <no-reply@localhost>';
+  const smtp = getTransporter();
+  if (!smtp) {
+    return { delivered: false, mode: 'skipped' };
+  }
+  await smtp.sendMail({
+    from,
+    to,
+    subject: 'VaultSSO login alert from a new IP / VaultSSO 新 IP 登录提醒',
+    text: [
+      `Your VaultSSO account was just signed in from a new IP address.`,
+      `您的 VaultSSO 账户刚刚在一个新的 IP 地址登录：`,
+      ``,
+      `IP: ${ip}`,
+      `Device / 设备: ${String(userAgent || 'unknown').slice(0, 200)}`,
+      `Time / 时间: ${new Date().toLocaleString('zh-CN')}`,
+      ``,
+      `If this was not you, change your password immediately and contact the administrator.`,
+      `如果这不是您本人的操作，请立即修改密码并联系管理员。`
+    ].join('\n')
+  });
   return { delivered: true, mode: 'smtp' };
 }
 
@@ -133,5 +167,6 @@ module.exports = {
   sendVerificationEmail,
   getSmtpSettings,
   applySmtpSettings,
-  sendTestEmail
+  sendTestEmail,
+  sendLoginAlertEmail
 };

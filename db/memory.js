@@ -45,6 +45,7 @@ class MemoryPool {
     this.userIdentities = [];
     this.settings = [];
     this.loginLogs = [];
+    this.sessions = [];
   }
 
   async getConnection() {
@@ -138,6 +139,7 @@ class MemoryPool {
         banned: Boolean(banned),
         totp_secret: null,
         totp_enabled: false,
+        recovery_codes: null,
         credits: Number(credits) || 0,
         last_login_ip: lastLoginIp,
         role,
@@ -210,6 +212,45 @@ class MemoryPool {
 
     if (lower === 'select * from email_verification_codes where id = ?') {
       return [this.emailVerificationCodes.filter(row => row.id === params[0]).map(row => clone(row)), []];
+    }
+
+    if (lower === 'insert into sessions (id, user_id, token, ip_address, user_agent, expires_at) values (?, ?, ?, ?, ?, ?)') {
+      const [id, userId, token, ip, userAgent, expiresAt] = params;
+      this.sessions.push({ id, user_id: userId, token, ip_address: ip, user_agent: userAgent, revoked_at: null, expires_at: new Date(expiresAt).toISOString(), created_at: now() });
+      return [{ affectedRows: 1, insertId: id }, []];
+    }
+
+    if (lower === 'select * from sessions where token = ? and revoked_at is null and expires_at > ?') {
+      return [this.sessions.filter(row => row.token === params[0] && !row.revoked_at && new Date(row.expires_at) > new Date()).map(clone), []];
+    }
+
+    if (lower.startsWith('select id, user_id, ip_address, user_agent, created_at, expires_at from sessions where user_id = ? and revoked_at is null and expires_at > ? order by created_at desc')) {
+      const rows = this.sessions
+        .filter(row => row.user_id === params[0] && !row.revoked_at && new Date(row.expires_at) > new Date())
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .map(clone);
+      return [rows, []];
+    }
+
+    if (lower === 'select * from sessions where id = ?') {
+      return [this.sessions.filter(row => row.id === params[0]).map(clone), []];
+    }
+
+    if (lower === 'update sessions set revoked_at = ? where id = ?') {
+      return [this.updateRows(this.sessions, row => row.id === params[1], row => { row.revoked_at = new Date(params[0]).toISOString(); }), []];
+    }
+
+    if (lower === 'update sessions set revoked_at = ? where user_id = ? and revoked_at is null and id <> ?') {
+      return [this.updateRows(this.sessions, row => row.user_id === params[1] && !row.revoked_at && row.id !== params[2], row => { row.revoked_at = new Date(params[0]).toISOString(); }), []];
+    }
+
+    if (lower === 'update sessions set revoked_at = ? where user_id = ? and revoked_at is null') {
+      return [this.updateRows(this.sessions, row => row.user_id === params[1] && !row.revoked_at, row => { row.revoked_at = new Date(params[0]).toISOString(); }), []];
+    }
+
+    if (lower === 'delete from sessions where expires_at < ?') {
+      const result = this.deleteRows(this.sessions, row => new Date(row.expires_at) < new Date());
+      return [result, []];
     }
 
     if (lower === 'select setting_value from settings where setting_key = ?') {

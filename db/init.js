@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   banned BOOLEAN NOT NULL DEFAULT FALSE,
   totp_secret VARCHAR(64) DEFAULT NULL,
   totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  recovery_codes TEXT,
   credits INT NOT NULL DEFAULT 0,
   last_login_ip VARCHAR(64) DEFAULT NULL,
   role VARCHAR(32) NOT NULL DEFAULT '${USER_ROLE_USER}',
@@ -120,9 +121,10 @@ const CREATE_SESSIONS_TABLE = `
 CREATE TABLE IF NOT EXISTS sessions (
   id VARCHAR(36) PRIMARY KEY,
   user_id VARCHAR(36) NOT NULL,
-  token TEXT NOT NULL,
+  token VARCHAR(128) NOT NULL,
   ip_address VARCHAR(45),
   user_agent TEXT,
+  revoked_at TIMESTAMP NULL DEFAULT NULL,
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -271,6 +273,9 @@ async function initDatabase() {
     await ensureColumn(connection, 'users', 'banned', 'banned BOOLEAN NOT NULL DEFAULT FALSE', 'email_verified');
     await ensureColumn(connection, 'users', 'totp_secret', 'totp_secret VARCHAR(64) DEFAULT NULL', 'banned');
     await ensureColumn(connection, 'users', 'totp_enabled', 'totp_enabled BOOLEAN NOT NULL DEFAULT FALSE', 'totp_secret');
+    await ensureColumn(connection, 'users', 'recovery_codes', 'recovery_codes TEXT', 'totp_enabled');
+    await ensureColumn(connection, 'sessions', 'token', 'token VARCHAR(128) NOT NULL', 'user_id');
+    await ensureColumn(connection, 'sessions', 'revoked_at', 'revoked_at TIMESTAMP NULL DEFAULT NULL', 'user_agent');
     await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');
     await ensureColumn(connection, 'users', 'credits', 'credits INT NOT NULL DEFAULT 0', 'banned');
     await ensureColumn(connection, 'users', 'last_login_ip', 'last_login_ip VARCHAR(64) DEFAULT NULL', 'credits');

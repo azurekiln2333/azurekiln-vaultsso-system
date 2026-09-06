@@ -79,6 +79,14 @@
                 <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="totpActionBtn" type="button"></button>
               </div>
             </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted" id="totpRecoveryInfo" hidden>
+              <span data-i18n="profile.totp.recovery_remaining">剩余恢复码：</span><span class="font-bold text-ink" id="totpRecoveryRemaining">0</span>
+              <button class="rounded-lg border border-line bg-white px-2.5 py-1.5 font-bold text-muted hover:text-primary" id="totpRegenerateBtn" type="button" data-i18n="profile.totp.recovery_regen">重新生成</button>
+            </div>
+            <div id="totpCodesResult" class="mt-3 hidden rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p class="text-xs font-bold text-amber-700" data-i18n="profile.totp.recovery_save">请立即保存恢复码（仅显示一次），手机丢失时可用于登录：</p>
+              <div class="mt-2 grid grid-cols-2 gap-1 font-mono text-xs text-amber-800 sm:grid-cols-3" id="totpCodesList"></div>
+            </div>
             <div id="totpSetupArea" class="mt-4 hidden">
               <div class="flex flex-col gap-4 rounded-2xl border border-line/70 bg-white/70 p-4 sm:flex-row sm:items-center">
                 <img id="totpQrImage" alt="QR" class="h-[180px] w-[180px] rounded-xl border border-line bg-white p-1">
@@ -97,6 +105,17 @@
                 </div>
               </div>
             </div>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.sessions.title">登录设备</p>
+                <p class="text-sm text-muted" data-i18n="profile.sessions.desc">当前账号的活跃登录会话，可随时退出陌生设备。</p>
+              </div>
+              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="revokeOthersBtn" type="button" data-i18n="profile.sessions.revoke_others">退出其他设备</button>
+            </div>
+            <div class="mt-4 grid gap-3" id="sessionList"><p class="text-sm text-muted" data-i18n="common.loading">加载中...</p></div>
           </article>
 
           <article class="glass-card rounded-3xl border border-white/80 p-5">
@@ -209,6 +228,12 @@
         <div class="field">
           <label for="profileEmailInput" data-i18n="profile.field.email">邮箱</label>
           <input id="profileEmailInput" name="email" type="email" required>
+        </div>
+
+        <div class="field hidden" id="emailChangeCodeField">
+          <label for="emailChangeCode" data-i18n="profile.email_change.code_label">新邮箱验证码</label>
+          <input id="emailChangeCode" name="email_code" inputmode="numeric" maxlength="6" placeholder="123456">
+          <small data-i18n="profile.email_change.code_hint">修改邮箱需要验证新邮箱：验证码已发送到上面的新地址。</small>
         </div>
 
         <div class="modal-actions">
@@ -457,6 +482,8 @@
         const payload = await totpRequest('/api/account/totp/enable', { code: document.getElementById('totpEnableCode').value.trim() });
         setStatus('success', i18n.resolveMessage(payload, 'auth.totp.enabled'));
         renderTotpStatus({ totpEnabled: true });
+        showRecoveryCodes(payload.recoveryCodes);
+        await refreshTotpState();
       } catch (error) {
         this.disabled = false;
         setStatus('error', error.message);
@@ -464,6 +491,91 @@
     });
 
     document.getElementById('totpCancelBtn').addEventListener('click', hideTotpSetup);
+
+    function showRecoveryCodes(codes) {
+      if (!codes || !codes.length) return;
+      const list = document.getElementById('totpCodesList');
+      list.innerHTML = codes.map(code => `<span>${escapeHtml(code)}</span>`).join('');
+      document.getElementById('totpCodesResult').classList.remove('hidden');
+    }
+
+    async function refreshTotpState() {
+      try {
+        const response = await fetch('/api/account/totp', { credentials: 'same-origin' });
+        if (!response.ok) return;
+        const state = await response.json();
+        if (state.totpEnabled) {
+          const info = document.getElementById('totpRecoveryInfo');
+          document.getElementById('totpRecoveryRemaining').textContent = String(state.recoveryCodesRemaining || 0);
+          info.classList.remove('hidden');
+        } else {
+          document.getElementById('totpRecoveryInfo').classList.add('hidden');
+        }
+      } catch (error) { /* ignore */ }
+    }
+
+    document.getElementById('totpRegenerateBtn').addEventListener('click', async function () {
+      const code = window.prompt(i18n.t('profile.totp.regen_prompt'));
+      if (!code) return;
+      this.disabled = true;
+      try {
+        const payload = await totpRequest('/api/account/totp/recovery-codes', { code: code.trim() });
+        showRecoveryCodes(payload.recoveryCodes);
+        await refreshTotpState();
+        setStatus('success', payload.message || '');
+      } catch (error) {
+        setStatus('error', error.message);
+      } finally { this.disabled = false; }
+    });
+
+    // ---- 登录设备 ----
+    function renderSessions(sessions) {
+      const list = document.getElementById('sessionList');
+      if (!sessions.length) {
+        list.innerHTML = '<p class="text-sm text-muted">当前没有活跃会话。</p>';
+        return;
+      }
+      list.innerHTML = sessions.map(session => {
+        const time = new Date(session.createdAt);
+        const timeText = Number.isNaN(time.getTime()) ? '-' : time.toLocaleString(i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US');
+        const device = escapeHtml((session.userAgent || '').split(')')[0] ? (session.userAgent || '').split(')')[0] + ')' : '未知设备');
+        return `<div class="flex flex-col gap-2 rounded-2xl border border-line/70 bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <p class="text-sm font-bold text-ink">${device} ${session.current ? `<span class="ml-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">${escapeHtml(i18n.t('profile.sessions.current'))}</span>` : ''}</p>
+            <p class="mt-1 text-xs text-muted">${escapeHtml(session.ip || '-')} · ${timeText}</p>
+          </div>
+          ${session.current ? '' : `<button class="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-revoke-session="${escapeHtml(session.id)}" type="button">${escapeHtml(i18n.t('profile.sessions.revoke'))}</button>`}
+        </div>`;
+      }).join('');
+      list.querySelectorAll('[data-revoke-session]').forEach(button => button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const response = await fetch(`/api/account/sessions/${encodeURIComponent(button.dataset.revokeSession)}`, { method: 'DELETE', credentials: 'same-origin' });
+          if (!response.ok && response.status !== 204) throw new Error(i18n.t('common.network_error'));
+          await loadSessions();
+        } catch (error) { setStatus('error', error.message); button.disabled = false; }
+      }));
+    }
+
+    async function loadSessions() {
+      try {
+        const response = await fetch('/api/account/sessions', { credentials: 'same-origin' });
+        if (response.status === 401) return;
+        renderSessions(await response.json());
+      } catch (error) { /* ignore */ }
+    }
+
+    document.getElementById('revokeOthersBtn').addEventListener('click', async function () {
+      this.disabled = true;
+      try {
+        const response = await fetch('/api/account/sessions/revoke-others', { method: 'POST', credentials: 'same-origin' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error_description || i18n.t('common.network_error'));
+        setStatus('success', i18n.resolveMessage(payload, 'sessions.revoked_others'));
+        await loadSessions();
+      } catch (error) { setStatus('error', error.message); }
+      finally { this.disabled = false; }
+    });
 
     async function loadIdentityProviders() {
       const container = document.getElementById('bindIdentityButtons');
@@ -606,12 +718,47 @@
     document.getElementById('emailEditForm').addEventListener('submit', async function (event) {
       event.preventDefault();
 
-      const updated = await saveProfile({
+      const submitButton = document.getElementById('emailModalSubmit');
+      const emailCodeField = document.getElementById('emailChangeCodeField');
+      const payload = {
         email: document.getElementById('profileEmailInput').value
-      }, document.getElementById('emailModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
+      };
+      if (!emailCodeField.classList.contains('hidden')) {
+        payload.email_code = document.getElementById('emailChangeCode').value.trim();
+      }
 
-      if (updated) {
+      submitButton.disabled = true;
+      setStatus('', '');
+      try {
+        const response = await fetch('/api/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (response.status === 401) {
+          window.location.href = '/oauth2/authorize';
+          return;
+        }
+        if (result.require_email_code) {
+          emailCodeField.classList.remove('hidden');
+          setStatus('success', i18n.resolveMessage(result, 'profile.email_change.sent'));
+          document.getElementById('emailChangeCode').focus();
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(i18n.resolveMessage(result, 'server.internal'));
+        }
+        syncUserToPage(result.user);
+        setStatus('success', i18n.resolveMessage(result, 'profile.status.basic_updated'));
+        emailCodeField.classList.add('hidden');
+        document.getElementById('emailChangeCode').value = '';
         closeModal('emailModal');
+      } catch (error) {
+        setStatus('error', error.message);
+      } finally {
+        submitButton.disabled = false;
       }
     });
 
@@ -669,6 +816,8 @@
     renderDocument();
     loadProfile();
     loadIdentityProviders();
+    loadSessions();
+    refreshTotpState();
 
     document.addEventListener('vaultsso:languagechange', function () {
       renderDocument();

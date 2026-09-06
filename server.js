@@ -15,9 +15,10 @@ const TokenModel = require('./models/Token');
 const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
 const ExternalIdentityModel = require('./models/ExternalIdentity');
 const LoginLogModel = require('./models/LoginLog');
+const SessionModel = require('./models/Session');
 const { generateSecret, verifyTotp, buildOtpauthUri } = require('./services/totp');
 const QRCode = require('qrcode');
-const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail } = require('./services/email');
+const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail } = require('./services/email');
 
 const app = express();
 
@@ -42,6 +43,7 @@ let Token;
 let EmailVerificationCode;
 let ExternalIdentity;
 let LoginLog;
+let Session;
 let pool = null;
 
 const DEMO_CLIENTS = require('./config/demo-clients');
@@ -96,6 +98,47 @@ function getClientIp(req) {
   return String(req.socket?.remoteAddress || '').slice(0, 64);
 }
 
+const RECOVERY_CODE_COUNT = 10;
+
+function hashRecoveryCode(code) {
+  const normalized = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+}
+
+function generateRecoveryCodes() {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const codes = [];
+  for (let index = 0; index < RECOVERY_CODE_COUNT; index++) {
+    let code = '';
+    for (let position = 0; position < 8; position++) {
+      code += alphabet[crypto.randomInt(0, alphabet.length)];
+      if (position === 3) code += '-';
+    }
+    codes.push(code);
+  }
+  return codes;
+}
+
+function getRecoveryHashes(user) {
+  try {
+    const parsed = JSON.parse(user.recovery_codes || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function consumeRecoveryCode(user, code) {
+  const normalized = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return false;
+  const hash = hashRecoveryCode(normalized);
+  const hashes = getRecoveryHashes(user);
+  const index = hashes.indexOf(hash);
+  if (index < 0) return false;
+  hashes.splice(index, 1);
+  return User.update(user.id, { recoveryCodes: JSON.stringify(hashes) }).then(() => true);
+}
+
 const SETTING_DEFAULTS = {
   captcha_login: 'false',
   captcha_register: 'false',
@@ -104,7 +147,8 @@ const SETTING_DEFAULTS = {
   password_min_length: '6',
   login_max_attempts: '5',
   login_lockout_minutes: '15',
-  totp_allowed: 'true'
+  totp_allowed: 'true',
+  password_require_mixed: 'false'
 };
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS);
 const settingCache = new Map();
@@ -155,6 +199,28 @@ async function getSettingNumber(key, fallback) {
 
 async function getPasswordMinLength() {
   return getSettingNumber('password_min_length', 6);
+}
+
+const COMMON_PASSWORDS = new Set([
+  '123456', '123456789', '12345678', '111111', '1234567890', '1234567', 'password',
+  'qwerty', 'abc123', '11111111', '123123', 'admin', 'letmein', 'iloveyou',
+  '000000', '666666', '888888', 'a123456', '123qwe', 'qwertyuiop', '1qaz2wsx',
+  'password1', 'test123', 'abcd1234', '1234qwer', '987654321', '112233', '123321'
+]);
+
+async function validatePasswordPolicy(password) {
+  const minLength = await getPasswordMinLength();
+  if (password.length < minLength) {
+    return `密码长度不能少于 ${minLength} 位`;
+  }
+  if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+    return '密码过于常见，请更换为更复杂的密码';
+  }
+  if ((await getSettingValue('password_require_mixed')) === 'true'
+      && !(/[a-zA-Z]/.test(password) && /\d/.test(password))) {
+    return '密码必须同时包含字母和数字';
+  }
+  return '';
 }
 
 // --- CAPTCHA (self-hosted SVG; answers live in server memory, single use) ---
@@ -306,7 +372,7 @@ async function recordLoginLog({ username, userId = null, req, result }) {
   }
 }
 
-setInterval(() => { pruneCaptchaStore(); pruneLoginAttempts(); }, 60 * 1000).unref();
+setInterval(() => { pruneCaptchaStore(); pruneLoginAttempts(); Session.deleteExpired().catch(() => {}); }, 60 * 1000).unref();
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -363,6 +429,7 @@ const SESSION_REFRESH_THRESHOLD_MS = Math.floor(ACCESS_TOKEN_TTL_MS / 2);
 const EMAIL_PURPOSE_REGISTER = 'register';
 const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
 const EMAIL_PURPOSE_LOGIN = 'login';
+const EMAIL_PURPOSE_EMAIL_CHANGE = 'email_change';
 const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
 const EMAIL_CODE_MAX_ATTEMPTS = Number(process.env.EMAIL_CODE_MAX_ATTEMPTS || 5);
 
@@ -753,9 +820,9 @@ function validateToken(token) {
   }
 }
 
-function createSessionToken(user) {
+function createSessionToken(user, sid) {
   return jwt.sign(
-    { sub: user.id, email: user.email, role: normalizeText(user.role).toLowerCase() || 'user' },
+    { sub: user.id, email: user.email, role: normalizeText(user.role).toLowerCase() || 'user', sid },
     JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
   );
@@ -774,8 +841,17 @@ function sessionCookieOptions() {
   return options;
 }
 
-function setSessionCookie(res, user) {
-  res.cookie('session', createSessionToken(user), sessionCookieOptions());
+async function setSessionCookie(req, res, user) {
+  const sid = crypto.randomUUID();
+  const token = createSessionToken(user, sid);
+  await Session.create({
+    userId: user.id,
+    token: sid,
+    ip: getClientIp(req),
+    userAgent: req.headers['user-agent'] || '',
+    expiresAt: Date.now() + SESSION_MAX_AGE
+  });
+  res.cookie('session', token, sessionCookieOptions());
 }
 
 async function getAuthenticatedUser(req, res = null) {
@@ -785,7 +861,13 @@ async function getAuthenticatedUser(req, res = null) {
   }
 
   const session = validateToken(sessionToken);
-  if (!session) {
+  if (!session || !session.sid) {
+    return null;
+  }
+
+  // Server-side session check: revoking the row kills the cookie immediately.
+  const sessionRow = await Session.findActiveTokenByToken(session.sid);
+  if (!sessionRow) {
     return null;
   }
 
@@ -799,7 +881,7 @@ async function getAuthenticatedUser(req, res = null) {
 
   // 滑动续期：会话签发时长超过阈值一半时重发 session cookie，避免活跃用户被登出
   if (res && Number(session.iat) * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
-    setSessionCookie(res, user);
+    await setSessionCookie(req, res, user);
   }
 }
 
@@ -1197,7 +1279,7 @@ async function findUserConflicts({ username, email, excludeUserId }) {
 
 function normalizeEmailPurpose(value) {
   const purpose = normalizeText(value).toLowerCase();
-  return [EMAIL_PURPOSE_REGISTER, EMAIL_PURPOSE_PASSWORD_RESET, EMAIL_PURPOSE_LOGIN].includes(purpose) ? purpose : '';
+  return [EMAIL_PURPOSE_REGISTER, EMAIL_PURPOSE_PASSWORD_RESET, EMAIL_PURPOSE_LOGIN, EMAIL_PURPOSE_EMAIL_CHANGE].includes(purpose) ? purpose : '';
 }
 
 function generateEmailCode() {
@@ -1761,7 +1843,7 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
       return res.redirect(oidcErrorRedirect(cookieState, '账户已被封禁，请联系管理员'));
     }
     await User.update(user.id, { lastLoginIp: getClientIp(req) });
-    setSessionCookie(res, user);
+    await setSessionCookie(req, res, user);
     return res.redirect(getOidcReturnPath(cookieState.returnTo));
   } catch (error) {
     console.error('OIDC callback failed:', error.message);
@@ -1852,7 +1934,12 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
         message: '请输入验证器 App 中的 6 位动态码'
       });
     }
-    if (!verifyTotp(user.totp_secret, submittedTotpCode)) {
+    const totpOk = /^\d{6}$/.test(submittedTotpCode) && verifyTotp(user.totp_secret, submittedTotpCode);
+    let recoveryOk = false;
+    if (!totpOk) {
+      recoveryOk = await consumeRecoveryCode(user, submittedTotpCode);
+    }
+    if (!totpOk && !recoveryOk) {
       await recordLoginLog({ username, userId: user.id, req, result: 'totp_invalid' });
       return res.status(400).json({
         error: 'invalid_request',
@@ -1898,9 +1985,13 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
 
   clearLoginAttempts(attemptKey);
   captchaGraceStore.delete(attemptKey);
+  const previousIp = normalizeText(user.last_login_ip || user.lastLoginIp);
+  if (previousIp && previousIp !== ip && user.email) {
+    sendLoginAlertEmail({ to: user.email, ip, userAgent: req.headers['user-agent'] }).catch(() => {});
+  }
   await User.update(user.id, { lastLoginIp: ip });
   await recordLoginLog({ username, userId: user.id, req, result: 'success' });
-  setSessionCookie(res, user);
+  await setSessionCookie(req, res, user);
 
   const result = await buildAuthorizationResponseV2(user, req.body);
   return res.status(result.status).json(result.body);
@@ -1990,7 +2081,7 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
   const password = String(req.body.password || '');
   const confirmPassword = String(req.body.confirm_password || '');
   const emailCode = normalizeText(req.body.email_code || req.body.verification_code);
-  const passwordMinLength = await getPasswordMinLength();
+  const passwordPolicyError = await validatePasswordPolicy(password);
 
   if (!email || !isValidEmail(email)) {
     return res.status(400).json({
@@ -2008,11 +2099,11 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
     });
   }
 
-  if (password.length < passwordMinLength) {
+  if (passwordPolicyError) {
     return res.status(400).json({
       error: 'invalid_request',
-      error_key: 'validation.password.min_length',
-      error_description: `密码长度不能少于 ${passwordMinLength} 位`
+      error_key: 'validation.password.weak',
+      error_description: passwordPolicyError
     });
   }
 
@@ -2065,7 +2156,7 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
     lastLoginIp: getClientIp(req)
   });
 
-  setSessionCookie(res, user);
+  await setSessionCookie(req, res, user);
 
   const result = await buildAuthorizationResponseV2(user, req.body);
   return res.status(result.status).json(result.body);
@@ -2085,11 +2176,12 @@ app.post('/api/password-reset', asyncHandler(async (req, res) => {
     });
   }
 
-  if (password.length < await getPasswordMinLength()) {
+  const resetPolicyError = await validatePasswordPolicy(password);
+  if (resetPolicyError) {
     return res.status(400).json({
       error: 'invalid_request',
-      error_key: 'validation.password.min_length',
-      error_description: `密码长度不能少于 ${await getPasswordMinLength()} 位`
+      error_key: 'validation.password.weak',
+      error_description: resetPolicyError
     });
   }
 
@@ -2125,6 +2217,7 @@ app.post('/api/password-reset', asyncHandler(async (req, res) => {
   }
 
   await User.updatePassword(user.id, password);
+  await Session.revokeAllForUser(user.id);
   await User.update(user.id, { emailVerified: true });
 
   res.json({
@@ -2164,6 +2257,7 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   const hasEmail = Object.prototype.hasOwnProperty.call(req.body, 'email');
   const hasAvatar = Object.prototype.hasOwnProperty.call(req.body, 'avatar');
   const hasDescription = Object.prototype.hasOwnProperty.call(req.body, 'description');
+  const hasEmailVerifyCode = normalizeText(req.body.email_code) !== '';
 
   let nextName = currentUser.name;
   let nextUsername = currentUser.username;
@@ -2210,6 +2304,50 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
         error_key: 'validation.email.invalid',
         error_description: '请输入有效的邮箱地址'
       });
+    }
+    // A changed email must be confirmed with a code sent to the NEW address.
+    if (normalizedEmail !== normalizeEmail(currentUser.email) && !hasEmailVerifyCode) {
+      const conflictUser = await User.findByEmail(normalizedEmail);
+      if (conflictUser && conflictUser.id !== currentUser.id) {
+        return res.status(409).json({
+          error: 'conflict',
+          error_key: 'validation.email.taken',
+          error_description: '该邮箱已被注册'
+        });
+      }
+      const latestCode = await EmailVerificationCode.findLatestActive(normalizedEmail, EMAIL_PURPOSE_EMAIL_CHANGE);
+      if (latestCode && Date.now() - new Date(latestCode.created_at).getTime() < 60 * 1000) {
+        return res.status(429).json({
+          error: 'too_many_requests',
+          error_key: 'email_code.cooldown',
+          error_description: '发送过于频繁，请 1 分钟后再试'
+        });
+      }
+      await issueEmailVerificationCode({
+        email: normalizedEmail,
+        purpose: EMAIL_PURPOSE_EMAIL_CHANGE,
+        userId: currentUser.id
+      });
+      return res.json({
+        require_email_code: true,
+        email: normalizedEmail,
+        message_key: 'auth.email_change.sent',
+        message: `验证码已发送至新邮箱 ${maskEmail(normalizedEmail)}，请输入以完成修改`
+      });
+    }
+    if (hasEmailVerifyCode && normalizedEmail !== normalizeEmail(currentUser.email)) {
+      const verification = await verifyEmailCode({
+        email: normalizedEmail,
+        purpose: EMAIL_PURPOSE_EMAIL_CHANGE,
+        code: req.body.email_code
+      });
+      if (!verification.ok) {
+        return res.status(verification.status).json({
+          error: 'invalid_request',
+          error_key: verification.error_key,
+          error_description: verification.error_description
+        });
+      }
     }
     nextEmail = normalizedEmail;
   }
@@ -2265,15 +2403,20 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
       });
     }
 
-    if (newPassword.length < await getPasswordMinLength()) {
+    const newPolicyError = await validatePasswordPolicy(newPassword);
+    if (newPolicyError) {
       return res.status(400).json({
         error: 'invalid_request',
-        error_key: 'profile.password.min_length',
-        error_description: `新密码长度不能少于 ${await getPasswordMinLength()} 位`
+        error_key: 'profile.password.weak',
+        error_description: newPolicyError
       });
     }
 
     await User.updatePassword(currentUser.id, newPassword);
+    const changedSession = validateToken(String(req.cookies.session || ''));
+    if (changedSession && changedSession.sid) {
+      await Session.revokeAllForUser(currentUser.id, changedSession.sid);
+    }
   }
 
   await User.update(currentUser.id, {
@@ -2285,7 +2428,7 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   });
 
   const updatedUser = await User.findById(currentUser.id);
-  setSessionCookie(res, updatedUser);
+  await setSessionCookie(req, res, updatedUser);
 
   res.json({
     message_key: 'profile.updated',
@@ -2607,17 +2750,107 @@ app.get('/profile', asyncHandler(async (req, res) => {
   res.sendFile(path.join(__dirname, 'profile.html'));
 }));
 
-app.get('/oauth2/logout', (req, res) => {
+app.get('/oauth2/logout', asyncHandler(async (req, res) => {
+  const session = validateToken(String(req.cookies.session || ''));
+  if (session && session.sid) {
+    await Session.revoke(session.sid).catch(() => {});
+  }
   res.clearCookie('session', COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : undefined);
   const target = resolveLogoutRedirect(req.query.redirect);
   res.redirect(target || '/oauth2/authorize');
-});
+}));
+
+app.get('/api/account/sessions', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  const currentSid = validateToken(String(req.cookies.session || ''))?.sid || '';
+  const rows = await Session.findActiveByUserId(user.id);
+  res.json(rows.map(row => ({
+    id: row.id,
+    ip: row.ip_address || '',
+    userAgent: row.user_agent || '',
+    createdAt: row.created_at || null,
+    expiresAt: row.expires_at || null,
+    current: row.token === currentSid
+  })));
+}));
+
+app.post('/api/account/sessions/revoke-others', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  const currentSid = validateToken(String(req.cookies.session || ''))?.sid || '';
+  await Session.revokeAllForUser(user.id, currentSid || undefined);
+  res.json({ message_key: 'sessions.revoked_others', message: '已退出其他所有设备' });
+}));
+
+app.delete('/api/account/sessions/:id', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  const row = await Session.findById(normalizeText(req.params.id));
+  if (!row || row.user_id !== user.id) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'sessions.not_found',
+      error_description: '未找到该登录会话'
+    });
+  }
+
+  await Session.revoke(row.id);
+  res.status(204).send();
+}));
+
+app.post('/api/users/:id/revoke-sessions', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const target = await User.findById(normalizeText(req.params.id));
+  if (!target) {
+    return res.status(404).json({
+      error: 'not_found',
+      error_key: 'users.not_found',
+      error_description: '未找到用户'
+    });
+  }
+
+  await Session.revokeAllForUser(target.id);
+  res.json({ message_key: 'users.sessions_revoked', message: '已强制该用户退出所有设备' });
+}));
 
 app.get('/api/account/totp', asyncHandler(async (req, res) => {
   const user = await requireAuthenticatedUser(req, res);
   if (!user) return;
 
-  res.json({ totpEnabled: Boolean(user.totp_enabled) });
+  res.json({
+    totpEnabled: Boolean(user.totp_enabled),
+    recoveryCodesRemaining: getRecoveryHashes(user).length
+  });
+}));
+
+app.post('/api/account/totp/recovery-codes', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+
+  if (!user.totp_enabled || !user.totp_secret) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.totp.setup_required',
+      error_description: '请先绑定验证器'
+    });
+  }
+  if (!verifyTotp(user.totp_secret, normalizeText(req.body.code))) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.totp.invalid',
+      error_description: '动态验证码不正确，无法重新生成'
+    });
+  }
+
+  const recoveryCodes = generateRecoveryCodes();
+  await User.update(user.id, { recoveryCodes: JSON.stringify(recoveryCodes.map(hashRecoveryCode)) });
+  res.json({ recoveryCodes, message: '已生成新的恢复码，旧恢复码全部失效（仅显示这一次）' });
 }));
 
 app.post('/api/account/totp/setup', asyncHandler(async (req, res) => {
@@ -2660,8 +2893,14 @@ app.post('/api/account/totp/enable', asyncHandler(async (req, res) => {
     });
   }
 
-  await User.update(user.id, { totpEnabled: true });
-  res.json({ totpEnabled: true, message_key: 'auth.totp.enabled', message: '验证器绑定成功，下次登录需要输入动态码' });
+  const recoveryCodes = generateRecoveryCodes();
+  await User.update(user.id, { totpEnabled: true, recoveryCodes: JSON.stringify(recoveryCodes.map(hashRecoveryCode)) });
+  res.json({
+    totpEnabled: true,
+    recoveryCodes,
+    message_key: 'auth.totp.enabled',
+    message: '验证器绑定成功，下次登录需要输入动态码。请保存好恢复码，手机丢失时可用于登录（仅显示这一次）'
+  });
 }));
 
 app.post('/api/account/totp/disable', asyncHandler(async (req, res) => {
@@ -2676,7 +2915,7 @@ app.post('/api/account/totp/disable', asyncHandler(async (req, res) => {
     });
   }
 
-  await User.update(user.id, { totpSecret: null, totpEnabled: false });
+  await User.update(user.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
   res.json({ totpEnabled: false, message_key: 'auth.totp.disabled_ok', message: '验证器已解绑' });
 }));
 
@@ -3291,7 +3530,7 @@ app.post('/api/users/:id/totp/reset', asyncHandler(async (req, res) => {
     });
   }
 
-  await User.update(target.id, { totpSecret: null, totpEnabled: false });
+  await User.update(target.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
   res.json({ message_key: 'users.totp.reset', message: '已重置该用户的验证器绑定' });
 }));
 
@@ -3305,6 +3544,7 @@ app.get('/api/admin/security', asyncHandler(async (req, res) => {
     loginEmailCode: (await getSettingValue('login_email_code')) === 'true',
     registrationEnabled: (await getSettingValue('registration_enabled')) === 'true',
     totpAllowed: (await getSettingValue('totp_allowed')) === 'true',
+    passwordRequireMixed: (await getSettingValue('password_require_mixed')) === 'true',
     passwordMinLength: await getSettingNumber('password_min_length', 6),
     loginMaxAttempts: await getSettingNumber('login_max_attempts', 5),
     loginLockoutMinutes: await getSettingNumber('login_lockout_minutes', 15)
@@ -3316,7 +3556,8 @@ const SECURITY_TOGGLE_KEYS = {
   captchaRegister: 'captcha_register',
   loginEmailCode: 'login_email_code',
   registrationEnabled: 'registration_enabled',
-  totpAllowed: 'totp_allowed'
+  totpAllowed: 'totp_allowed',
+  passwordRequireMixed: 'password_require_mixed'
 };
 
 app.put('/api/admin/security', asyncHandler(async (req, res) => {
@@ -3528,6 +3769,7 @@ async function bootstrap() {
   EmailVerificationCode = new EmailVerificationCodeModel(pool);
   ExternalIdentity = new ExternalIdentityModel(pool);
   LoginLog = new LoginLogModel(pool);
+  Session = new SessionModel(pool);
 
   await ensureSystemUser();
   await seedMemoryDemoData();

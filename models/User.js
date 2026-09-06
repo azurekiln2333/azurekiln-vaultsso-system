@@ -149,6 +149,10 @@ class UserModel {
       fields.push('totp_enabled = ?');
       values.push(userData.totpEnabled);
     }
+    if (userData.recoveryCodes !== undefined) {
+      fields.push('recovery_codes = ?');
+      values.push(userData.recoveryCodes);
+    }
     if (userData.role !== undefined) {
       fields.push('role = ?');
       values.push(this.normalizeRole(userData.role));
