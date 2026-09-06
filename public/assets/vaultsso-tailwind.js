@@ -1,6 +1,6 @@
 window.tailwind = window.tailwind || {};
 
-tailwind.config = {
+const vaultssoTailwindConfig = {
   darkMode: 'class',
   theme: {
     extend: {
@@ -66,3 +66,29 @@ tailwind.config = {
     }
   }
 };
+
+tailwind.config = vaultssoTailwindConfig;
+
+// The Play CDN script (loaded after this file) replaces window.tailwind, which
+// drops the custom config, so custom colors like bg-primary never generate.
+// Re-apply the config once the CDN is up, then nudge its MutationObserver with a
+// DOM change so every page rescan picks the custom colors up.
+function reapplyVaultssoTailwindConfig() {
+  if (!window.tailwind) {
+    return;
+  }
+  window.tailwind.config = vaultssoTailwindConfig;
+
+  const marker = document.createElement('div');
+  marker.className = 'hidden';
+  marker.setAttribute('data-vaultsso-tailwind', '');
+  (document.body || document.documentElement).appendChild(marker);
+  requestAnimationFrame(() => marker.remove());
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', reapplyVaultssoTailwindConfig);
+} else {
+  reapplyVaultssoTailwindConfig();
+}
+window.addEventListener('load', reapplyVaultssoTailwindConfig);
