@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN" data-admin-page="security">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 安全设置</title>
+  <script src="/assets/vaultsso-tailwind.js"></script>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/vaultsso-base.css">
+  <link rel="stylesheet" href="/assets/vaultsso-admin.css">
+  <script src="/i18n.js?v=20260903-1"></script>
+  <script src="/assets/vaultsso-admin.js?v=20260903-1" defer></script>
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
+    <section class="mb-8 rounded-xl bg-surface-container-low p-8">
+      <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+        <span class="material-symbols-outlined text-base">security</span> 管理中心
+      </p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">安全设置</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted">配置登录与注册的验证方式、账户策略，并查看登录审计日志。所有设置保存后立即生效。</p>
+    </section>
+
+    <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700" id="statusBar">正在加载安全设置...</div>
+
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <section class="space-y-6 lg:col-span-2">
+        <article class="rounded-xl bg-white p-6 shadow-sm">
+          <p class="mb-5 inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">verified_user</span>验证方式</p>
+          <div class="space-y-4">
+            <label class="flex items-start justify-between gap-4 rounded-lg border border-line/70 px-4 py-3">
+              <span>
+                <span class="block text-sm font-bold text-ink">登录图形验证码</span>
+                <span class="mt-1 block text-xs text-muted">登录时需输入图片中的 4 位字符，防止脚本批量撞库。</span>
+              </span>
+              <input class="mt-1 h-5 w-5 shrink-0 rounded accent-primary" id="captchaLogin" type="checkbox">
+            </label>
+            <label class="flex items-start justify-between gap-4 rounded-lg border border-line/70 px-4 py-3">
+              <span>
+                <span class="block text-sm font-bold text-ink">注册图形验证码</span>
+                <span class="mt-1 block text-xs text-muted">注册时需输入图形验证码，防止批量注册垃圾账户。</span>
+              </span>
+              <input class="mt-1 h-5 w-5 shrink-0 rounded accent-primary" id="captchaRegister" type="checkbox">
+            </label>
+            <label class="flex items-start justify-between gap-4 rounded-lg border border-line/70 px-4 py-3">
+              <span>
+                <span class="block text-sm font-bold text-ink">登录邮箱验证码（二次验证）</span>
+                <span class="mt-1 block text-xs text-muted">密码正确后再向绑定邮箱发送 6 位验证码，验证通过才能登录（类似 GitHub 登录确认）。</span>
+              </span>
+              <input class="mt-1 h-5 w-5 shrink-0 rounded accent-primary" id="loginEmailCode" type="checkbox">
+            </label>
+          </div>
+        </article>
+
+        <article class="rounded-xl bg-white p-6 shadow-sm">
+          <p class="mb-5 inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">policy</span>账户策略</p>
+          <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <label class="flex items-start justify-between gap-4 rounded-lg border border-line/70 px-4 py-3 sm:col-span-2">
+              <span>
+                <span class="block text-sm font-bold text-ink">开放注册</span>
+                <span class="mt-1 block text-xs text-muted">关闭后登录页不再提供注册入口，只能由管理员导入或指定方式创建账户。</span>
+              </span>
+              <input class="mt-1 h-5 w-5 shrink-0 rounded accent-primary" id="registrationEnabled" type="checkbox">
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-sm font-bold text-muted">密码最小长度（位）</span>
+              <input class="w-full rounded-lg border-line text-sm" id="passwordMinLength" type="number" min="4" max="64">
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-sm font-bold text-muted">登录失败次数上限</span>
+              <input class="w-full rounded-lg border-line text-sm" id="loginMaxAttempts" type="number" min="1" max="100">
+              <span class="mt-1 block text-xs text-muted">同一用户名 + IP 在 15 分钟窗口内累计。</span>
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-sm font-bold text-muted">锁定时长（分钟）</span>
+              <input class="w-full rounded-lg border-line text-sm" id="loginLockoutMinutes" type="number" min="1" max="1440">
+            </label>
+          </div>
+          <div class="mt-5">
+            <button class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50" id="saveBtn" type="button"><span class="material-symbols-outlined text-lg">save</span>保存设置</button>
+          </div>
+        </article>
+      </section>
+
+      <section>
+        <article class="rounded-xl bg-white p-6 shadow-sm">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <p class="inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">history</span>登录审计日志</p>
+            <button class="inline-flex items-center gap-1 rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="refreshLogsBtn" type="button"><span class="material-symbols-outlined text-base">refresh</span>刷新</button>
+          </div>
+          <div class="space-y-2 overflow-y-auto" id="loginLogs" style="max-height: 480px;"><p class="text-sm text-muted">正在加载...</p></div>
+        </article>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const statusBar = document.getElementById('statusBar');
+    const saveBtn = document.getElementById('saveBtn');
+    const loginLogs = document.getElementById('loginLogs');
+    const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+
+    const RESULT_LABELS = {
+      success: ['成功', 'bg-green-50 text-green-700'],
+      invalid_credentials: ['密码错误', 'bg-red-50 text-red-600'],
+      banned: ['已封禁', 'bg-red-50 text-red-600'],
+      password_not_set: ['未设密码', 'bg-amber-50 text-amber-700'],
+      locked: ['已锁定', 'bg-red-50 text-red-600'],
+      captcha_failed: ['验证码错误', 'bg-amber-50 text-amber-700'],
+      email_code_required: ['发送登录验证码', 'bg-blue-50 text-blue-700'],
+      email_code_invalid: ['验证码错误', 'bg-red-50 text-red-600']
+    };
+
+    function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+    function setStatus(kind, message) {
+      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm ${kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : kind === 'success' ? 'border-green-200 bg-green-50 text-green-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`;
+      statusBar.textContent = message;
+    }
+    async function request(url, options = {}) {
+      const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+      const payload = response.status === 204 ? null : await response.json();
+      if (response.status === 401) { window.location.href = '/oauth2/authorize'; throw new Error('登录已过期'); }
+      if (response.status === 403) { window.location.href = '/oauth2/error?error=access_denied'; throw new Error('没有权限'); }
+      if (!response.ok) throw new Error(payload?.error_description || '请求失败');
+      return payload;
+    }
+    async function loadSettings() {
+      try {
+        const config = await request('/api/admin/security');
+        document.getElementById('captchaLogin').checked = config.captchaLogin;
+        document.getElementById('captchaRegister').checked = config.captchaRegister;
+        document.getElementById('loginEmailCode').checked = config.loginEmailCode;
+        document.getElementById('registrationEnabled').checked = config.registrationEnabled;
+        document.getElementById('passwordMinLength').value = config.passwordMinLength;
+        document.getElementById('loginMaxAttempts').value = config.loginMaxAttempts;
+        document.getElementById('loginLockoutMinutes').value = config.loginLockoutMinutes;
+        setStatus('info', '修改后点击“保存设置”立即生效。');
+      } catch (error) { setStatus('error', error.message); }
+    }
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      try {
+        await request('/api/admin/security', {
+          method: 'PUT',
+          body: JSON.stringify({
+            captchaLogin: document.getElementById('captchaLogin').checked,
+            captchaRegister: document.getElementById('captchaRegister').checked,
+            loginEmailCode: document.getElementById('loginEmailCode').checked,
+            registrationEnabled: document.getElementById('registrationEnabled').checked,
+            passwordMinLength: Number(document.getElementById('passwordMinLength').value),
+            loginMaxAttempts: Number(document.getElementById('loginMaxAttempts').value),
+            loginLockoutMinutes: Number(document.getElementById('loginLockoutMinutes').value)
+          })
+        });
+        setStatus('success', '安全设置已保存，立即生效。');
+      } catch (error) { setStatus('error', error.message); }
+      finally { saveBtn.disabled = false; }
+    });
+    async function loadLogs() {
+      loginLogs.innerHTML = '<p class="text-sm text-muted">正在加载...</p>';
+      try {
+        const logs = await request('/api/admin/security/logs?limit=50');
+        if (!logs.length) { loginLogs.innerHTML = '<p class="text-sm text-muted">暂无登录记录。</p>'; return; }
+        loginLogs.innerHTML = logs.map(log => {
+          const [label, className] = RESULT_LABELS[log.result] || [log.result, 'bg-surface-container-low text-muted'];
+          const time = new Date(log.createdAt);
+          const timeText = Number.isNaN(time.getTime()) ? '-' : time.toLocaleString('zh-CN');
+          return `<div class="rounded-lg border border-line/70 px-3 py-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate text-sm font-bold text-ink" title="${escapeHtml(log.username)}">${escapeHtml(log.username)}</span>
+              <span class="shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-bold ${className}">${label}</span>
+            </div>
+            <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted">
+              <span class="truncate">${escapeHtml(log.ip || '未知 IP')}</span>
+              <span class="shrink-0">${timeText}</span>
+            </div>
+          </div>`;
+        }).join('');
+      } catch (error) { loginLogs.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(error.message)}</p>`; }
+    }
+    refreshLogsBtn.addEventListener('click', loadLogs);
+    loadSettings();
+    loadLogs();
+  </script>
+</body>
+</html>

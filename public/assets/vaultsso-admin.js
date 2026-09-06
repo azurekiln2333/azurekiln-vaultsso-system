@@ -4,6 +4,7 @@
     { id: 'users', href: '/users.html', icon: 'group', key: 'admin.nav.users', label: '用户管理' },
     { id: 'apps', href: '/apps.html', icon: 'apps', key: 'admin.nav.apps', label: '应用管理' },
     { id: 'tokens', href: '/tokens.html', icon: 'vpn_key', key: 'admin.nav.tokens', label: '令牌审计' },
+    { id: 'security', href: '/security.html', icon: 'security', key: 'admin.nav.security', label: '安全设置' },
     { id: 'smtp', href: '/smtp.html', icon: 'outgoing_mail', key: 'admin.nav.smtp', label: '发件设置' }
   ];
 
