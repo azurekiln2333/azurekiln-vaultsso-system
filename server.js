@@ -1784,7 +1784,13 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
-  if (await isSettingEnabled('captcha_login') && captchaGraceStore.get(attemptKey) <= Date.now()) {
+  // The captcha grace window only covers the email-code resubmission (step 2),
+  // which carries the code from the request that already passed the captcha.
+  // A fresh login must always pass the captcha, even within the grace window.
+  const submittedEmailCode = normalizeText(req.body.email_code);
+  const loginCaptchaGrace = captchaGraceStore.get(attemptKey) > Date.now();
+  const captchaSkipped = loginCaptchaGrace && Boolean(submittedEmailCode);
+  if ((await isSettingEnabled('captcha_login')) && !captchaSkipped) {
     const captcha = verifyCaptcha(req.body);
     if (!captcha.ok) {
       await recordLoginLog({ username, req, result: 'captcha_failed' });
@@ -1830,7 +1836,7 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   }
 
   if (await isSettingEnabled('login_email_code')) {
-    const emailCode = normalizeText(req.body.email_code);
+    const emailCode = submittedEmailCode;
     if (!emailCode) {
       try {
         await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
