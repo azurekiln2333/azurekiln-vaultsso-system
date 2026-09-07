@@ -581,8 +581,9 @@ function parseBoolean(value, fallback) {
   return !['false', '0', 'no', 'off'].includes(String(value).trim().toLowerCase());
 }
 
-function parseOidcScopes(value) {
-  return Array.from(new Set(['openid', ...parseRequestedScopes(value)]));
+function parseOidcScopes(value, requireOpenid = true) {
+  const scopes = parseRequestedScopes(value);
+  return requireOpenid ? Array.from(new Set(['openid', ...scopes])) : scopes;
 }
 
 function getOidcProviderConfig(providerKey) {
@@ -591,15 +592,16 @@ function getOidcProviderConfig(providerKey) {
   const provider = key && OIDC_PROVIDERS[key];
   if (!key) return OIDC_CONFIG;
   if (!provider || typeof provider !== 'object') return null;
+  const validateIdToken = parseBoolean(provider.validateIdToken, OIDC_CONFIG.validateIdToken);
   return {
     ...OIDC_CONFIG,
     ...provider,
     providerKey: key,
     enabled: parseBoolean(provider.enabled, true),
-    scopes: parseOidcScopes(provider.scopes || provider.scope || OIDC_CONFIG.scopes.join(' ')),
+    scopes: parseOidcScopes(provider.scopes || provider.scope || OIDC_CONFIG.scopes.join(' '), validateIdToken),
     allowedAlgorithms: toStringArray(provider.allowedAlgorithms || provider.allowedAlgs || OIDC_CONFIG.allowedAlgorithms.join(' ')).flatMap(item => item.split(/\s+/)).filter(Boolean),
     pkceEnabled: parseBoolean(provider.pkceEnabled, OIDC_CONFIG.pkceEnabled),
-    validateIdToken: parseBoolean(provider.validateIdToken, OIDC_CONFIG.validateIdToken),
+    validateIdToken,
     requireEmailVerified: parseBoolean(provider.requireEmailVerified, OIDC_CONFIG.requireEmailVerified),
     tokenAuthMethod: normalizeText(provider.tokenAuthMethod) || OIDC_CONFIG.tokenAuthMethod,
     idTokenHmacSecret: String(provider.idTokenHmacSecret || provider.idTokenHsSecret || provider.clientSecret || OIDC_CONFIG.idTokenHmacSecret),
