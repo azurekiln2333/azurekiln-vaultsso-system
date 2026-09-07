@@ -106,6 +106,22 @@
           </div>
           <p class="mt-5 text-xs text-muted">修改任意配置后，点击页面右上角的「保存设置」即可生效。</p>
         </article>
+
+        <article class="rounded-xl bg-white p-6 shadow-sm">
+          <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p class="inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">account_circle</span>第三方登录（OIDC / OAuth2）</p>
+            <span class="rounded-lg bg-surface-container-low px-3 py-1 text-xs font-bold text-muted" id="oidcSource">配置来源：加载中</span>
+          </div>
+          <div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            <p class="font-bold" id="oidcStatus">正在加载第三方登录配置...</p>
+            <p class="mt-1 text-xs leading-5">Client Secret 只保存在服务端，仅显示是否已配置。当前配置通过环境变量读取，修改后需要重启服务。</p>
+          </div>
+          <div class="mb-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div class="rounded-lg border border-line/70 px-3 py-2"><span class="block text-xs text-muted">外部平台回调地址</span><code class="mt-1 block break-all text-xs text-ink" id="oidcCallback">-</code></div>
+            <div class="rounded-lg border border-line/70 px-3 py-2"><span class="block text-xs text-muted">登录入口</span><code class="mt-1 block break-all text-xs text-ink">/api/v1/auth/oauth/oidc/login</code></div>
+          </div>
+          <div class="space-y-3" id="oidcProviders"><p class="text-sm text-muted">正在加载...</p></div>
+        </article>
       </section>
 
       <section>
@@ -125,6 +141,10 @@
     const saveBtn = document.getElementById('saveBtn');
     const loginLogs = document.getElementById('loginLogs');
     const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+    const oidcStatus = document.getElementById('oidcStatus');
+    const oidcSource = document.getElementById('oidcSource');
+    const oidcCallback = document.getElementById('oidcCallback');
+    const oidcProviders = document.getElementById('oidcProviders');
 
     const RESULT_LABELS = {
       success: ['成功', 'bg-green-50 text-green-700'],
@@ -216,9 +236,49 @@
         }).join('');
       } catch (error) { loginLogs.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(error.message)}</p>`; }
     }
+    async function loadOidcSettings() {
+      try {
+        const config = await request('/api/admin/oidc');
+        const providers = Array.isArray(config.providers) ? config.providers : [];
+        const readyCount = providers.filter(provider => provider.configured).length;
+        oidcSource.textContent = `配置来源：${config.source || '-'}`;
+        oidcCallback.textContent = config.callbackUrl || '-';
+        oidcStatus.textContent = readyCount
+          ? `已配置 ${readyCount} 个可用登录 Provider`
+          : '尚未配置可用的第三方登录 Provider';
+        oidcStatus.parentElement.className = `mb-4 rounded-lg border px-4 py-3 text-sm ${readyCount ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`;
+        if (!providers.length) {
+          oidcProviders.innerHTML = '<p class="text-sm text-muted">暂无 Provider 配置。</p>';
+          return;
+        }
+        oidcProviders.innerHTML = providers.map(provider => {
+          const state = provider.configured ? ['已启用', 'bg-green-50 text-green-700'] : ['未完成配置', 'bg-amber-50 text-amber-700'];
+          const endpoint = provider.issuerUrl || provider.authorizeUrl || '-';
+          return `<div class="rounded-lg border border-line/70 px-4 py-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div><span class="font-bold text-ink">${escapeHtml(provider.providerName || provider.key)}</span><span class="ml-2 text-xs text-muted">${escapeHtml(provider.key || '')}</span></div>
+              <span class="rounded-lg px-2 py-1 text-xs font-bold ${state[1]}">${state[0]}</span>
+            </div>
+            <div class="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 text-xs text-muted sm:grid-cols-2">
+              <span>Client ID：<b class="font-semibold text-ink">${escapeHtml(provider.clientId || '-')}</b></span>
+              <span>Client Secret：<b class="font-semibold text-ink">${provider.clientSecretConfigured ? '已配置' : '未配置'}</b></span>
+              <span>授权地址：<b class="break-all font-semibold text-ink">${escapeHtml(endpoint)}</b></span>
+              <span>Scope：<b class="font-semibold text-ink">${escapeHtml((provider.scopes || []).join(' ') || '-')}</b></span>
+              <span>PKCE：<b class="font-semibold text-ink">${provider.pkceEnabled ? '开启' : '关闭'}</b></span>
+              <span>ID Token 验证：<b class="font-semibold text-ink">${provider.validateIdToken ? '开启' : '关闭'}</b></span>
+            </div>
+          </div>`;
+        }).join('');
+      } catch (error) {
+        oidcStatus.textContent = error.message;
+        oidcStatus.parentElement.className = 'mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700';
+        oidcProviders.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(error.message)}</p>`;
+      }
+    }
     refreshLogsBtn.addEventListener('click', loadLogs);
     loadSettings();
     loadLogs();
+    loadOidcSettings();
   </script>
 </body>
 </html>
