@@ -44,6 +44,7 @@ class MemoryPool {
     this.emailVerificationCodes = [];
     this.userIdentities = [];
     this.settings = [];
+    this.oidcProviders = [];
     this.loginLogs = [];
     this.sessions = [];
   }
@@ -256,6 +257,26 @@ class MemoryPool {
 
     if (lower === 'select setting_value from settings where setting_key = ?') {
       return [this.settings.filter(row => row.setting_key === params[0]).map(row => ({ setting_value: row.setting_value })), []];
+    }
+
+    if (lower === 'select * from oidc_providers order by provider_key asc') {
+      return [this.oidcProviders.slice().sort((a, b) => a.provider_key.localeCompare(b.provider_key)).map(clone), []];
+    }
+
+    if (lower === 'select * from oidc_providers where provider_key = ?') {
+      return [this.oidcProviders.filter(row => row.provider_key === params[0]).map(clone), []];
+    }
+
+    if (lower.startsWith('insert into oidc_providers')) {
+      const [providerKey, providerName, enabled, clientId, clientSecret, issuerUrl, discoveryUrl, authorizeUrl, tokenUrl, userinfoUrl, jwksUrl, scopes, tokenAuthMethod, clockTolerance, allowedAlgorithms, pkceEnabled, validateIdToken, requireEmailVerified, userinfoEmailPath, emailVerifiedPath, userinfoIdPath, userinfoUsernamePath, frontendCallbackPath] = params;
+      const existing = this.oidcProviders.find(row => row.provider_key === providerKey);
+      const values = { provider_key: providerKey, provider_name: providerName, enabled: Boolean(enabled), client_id: clientId, client_secret: clientSecret, issuer_url: issuerUrl, discovery_url: discoveryUrl, authorize_url: authorizeUrl, token_url: tokenUrl, userinfo_url: userinfoUrl, jwks_url: jwksUrl, scopes, token_auth_method: tokenAuthMethod, clock_tolerance: clockTolerance, allowed_algorithms: allowedAlgorithms, pkce_enabled: Boolean(pkceEnabled), validate_id_token: Boolean(validateIdToken), require_email_verified: Boolean(requireEmailVerified), userinfo_email_path: userinfoEmailPath, email_verified_path: emailVerifiedPath, userinfo_id_path: userinfoIdPath, userinfo_username_path: userinfoUsernamePath, frontend_callback_path: frontendCallbackPath, created_at: existing?.created_at || now(), updated_at: now() };
+      if (existing) Object.assign(existing, values); else this.oidcProviders.push(values);
+      return [{ affectedRows: 1, insertId: providerKey }, []];
+    }
+
+    if (lower === 'delete from oidc_providers where provider_key = ?') {
+      return [this.deleteRows(this.oidcProviders, row => row.provider_key === params[0]), []];
     }
 
     if (lower === "insert into settings (setting_key, setting_value) values (?, ?) on duplicate key update setting_value = values(setting_value)") {

@@ -38,6 +38,36 @@ CREATE TABLE IF NOT EXISTS settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+const CREATE_OIDC_PROVIDERS_TABLE = `
+CREATE TABLE IF NOT EXISTS oidc_providers (
+  provider_key VARCHAR(128) PRIMARY KEY,
+  provider_name VARCHAR(255) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  client_id VARCHAR(255) NOT NULL,
+  client_secret TEXT NOT NULL,
+  issuer_url TEXT,
+  discovery_url TEXT,
+  authorize_url TEXT,
+  token_url TEXT,
+  userinfo_url TEXT,
+  jwks_url TEXT,
+  scopes TEXT NOT NULL,
+  token_auth_method VARCHAR(32) NOT NULL DEFAULT 'client_secret_basic',
+  clock_tolerance INT NOT NULL DEFAULT 60,
+  allowed_algorithms VARCHAR(255),
+  pkce_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  validate_id_token BOOLEAN NOT NULL DEFAULT TRUE,
+  require_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  userinfo_email_path VARCHAR(255) NOT NULL DEFAULT 'email',
+  email_verified_path VARCHAR(255) NOT NULL DEFAULT 'email_verified',
+  userinfo_id_path VARCHAR(255) NOT NULL DEFAULT 'sub',
+  userinfo_username_path VARCHAR(255) NOT NULL DEFAULT 'preferred_username',
+  frontend_callback_path VARCHAR(255) NOT NULL DEFAULT '/oauth2/success',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
 const CREATE_LOGIN_LOGS_TABLE = `
 CREATE TABLE IF NOT EXISTS login_logs (
   id VARCHAR(36) PRIMARY KEY,
@@ -270,6 +300,7 @@ async function initDatabase() {
     await connection.query(CREATE_EMAIL_VERIFICATION_CODES_TABLE);
     await connection.query(CREATE_USER_IDENTITIES_TABLE);
     await connection.query(CREATE_SETTINGS_TABLE);
+    await connection.query(CREATE_OIDC_PROVIDERS_TABLE);
     await connection.query(CREATE_LOGIN_LOGS_TABLE);
     await ensureUsersRoleColumn(connection);
     await ensureColumn(connection, 'users', 'banned', 'banned BOOLEAN NOT NULL DEFAULT FALSE', 'email_verified');
