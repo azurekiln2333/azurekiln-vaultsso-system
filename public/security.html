@@ -114,12 +114,39 @@
           </div>
           <div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
             <p class="font-bold" id="oidcStatus">正在加载第三方登录配置...</p>
-            <p class="mt-1 text-xs leading-5">Client Secret 只保存在服务端，仅显示是否已配置。当前配置通过环境变量读取，修改后需要重启服务。</p>
+            <p class="mt-1 text-xs leading-5">Client Secret 只保存在服务端，仅显示是否已配置。Provider 保存到数据库后立即生效。</p>
           </div>
           <div class="mb-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div class="rounded-lg border border-line/70 px-3 py-2"><span class="block text-xs text-muted">外部平台回调地址</span><code class="mt-1 block break-all text-xs text-ink" id="oidcCallback">-</code></div>
             <div class="rounded-lg border border-line/70 px-3 py-2"><span class="block text-xs text-muted">登录入口</span><code class="mt-1 block break-all text-xs text-ink">/api/v1/auth/oauth/oidc/login</code></div>
           </div>
+          <form class="mb-5 rounded-lg border border-line/70 bg-surface-container-low/40 p-4" id="oidcForm">
+            <div class="mb-4 flex items-center justify-between gap-3"><p class="text-sm font-bold text-ink" id="oidcFormTitle">新增 Provider</p><button class="text-xs font-bold text-muted hover:text-primary" id="oidcCancelBtn" type="button" hidden>取消编辑</button></div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label><span class="mb-1 block text-xs font-bold text-muted">Provider Key</span><input class="w-full rounded-lg border-line text-sm" id="oidcKey" placeholder="github" required></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">显示名称</span><input class="w-full rounded-lg border-line text-sm" id="oidcName" placeholder="GitHub" required></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">Client ID</span><input class="w-full rounded-lg border-line text-sm" id="oidcClientId" required></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">Client Secret <span class="font-normal">（编辑时留空保留原值）</span></span><input class="w-full rounded-lg border-line text-sm" id="oidcClientSecret" type="password" autocomplete="new-password"></label>
+              <label class="sm:col-span-2"><span class="mb-1 block text-xs font-bold text-muted">Issuer URL（OIDC）</span><input class="w-full rounded-lg border-line text-sm" id="oidcIssuer" placeholder="https://.../realms/..." type="url"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">Discovery URL</span><input class="w-full rounded-lg border-line text-sm" id="oidcDiscovery" type="url"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">授权地址</span><input class="w-full rounded-lg border-line text-sm" id="oidcAuthorize" type="url"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">Token 地址</span><input class="w-full rounded-lg border-line text-sm" id="oidcToken" type="url"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">UserInfo 地址</span><input class="w-full rounded-lg border-line text-sm" id="oidcUserinfo" type="url"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">JWKS 地址</span><input class="w-full rounded-lg border-line text-sm" id="oidcJwks" type="url"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">Scope（空格分隔）</span><input class="w-full rounded-lg border-line text-sm" id="oidcScopes" placeholder="openid profile email"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">Token 认证方式</span><select class="w-full rounded-lg border-line text-sm" id="oidcTokenAuth"><option value="client_secret_basic">client_secret_basic</option><option value="client_secret_post">client_secret_post</option></select></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">用户 ID 字段</span><input class="w-full rounded-lg border-line text-sm" id="oidcIdPath" value="sub"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">邮箱字段</span><input class="w-full rounded-lg border-line text-sm" id="oidcEmailPath" value="email"></label>
+              <label><span class="mb-1 block text-xs font-bold text-muted">用户名字段</span><input class="w-full rounded-lg border-line text-sm" id="oidcUsernamePath" value="preferred_username"></label>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-4 text-xs font-bold text-muted">
+              <label class="inline-flex items-center gap-2"><input class="h-4 w-4 rounded accent-primary" id="oidcEnabled" type="checkbox" checked>启用 Provider</label>
+              <label class="inline-flex items-center gap-2"><input class="h-4 w-4 rounded accent-primary" id="oidcPkce" type="checkbox" checked>启用 PKCE</label>
+              <label class="inline-flex items-center gap-2"><input class="h-4 w-4 rounded accent-primary" id="oidcValidate" type="checkbox" checked>验证 ID Token</label>
+              <label class="inline-flex items-center gap-2"><input class="h-4 w-4 rounded accent-primary" id="oidcEmailVerified" type="checkbox">要求邮箱已验证</label>
+            </div>
+            <div class="mt-4 flex gap-2"><button class="inline-flex items-center gap-1 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white" id="oidcSaveBtn" type="submit"><span class="material-symbols-outlined text-base">save</span>保存 Provider</button><button class="inline-flex items-center gap-1 rounded-lg border border-line px-4 py-2 text-xs font-bold text-muted" id="oidcResetBtn" type="button"><span class="material-symbols-outlined text-base">add</span>清空表单</button></div>
+          </form>
           <div class="space-y-3" id="oidcProviders"><p class="text-sm text-muted">正在加载...</p></div>
         </article>
       </section>
@@ -145,6 +172,11 @@
     const oidcSource = document.getElementById('oidcSource');
     const oidcCallback = document.getElementById('oidcCallback');
     const oidcProviders = document.getElementById('oidcProviders');
+    const oidcForm = document.getElementById('oidcForm');
+    const oidcCancelBtn = document.getElementById('oidcCancelBtn');
+    const oidcFormTitle = document.getElementById('oidcFormTitle');
+    const oidcResetBtn = document.getElementById('oidcResetBtn');
+    let oidcEditingKey = '';
 
     const RESULT_LABELS = {
       success: ['成功', 'bg-green-50 text-green-700'],
@@ -257,7 +289,7 @@
           return `<div class="rounded-lg border border-line/70 px-4 py-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div><span class="font-bold text-ink">${escapeHtml(provider.providerName || provider.key)}</span><span class="ml-2 text-xs text-muted">${escapeHtml(provider.key || '')}</span></div>
-              <span class="rounded-lg px-2 py-1 text-xs font-bold ${state[1]}">${state[0]}</span>
+              <div class="flex items-center gap-2"><span class="rounded-lg px-2 py-1 text-xs font-bold ${state[1]}">${state[0]}</span><button class="oidc-edit rounded-lg border border-line px-2 py-1 text-xs font-bold text-muted" data-provider="${escapeHtml(provider.key)}" type="button">编辑</button><button class="oidc-delete rounded-lg border border-red-200 px-2 py-1 text-xs font-bold text-red-600" data-provider="${escapeHtml(provider.key)}" type="button">删除</button></div>
             </div>
             <div class="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 text-xs text-muted sm:grid-cols-2">
               <span>Client ID：<b class="font-semibold text-ink">${escapeHtml(provider.clientId || '-')}</b></span>
@@ -269,12 +301,53 @@
             </div>
           </div>`;
         }).join('');
+        oidcProviders.querySelectorAll('.oidc-edit').forEach(button => button.addEventListener('click', () => editOidcProvider(providers.find(provider => provider.key === button.dataset.provider))));
+        oidcProviders.querySelectorAll('.oidc-delete').forEach(button => button.addEventListener('click', () => deleteOidcProvider(button.dataset.provider)));
       } catch (error) {
         oidcStatus.textContent = error.message;
         oidcStatus.parentElement.className = 'mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700';
         oidcProviders.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(error.message)}</p>`;
       }
     }
+    function resetOidcForm() {
+      oidcEditingKey = '';
+      oidcForm.reset();
+      document.getElementById('oidcEnabled').checked = true;
+      document.getElementById('oidcPkce').checked = true;
+      document.getElementById('oidcValidate').checked = true;
+      document.getElementById('oidcIdPath').value = 'sub';
+      document.getElementById('oidcEmailPath').value = 'email';
+      document.getElementById('oidcUsernamePath').value = 'preferred_username';
+      oidcFormTitle.textContent = '新增 Provider';
+      oidcCancelBtn.hidden = true;
+      document.getElementById('oidcKey').disabled = false;
+    }
+    function editOidcProvider(provider) {
+      if (!provider) return;
+      oidcEditingKey = provider.key;
+      const values = { oidcKey: provider.key, oidcName: provider.providerName, oidcClientId: provider.clientId, oidcIssuer: provider.issuerUrl, oidcDiscovery: provider.discoveryUrl, oidcAuthorize: provider.authorizeUrl, oidcToken: provider.tokenUrl, oidcUserinfo: provider.userinfoUrl, oidcJwks: provider.jwksUrl, oidcScopes: (provider.scopes || []).join(' '), oidcIdPath: provider.userinfoIdPath, oidcEmailPath: provider.userinfoEmailPath, oidcUsernamePath: provider.userinfoUsernamePath };
+      Object.entries(values).forEach(([id, value]) => { document.getElementById(id).value = value || ''; });
+      document.getElementById('oidcTokenAuth').value = provider.tokenAuthMethod || 'client_secret_basic';
+      document.getElementById('oidcEnabled').checked = provider.enabled;
+      document.getElementById('oidcPkce').checked = provider.pkceEnabled;
+      document.getElementById('oidcValidate').checked = provider.validateIdToken;
+      document.getElementById('oidcEmailVerified').checked = provider.requireEmailVerified;
+      oidcFormTitle.textContent = `编辑 Provider：${provider.providerName}`;
+      oidcCancelBtn.hidden = false;
+      document.getElementById('oidcKey').disabled = true;
+      oidcForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    async function deleteOidcProvider(providerKey) {
+      if (!window.confirm(`确定删除 Provider「${providerKey}」吗？`)) return;
+      try { await request(`/api/admin/oidc/${encodeURIComponent(providerKey)}`, { method: 'DELETE' }); setStatus('success', 'Provider 已删除。'); resetOidcForm(); await loadOidcSettings(); } catch (error) { setStatus('error', error.message); }
+    }
+    oidcForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const payload = { providerKey: document.getElementById('oidcKey').value, providerName: document.getElementById('oidcName').value, clientId: document.getElementById('oidcClientId').value, clientSecret: document.getElementById('oidcClientSecret').value, issuerUrl: document.getElementById('oidcIssuer').value, discoveryUrl: document.getElementById('oidcDiscovery').value, authorizeUrl: document.getElementById('oidcAuthorize').value, tokenUrl: document.getElementById('oidcToken').value, userinfoUrl: document.getElementById('oidcUserinfo').value, jwksUrl: document.getElementById('oidcJwks').value, scopes: document.getElementById('oidcScopes').value, tokenAuthMethod: document.getElementById('oidcTokenAuth').value, userinfoIdPath: document.getElementById('oidcIdPath').value, userinfoEmailPath: document.getElementById('oidcEmailPath').value, userinfoUsernamePath: document.getElementById('oidcUsernamePath').value, enabled: document.getElementById('oidcEnabled').checked, pkceEnabled: document.getElementById('oidcPkce').checked, validateIdToken: document.getElementById('oidcValidate').checked, requireEmailVerified: document.getElementById('oidcEmailVerified').checked };
+      try { await request('/api/admin/oidc', { method: 'POST', body: JSON.stringify(payload) }); setStatus('success', 'Provider 已保存，立即生效。'); resetOidcForm(); await loadOidcSettings(); } catch (error) { setStatus('error', error.message); }
+    });
+    oidcResetBtn.addEventListener('click', resetOidcForm);
+    oidcCancelBtn.addEventListener('click', resetOidcForm);
     refreshLogsBtn.addEventListener('click', loadLogs);
     loadSettings();
     loadLogs();
