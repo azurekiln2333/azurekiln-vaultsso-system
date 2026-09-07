@@ -15,6 +15,7 @@ const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
 const ExternalIdentityModel = require('./models/ExternalIdentity');
 const LoginLogModel = require('./models/LoginLog');
 const SessionModel = require('./models/Session');
+const OidcProviderModel = require('./models/OidcProvider');
 const { generateSecret, verifyTotp, buildOtpauthUri } = require('./services/totp');
 const QRCode = require('qrcode');
 const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail, sendBehaviorAlertEmail } = require('./services/email');
@@ -48,7 +49,9 @@ let EmailVerificationCode;
 let ExternalIdentity;
 let LoginLog;
 let Session;
+let OidcProvider;
 let pool = null;
+let oidcStorageSource = 'environment';
 
 const DEMO_CLIENTS = require('./config/demo-clients');
 
@@ -573,7 +576,95 @@ function parseOidcProviders() {
   }
 }
 
-const OIDC_PROVIDERS = parseOidcProviders();
+let OIDC_PROVIDERS = parseOidcProviders();
+
+function oidcSecretKey() {
+  return crypto.createHash('sha256').update(`${JWT_SECRET}:oidc-provider-secret`).digest();
+}
+
+function encryptOidcSecret(value) {
+  const secret = String(value || '');
+  if (!secret) return '';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', oidcSecretKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
+  return `enc:v1:${iv.toString('base64url')}:${cipher.getAuthTag().toString('base64url')}:${encrypted.toString('base64url')}`;
+}
+
+function decryptOidcSecret(value) {
+  const encoded = String(value || '');
+  if (!encoded.startsWith('enc:v1:')) return encoded;
+  try {
+    const [, , ivText, tagText, dataText] = encoded.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', oidcSecretKey(), Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+  } catch (error) {
+    throw new Error('OIDC provider secret could not be decrypted');
+  }
+}
+
+function oidcDatabaseRowToConfig(row) {
+  return {
+    providerKey: row.provider_key,
+    providerName: row.provider_name,
+    enabled: Boolean(row.enabled),
+    clientId: row.client_id,
+    clientSecret: decryptOidcSecret(row.client_secret),
+    issuerUrl: row.issuer_url || '',
+    discoveryUrl: row.discovery_url || '',
+    authorizeUrl: row.authorize_url || '',
+    tokenUrl: row.token_url || '',
+    userinfoUrl: row.userinfo_url || '',
+    jwksUrl: row.jwks_url || '',
+    scopes: parseOidcScopes(row.scopes || '', Boolean(row.validate_id_token)),
+    tokenAuthMethod: row.token_auth_method || 'client_secret_basic',
+    clockTolerance: Number(row.clock_tolerance) || 60,
+    allowedAlgorithms: toStringArray(row.allowed_algorithms || '').flatMap(item => item.split(/\s+/)).filter(Boolean),
+    pkceEnabled: Boolean(row.pkce_enabled),
+    validateIdToken: Boolean(row.validate_id_token),
+    requireEmailVerified: Boolean(row.require_email_verified),
+    userinfoEmailPath: row.userinfo_email_path || 'email',
+    emailVerifiedPath: row.email_verified_path || 'email_verified',
+    userinfoIdPath: row.userinfo_id_path || 'sub',
+    userinfoUsernamePath: row.userinfo_username_path || 'preferred_username',
+    frontendCallbackPath: row.frontend_callback_path || '/oauth2/success',
+    idTokenHmacSecret: decryptOidcSecret(row.client_secret)
+  };
+}
+
+async function refreshOidcProvidersFromDatabase() {
+  if (!OidcProvider) return;
+  const rows = await OidcProvider.findAll();
+  oidcStorageSource = 'database';
+  const providers = {};
+  for (const row of rows) {
+    providers[row.provider_key] = oidcDatabaseRowToConfig(row);
+  }
+  OIDC_PROVIDERS = providers;
+}
+
+async function migrateOidcProvidersToDatabase() {
+  if (!OidcProvider) return;
+  const existing = await OidcProvider.findAll();
+  if (existing.length) {
+    await refreshOidcProvidersFromDatabase();
+    return;
+  }
+
+  const legacyProviders = Object.keys(OIDC_PROVIDERS).length
+    ? Object.values(OIDC_PROVIDERS)
+    : OIDC_CONFIG.clientId ? [OIDC_CONFIG] : [];
+  for (const config of legacyProviders) {
+    await OidcProvider.upsert({
+      ...config,
+      clientSecret: encryptOidcSecret(config.clientSecret),
+      scopes: config.scopes,
+      allowedAlgorithms: config.allowedAlgorithms
+    });
+  }
+  await refreshOidcProvidersFromDatabase();
+}
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null) return fallback;
@@ -3686,34 +3777,91 @@ app.get('/api/admin/security', asyncHandler(async (req, res) => {
   });
 }));
 
+function serializeAdminOidcProvider(config) {
+  return {
+    key: config.providerKey,
+    providerName: config.providerName,
+    enabled: config.enabled !== false,
+    configured: isOidcEnabled(config),
+    clientId: config.clientId || '',
+    clientSecretConfigured: Boolean(config.clientSecret),
+    issuerUrl: config.issuerUrl || '',
+    discoveryUrl: config.discoveryUrl || '',
+    authorizeUrl: config.authorizeUrl || '',
+    tokenUrl: config.tokenUrl || '',
+    userinfoUrl: config.userinfoUrl || '',
+    jwksUrl: config.jwksUrl || '',
+    scopes: config.scopes,
+    tokenAuthMethod: config.tokenAuthMethod,
+    pkceEnabled: Boolean(config.pkceEnabled),
+    validateIdToken: Boolean(config.validateIdToken),
+    requireEmailVerified: Boolean(config.requireEmailVerified),
+    userinfoIdPath: config.userinfoIdPath,
+    userinfoEmailPath: config.userinfoEmailPath,
+    userinfoUsernamePath: config.userinfoUsernamePath
+  };
+}
+
+async function getAdminOidcConfigs() {
+  if (oidcStorageSource === 'database') {
+    const rows = await OidcProvider.findAll();
+    return rows.map(oidcDatabaseRowToConfig);
+  }
+  const keys = Object.keys(OIDC_PROVIDERS);
+  return (keys.length ? keys.map(getOidcProviderConfig).filter(Boolean) : (isOidcEnabled(OIDC_CONFIG) ? [OIDC_CONFIG] : []));
+}
+
 app.get('/api/admin/oidc', asyncHandler(async (req, res) => {
   const admin = await requireAdminUser(req, res);
   if (!admin) return;
 
-  const configuredKeys = Object.keys(OIDC_PROVIDERS);
-  const configs = configuredKeys.length
-    ? configuredKeys.map(getOidcProviderConfig).filter(Boolean)
-    : isOidcEnabled(OIDC_CONFIG) ? [OIDC_CONFIG] : [];
+  const configs = await getAdminOidcConfigs();
   res.json({
-    source: configuredKeys.length ? 'OIDC_PROVIDERS_JSON' : 'OIDC_* environment variables',
+    source: oidcStorageSource === 'database' ? 'database' : Object.keys(OIDC_PROVIDERS).length ? 'OIDC_PROVIDERS_JSON' : 'OIDC_* environment variables',
     callbackUrl: getOidcCallbackUrl(req),
-    providers: configs.map(config => ({
-      key: config.providerKey,
-      providerName: config.providerName,
-      enabled: config.enabled !== false,
-      configured: isOidcEnabled(config),
-      clientId: config.clientId || '',
-      clientSecretConfigured: Boolean(config.clientSecret),
-      issuerUrl: config.issuerUrl || '',
-      authorizeUrl: config.authorizeUrl || '',
-      tokenUrl: config.tokenUrl || '',
-      userinfoUrl: config.userinfoUrl || '',
-      scopes: config.scopes,
-      pkceEnabled: Boolean(config.pkceEnabled),
-      validateIdToken: Boolean(config.validateIdToken),
-      requireEmailVerified: Boolean(config.requireEmailVerified)
-    }))
+    providers: configs.map(serializeAdminOidcProvider)
   });
+}));
+
+app.post('/api/admin/oidc', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+  const providerKey = normalizeText(req.body.providerKey).toLowerCase();
+  const providerName = normalizeText(req.body.providerName);
+  if (!/^[a-z0-9][a-z0-9_-]{1,127}$/.test(providerKey) || !providerName) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Provider key 和名称格式无效' });
+  }
+  const current = await OidcProvider.findByKey(providerKey);
+  const clientSecret = normalizeText(req.body.clientSecret);
+  if (!current && !clientSecret) {
+    return res.status(400).json({ error: 'invalid_request', error_description: '新 Provider 必须填写 Client Secret' });
+  }
+  const saved = await OidcProvider.upsert({
+    providerKey, providerName, enabled: req.body.enabled !== false,
+    clientId: req.body.clientId, clientSecret: clientSecret ? encryptOidcSecret(clientSecret) : current.client_secret,
+    issuerUrl: req.body.issuerUrl, discoveryUrl: req.body.discoveryUrl, authorizeUrl: req.body.authorizeUrl,
+    tokenUrl: req.body.tokenUrl, userinfoUrl: req.body.userinfoUrl, jwksUrl: req.body.jwksUrl,
+    scopes: req.body.scopes, tokenAuthMethod: req.body.tokenAuthMethod, clockTolerance: req.body.clockTolerance,
+    allowedAlgorithms: req.body.allowedAlgorithms, pkceEnabled: req.body.pkceEnabled, validateIdToken: req.body.validateIdToken,
+    requireEmailVerified: req.body.requireEmailVerified, userinfoEmailPath: req.body.userinfoEmailPath,
+    emailVerifiedPath: req.body.emailVerifiedPath, userinfoIdPath: req.body.userinfoIdPath,
+    userinfoUsernamePath: req.body.userinfoUsernamePath, frontendCallbackPath: req.body.frontendCallbackPath
+  });
+  await refreshOidcProvidersFromDatabase();
+  await recordAdminLog({ admin, req, action: 'upsert_oidc_provider', detail: providerKey });
+  res.json({ provider: serializeAdminOidcProvider(oidcDatabaseRowToConfig(saved)) });
+}));
+
+app.delete('/api/admin/oidc/:providerKey', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+  const providerKey = normalizeText(req.params.providerKey).toLowerCase();
+  const existing = await OidcProvider.findByKey(providerKey);
+  if (!existing) return res.status(404).json({ error: 'not_found', error_description: 'Provider 不存在' });
+  await OidcProvider.delete(providerKey);
+  await refreshOidcProvidersFromDatabase();
+  await recordAdminLog({ admin, req, action: 'delete_oidc_provider', detail: providerKey });
+  res.status(204).send();
 }));
 
 const SECURITY_TOGGLE_KEYS = {
@@ -3938,6 +4086,8 @@ async function bootstrap() {
   ExternalIdentity = new ExternalIdentityModel(pool);
   LoginLog = new LoginLogModel(pool);
   Session = new SessionModel(pool);
+  OidcProvider = new OidcProviderModel(pool);
+  await migrateOidcProvidersToDatabase();
 
   await ensureSystemUser();
   await seedMemoryDemoData();
