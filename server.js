@@ -3684,6 +3684,36 @@ app.get('/api/admin/security', asyncHandler(async (req, res) => {
   });
 }));
 
+app.get('/api/admin/oidc', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+
+  const configuredKeys = Object.keys(OIDC_PROVIDERS);
+  const configs = configuredKeys.length
+    ? configuredKeys.map(getOidcProviderConfig).filter(Boolean)
+    : [OIDC_CONFIG];
+  res.json({
+    source: configuredKeys.length ? 'OIDC_PROVIDERS_JSON' : 'OIDC_* environment variables',
+    callbackUrl: getOidcCallbackUrl(req),
+    providers: configs.map(config => ({
+      key: config.providerKey,
+      providerName: config.providerName,
+      enabled: config.enabled !== false,
+      configured: isOidcEnabled(config),
+      clientId: config.clientId || '',
+      clientSecretConfigured: Boolean(config.clientSecret),
+      issuerUrl: config.issuerUrl || '',
+      authorizeUrl: config.authorizeUrl || '',
+      tokenUrl: config.tokenUrl || '',
+      userinfoUrl: config.userinfoUrl || '',
+      scopes: config.scopes,
+      pkceEnabled: Boolean(config.pkceEnabled),
+      validateIdToken: Boolean(config.validateIdToken),
+      requireEmailVerified: Boolean(config.requireEmailVerified)
+    }))
+  });
+}));
+
 const SECURITY_TOGGLE_KEYS = {
   captchaLogin: 'captcha_login',
   captchaRegister: 'captcha_register',
