@@ -3691,7 +3691,7 @@ app.get('/api/admin/oidc', asyncHandler(async (req, res) => {
   const configuredKeys = Object.keys(OIDC_PROVIDERS);
   const configs = configuredKeys.length
     ? configuredKeys.map(getOidcProviderConfig).filter(Boolean)
-    : [OIDC_CONFIG];
+    : isOidcEnabled(OIDC_CONFIG) ? [OIDC_CONFIG] : [];
   res.json({
     source: configuredKeys.length ? 'OIDC_PROVIDERS_JSON' : 'OIDC_* environment variables',
     callbackUrl: getOidcCallbackUrl(req),
