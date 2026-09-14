@@ -1070,13 +1070,14 @@ async function getAuthenticatedUser(req, res = null) {
     return null;
   }
 
-  return user;
-
-
   // 滑动续期：会话签发时长超过阈值一半时重发 session cookie，避免活跃用户被登出
+  // （此前该分支写在 return 之后，永远不会执行，导致 SSO 会话到期即被强制重新登录）
   if (res && Number(session.iat) * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
+    await Session.revoke(session.sid).catch(() => {});
     await setSessionCookie(req, res, user);
   }
+
+  return user;
 }
 
 function isAdminUser(user) {
@@ -2888,6 +2889,8 @@ app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
     email: user.email,
     picture: user.avatar,
     email_verified: Boolean(user.email_verified),
+    role: normalizeText(user.role).toLowerCase() || 'user',
+    isAdmin: normalizeText(user.role).toLowerCase() === USER_ROLE_ADMIN,
     updated_at: Math.floor(new Date(user.updated_at || Date.now()).getTime() / 1000)
   });
 }));
