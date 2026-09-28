@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <link rel="stylesheet" href="/assets/vaultsso-fonts.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="auth.mfa.title">完成登录验证</title>
+  <link rel="stylesheet" href="/css/vaultsso-base.css">
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f8f9fb; color: #152033; margin: 0; }
+    main { box-sizing: border-box; max-width: 464px; margin: 12vh auto; padding: 32px; background: white; border-radius: 8px; }
+    h1 { font-size: 24px; } p { line-height: 1.7; } label, input, button { display: block; }
+    input { box-sizing: border-box; width: 100%; padding: 12px; margin: 10px 0 20px; font: inherit; border: 1px solid #d8deee; border-radius: 8px; }
+    button { width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #003d9b; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; } #status { color: #ba1a1a; overflow-wrap: anywhere; } a { color: #003d9b; }
+    @media (max-width: 500px) { main { margin: 32px 16px; padding: 24px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 data-i18n="auth.mfa.title">完成登录验证</h1>
+    <p id="instructions" data-i18n="common.loading">加载中...</p>
+    <form id="mfaForm">
+      <label id="codeLabel" for="code" data-i18n="auth.login_code.label">邮箱验证码</label>
+      <input id="code" name="code" autocomplete="one-time-code" maxlength="32" required disabled>
+      <button id="submit" type="submit" data-i18n="auth.mfa.submit" disabled>验证并登录</button>
+      <p id="status" role="alert" aria-live="polite"></p>
+    </form>
+    <a id="backLogin" href="/oauth2/authorize" data-i18n="common.action.back_signin">返回登录页</a>
+  </main>
+  <script src="/js/shared/i18n.js?v=20260928-js-1" defer></script>
+  <script src="/js/pages/auth/mfa.js?v=20260928-js-1" defer></script>
+</body>
+</html>

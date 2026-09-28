@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <link rel="stylesheet" href="/assets/vaultsso-fonts.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | 个人信息</title>
+  <link rel="stylesheet" href="/css/vaultsso-utilities.css">
+  <link rel="stylesheet" href="/css/vaultsso-base.css">
+  <link rel="stylesheet" href="/css/vaultsso-profile.css?v=20260928-totp-1">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="max-w-5xl mx-auto px-6 py-6 lg:px-8">
+    <section class="glass-card rounded-3xl border border-white/80 p-6 md:p-8">
+      <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between mb-6">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
+          <div>
+            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
+            <p class="text-sm text-muted" data-i18n="profile.hero.description">当前页面以资料展示为主。显示名称、头像、邮箱和密码都通过弹窗修改，用户名为只读。</p>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="hidden rounded-2xl border px-4 py-3 text-sm mb-5" id="statusMessage"></div>
+      <div class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-700 font-semibold mb-5" id="loadingState" data-i18n="profile.loading">正在加载个人信息...</div>
+
+      <div id="profileContent" class="hidden space-y-5">
+        <section class="glass-card rounded-3xl border border-white/80 p-6">
+          <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div class="flex items-start gap-5 min-w-0">
+              <img class="w-24 h-24 rounded-3xl object-cover bg-primary shadow-[0_18px_36px_rgba(11,87,208,0.16)] shrink-0" id="avatarPreview" alt="avatar">
+              <div class="min-w-0">
+                <p class="font-headline text-3xl font-extrabold tracking-tight text-ink" id="profileName">...</p>
+                <p class="text-sm text-muted mt-2 break-all" id="profileMeta"></p>
+                <div class="flex flex-wrap gap-2 mt-4">
+                  <span class="rounded-full bg-primary-soft px-3 py-1.5 text-xs font-bold text-primary" id="emailVerifiedBadge"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/admin.html" id="adminCenterLink" style="display:none;"><span class="material-symbols-outlined text-base">admin_panel_settings</span><span data-i18n="profile.sidebar.admin_center">管理中心</span></a>
+              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/oauth2/logout" data-i18n="common.action.logout">退出登录</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="grid grid-cols-1 gap-4">
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.display_name">显示名称</p>
+              <p class="text-lg font-bold text-ink break-words" id="displayNameValue"></p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.description">个人简介</p>
+              <p class="text-sm text-ink break-words whitespace-pre-wrap" id="descriptionValue">-</p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editBioBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.totp.title">两步验证（验证器）</p>
+                <p class="text-sm text-muted" data-i18n="profile.totp.desc">绑定 Google Authenticator 等验证器 App 后，登录需要在密码之外输入 6 位动态码。</p>
+              </div>
+              <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                <span class="rounded-full px-3 py-1.5 text-xs font-bold" id="totpStatusChip"></span>
+                <button class="rounded-lg border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="totpActionBtn" type="button" disabled></button>
+              </div>
+            </div>
+            <div id="totpDevicesList" class="mt-4" aria-live="polite"></div>
+            <p id="totpListError" class="mt-3 text-sm text-red-600 hidden" role="alert"></p>
+            <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted" id="totpRecoveryInfo" hidden>
+              <span data-i18n="profile.totp.recovery_remaining">剩余恢复码：</span><span class="font-bold text-ink" id="totpRecoveryRemaining">0</span>
+              <button class="rounded-lg border border-line bg-white px-2.5 py-1.5 font-bold text-muted hover:text-primary" id="totpRegenerateBtn" type="button" data-i18n="profile.totp.recovery_regen">重新生成</button>
+            </div>
+            <div id="totpCodesResult" class="mt-3 hidden rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p class="text-xs font-bold text-amber-700" data-i18n="profile.totp.recovery_save">请立即保存恢复码（仅显示一次），手机丢失时可用于登录：</p>
+              <div class="mt-2 grid grid-cols-2 gap-1 font-mono text-xs text-amber-800 sm:grid-cols-3" id="totpCodesList"></div>
+            </div>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.sessions.title">登录设备</p>
+                <p class="text-sm text-muted" data-i18n="profile.sessions.desc">当前账号的活跃登录会话，可随时退出陌生设备。</p>
+              </div>
+              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="revokeOthersBtn" type="button" data-i18n="profile.sessions.revoke_others">退出其他设备</button>
+            </div>
+            <div class="mt-4 grid gap-3" id="sessionList"><p class="text-sm text-muted" data-i18n="common.loading">加载中...</p></div>
+          </article>
+
+          <section class="border-t border-line py-5" aria-labelledby="applicationsTitle">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="text-lg font-bold" id="applicationsTitle" data-i18n="profile.apps.title">登录过的应用</h2>
+              <button class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-white text-muted" id="applicationsRefresh" type="button" data-i18n-title="profile.apps.refresh" title="刷新应用" aria-label="刷新应用"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
+            </div>
+            <p class="mt-3 text-sm text-muted" id="applicationsStatus" role="status" aria-live="polite" data-i18n="common.loading">加载中...</p>
+            <div class="mt-3" id="applicationsList"></div>
+          </section>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.apps.bindings">第三方应用绑定</p>
+              </div>
+              <div class="flex flex-wrap justify-end gap-2" id="bindIdentityButtons"><span class="text-sm text-muted">正在读取可绑定的账号...</span></div>
+            </div>
+            <div class="mt-4 grid gap-3" id="identityList"><p class="text-sm text-muted">正在加载绑定信息...</p></div>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.username">用户名</p>
+            <p class="text-lg font-bold text-ink break-words" id="usernameValue"></p>
+            <p class="text-sm text-muted mt-2" data-i18n="profile.field.username_hint">当前用户名已锁定，无法修改。</p>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.email">邮箱</p>
+              <p class="text-lg font-bold text-ink break-words" id="emailValue"></p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">修改邮箱</button>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div class="min-w-0">
+                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.phone">手机号</p>
+                <p class="text-lg font-bold text-ink break-words" id="phoneValue"></p>
+                <p class="text-xs text-muted mt-1 break-words" id="phoneCountryHint"></p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 shrink-0">
+                <span class="rounded-full px-3 py-1.5 text-xs font-bold shrink-0" id="phoneVerifiedChip"></span>
+                <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="editPhoneBtn" type="button"><span class="material-symbols-outlined text-base">edit</span> <span data-i18n="profile.phone.edit">修改手机号</span></button>
+              </div>
+            </div>
+            <p class="text-sm text-muted mt-3" data-i18n="profile.field.phone_hint">手动修改后的手机号为未验证状态。</p>
+            <p class="text-sm text-muted mt-1 hidden" id="phoneBindHint" data-i18n="profile.phone.bind_hint">使用华为账号一键登录后，手机号会自动绑定到当前账号。</p>
+          </article>
+
+          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.new_password">密码</p>
+              <p class="text-lg font-bold text-ink break-words" id="passwordValue" data-i18n="profile.value.password_masked">已隐藏</p>
+            </div>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">修改密码</button>
+          </article>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.user_id">用户 ID</p>
+              <p class="text-sm font-semibold text-ink break-all" id="userIdValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.created_at">创建时间</p>
+              <p class="text-sm font-semibold text-ink break-words" id="createdAtValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.updated_at">最近更新时间</p>
+              <p class="text-sm font-semibold text-ink break-words" id="updatedAtValue"></p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.credits">积分</p>
+              <p class="text-sm font-semibold text-ink break-words" id="creditsValue">0</p>
+            </article>
+            <article class="glass-card rounded-3xl border border-white/80 p-5">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.last_login_ip">最后登录 IP</p>
+              <p class="text-sm font-semibold text-ink break-words" id="lastLoginIpValue">-</p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="profileModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="profileModalTitle" data-i18n="profile.modal.profile_title">修改资料</h2>
+          <p class="modal-desc" data-i18n="profile.modal.profile_desc">在此更新您的显示名称和头像链接。</p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="profileModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="profileEditForm">
+        <div class="field">
+          <label for="profileNameInput" data-i18n="profile.field.display_name">显示名称</label>
+          <input id="profileNameInput" name="name" type="text" required>
+        </div>
+
+        <div class="field">
+          <label for="profileAvatarInput" data-i18n="profile.field.avatar">头像 URL</label>
+          <input id="profileAvatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
+          <small data-i18n="profile.field.avatar_hint">留空会使用系统生成的默认头像。</small>
+        </div>
+
+        <div class="field">
+          <label for="profileDescriptionInput" data-i18n="profile.field.description">个人简介</label>
+          <textarea id="profileDescriptionInput" name="description" rows="3" maxlength="500"></textarea>
+          <small data-i18n="profile.field.description_hint">最多 500 字，会展示在个人信息页。</small>
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="profileModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="profileModalSubmit" type="submit" data-i18n="common.action.save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="totpEnrollModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="totpEnrollTitle">
+      <div class="modal-head">
+        <h2 class="modal-title" id="totpEnrollTitle" data-i18n="profile.totp.add">添加验证器</h2>
+        <button class="close-button" type="button" data-close-modal="totpEnrollModal" aria-label="Close">&times;</button>
+      </div>
+      <form class="form-grid" id="totpEnrollForm">
+        <div class="field">
+          <label for="totpDeviceName" data-i18n="profile.totp.device_name">验证器名称</label>
+          <input id="totpDeviceName" name="name" type="text" maxlength="64" required autocomplete="off" data-i18n-placeholder="profile.totp.name_placeholder" placeholder="例如：工作手机">
+        </div>
+        <div class="field" id="totpCurrentCodeField" hidden>
+          <label for="totpCurrentCode" data-i18n="profile.totp.current_code">当前验证器动态码或恢复码</label>
+          <input id="totpCurrentCode" name="code" type="text" maxlength="32" autocomplete="one-time-code">
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="totpEnrollModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="totpSetupSubmit" type="submit" data-i18n="profile.totp.continue">继续</button>
+        </div>
+      </form>
+      <form class="form-grid" id="totpConfirmForm" hidden>
+        <p class="modal-desc" id="totpPendingName"></p>
+        <div class="totp-enrollment">
+          <img id="totpQrImage" alt="Authenticator QR" width="180" height="180">
+          <div class="field">
+            <label data-i18n="profile.totp.qr_desc">无法扫码时，可手动输入以下密钥：</label>
+            <code id="totpSecretText"></code>
+          </div>
+        </div>
+        <div class="field">
+          <label for="totpEnableCode" data-i18n="profile.totp.new_code">新验证器的 6 位动态码</label>
+          <input id="totpEnableCode" name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="totpEnrollModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="totpEnableBtn" type="submit" data-i18n="common.action.confirm">确认绑定</button>
+        </div>
+      </form>
+      <p class="totp-modal-feedback" id="totpEnrollError" role="alert" hidden></p>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="totpManageModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="totpManageTitle">
+      <div class="modal-head">
+        <h2 class="modal-title" id="totpManageTitle"></h2>
+        <button class="close-button" type="button" data-close-modal="totpManageModal" aria-label="Close">&times;</button>
+      </div>
+      <form class="form-grid" id="totpManageForm">
+        <p class="modal-desc" id="totpManageDevice"></p>
+        <p class="totp-warning" id="totpLastDeviceWarning" data-i18n="profile.totp.last_device_warning" hidden>移除最后一个验证器后，验证器两步验证将关闭。</p>
+        <p class="totp-warning" id="totpRecoveryWarning" data-i18n="profile.totp.recovery_warning" hidden>生成新恢复码后，旧恢复码将全部失效。</p>
+        <div class="field">
+          <label for="totpManageCode" id="totpManageCodeLabel"></label>
+          <input id="totpManageCode" name="code" type="text" maxlength="32" autocomplete="one-time-code" required>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="totpManageModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="totpManageSubmit" type="submit" data-i18n="common.action.confirm">确认</button>
+        </div>
+        <p class="totp-modal-feedback" id="totpManageError" role="alert" hidden></p>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="phoneModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phoneModalTitle">
+      <div class="modal-head">
+        <h2 class="modal-title" id="phoneModalTitle" data-i18n="profile.phone.edit">修改手机号</h2>
+        <button class="close-button" type="button" data-close-modal="phoneModal" aria-label="Close">&times;</button>
+      </div>
+      <form class="form-grid" id="phoneEditForm">
+        <p class="modal-desc" data-i18n="profile.field.phone_hint">手动修改后的手机号为未验证状态。</p>
+        <p class="text-sm text-red-600 hidden" id="phoneModalError" role="alert"></p>
+        <div class="field">
+          <label for="profilePhoneCountryInput" data-i18n="profile.phone.country_code">国家/地区代码</label>
+          <input id="profilePhoneCountryInput" name="phoneCountryCode" type="tel" inputmode="tel" autocomplete="tel-country-code" maxlength="8" placeholder="+86" required>
+        </div>
+        <div class="field">
+          <label for="profilePhoneInput" data-i18n="profile.field.phone">手机号</label>
+          <input id="profilePhoneInput" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel-national" maxlength="32">
+          <small data-i18n="profile.phone.empty_hint">留空并保存可解除手机号绑定。</small>
+        </div>
+        <div class="field">
+          <label for="phoneCurrentPassword" data-i18n="profile.field.current_password">当前密码</label>
+          <input id="phoneCurrentPassword" name="currentPassword" type="password" autocomplete="current-password">
+          <small data-i18n="profile.phone.password_hint">登录超过 5 分钟时，请填写当前密码或重新登录。</small>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" id="phoneUnbindBtn" type="button" data-i18n="profile.phone.unbind">解除绑定</button>
+          <button class="ghost-button" type="button" data-close-modal="phoneModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="phoneModalSubmit" type="submit" data-i18n="common.action.save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="emailModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="emailModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="emailModalTitle" data-i18n="profile.modal.email_title">修改邮箱</h2>
+          <p class="modal-desc" data-i18n="profile.modal.email_desc">提交后会立即更新当前账户邮箱。</p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="emailModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="emailEditForm">
+        <div class="field">
+          <label for="profileEmailInput" data-i18n="profile.field.email">邮箱</label>
+          <input id="profileEmailInput" name="email" type="email" required>
+        </div>
+
+        <div class="field">
+          <label for="emailCurrentPassword">当前密码</label>
+          <input id="emailCurrentPassword" name="currentPassword" type="password" autocomplete="current-password">
+          <small>登录超过 5 分钟时，请填写当前密码或重新登录后修改邮箱。</small>
+        </div>
+
+        <div class="field hidden" id="emailChangeCodeField">
+          <label for="emailChangeCode" data-i18n="profile.email_change.code_label">新邮箱验证码</label>
+          <input id="emailChangeCode" name="email_code" inputmode="numeric" maxlength="6" placeholder="123456">
+          <small data-i18n="profile.email_change.code_hint">修改邮箱需要验证新邮箱：验证码已发送到上面的新地址。</small>
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="emailModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="emailModalSubmit" type="submit" data-i18n="common.action.save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="passwordModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="passwordModalTitle" data-i18n="profile.modal.password_title">修改密码</h2>
+          <p class="modal-desc" data-i18n="profile.modal.password_desc">请输入当前密码，并设置新的登录密码。</p>
+        </div>
+        <button class="close-button" type="button" data-close-modal="passwordModal" aria-label="Close">&times;</button>
+      </div>
+
+      <form class="form-grid" id="passwordForm">
+        <div class="field">
+          <label for="currentPasswordInput" data-i18n="profile.field.current_password">当前密码</label>
+          <input id="currentPasswordInput" name="currentPassword" type="password" autocomplete="current-password">
+        </div>
+
+        <div class="field">
+          <label for="newPasswordInput" data-i18n="profile.field.new_password">新密码</label>
+          <input id="newPasswordInput" name="newPassword" type="password" autocomplete="new-password">
+        </div>
+
+        <div class="field">
+          <label for="confirmNewPasswordInput" data-i18n="profile.field.confirm_new_password">确认新密码</label>
+          <input id="confirmNewPasswordInput" type="password" autocomplete="new-password">
+        </div>
+
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-modal="passwordModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="passwordModalSubmit" type="submit" data-i18n="profile.button.update_password">更新密码</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/shared/i18n.js?v=20260928-js-1"></script>
+  <script src="/js/pages/account/authenticators.js?v=20260928-js-1"></script>
+  <script src="/js/pages/account/profile.js?v=20260928-js-1"></script>
+</body>
+</html>

@@ -8,9 +8,10 @@ class EmailVerificationCodeModel {
   async create(codeData) {
     const id = crypto.randomUUID();
     await this.pool.execute(
-      `INSERT INTO email_verification_codes (id, email, user_id, purpose, code_hash, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, codeData.email, codeData.userId || null, codeData.purpose, codeData.codeHash, codeData.expiresAt]
+      `INSERT INTO email_verification_codes (id, email, user_id, purpose, code_hash, expires_at, pending_context)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, codeData.email, codeData.userId || null, codeData.purpose, codeData.codeHash, codeData.expiresAt,
+        codeData.pendingContext == null ? null : JSON.stringify(codeData.pendingContext)]
     );
     return this.findById(id);
   }
@@ -34,17 +35,26 @@ class EmailVerificationCodeModel {
     return rows[0] || null;
   }
 
-  async incrementAttempts(id) {
-    await this.pool.execute(
-      'UPDATE email_verification_codes SET attempts = attempts + 1 WHERE id = ?',
-      [id]
+  async incrementAttempts(id, maxAttempts) {
+    const [result] = await this.pool.execute(
+      'UPDATE email_verification_codes SET attempts = attempts + 1 WHERE id = ? AND consumed_at IS NULL AND attempts < ? AND expires_at > ?',
+      [id, maxAttempts, new Date()]
     );
+    return result.affectedRows === 1;
   }
 
   async consume(id) {
+    const [result] = await this.pool.execute(
+      'UPDATE email_verification_codes SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL AND expires_at > ?',
+      [new Date(), id, new Date()]
+    );
+    return result.affectedRows === 1;
+  }
+
+  async invalidate(email, purpose) {
     await this.pool.execute(
-      'UPDATE email_verification_codes SET consumed_at = ? WHERE id = ?',
-      [new Date(), id]
+      'UPDATE email_verification_codes SET consumed_at = ? WHERE email = ? AND purpose = ? AND consumed_at IS NULL',
+      [new Date(), email, purpose]
     );
   }
 

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <link rel="stylesheet" href="/assets/vaultsso-fonts.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | Sign In</title>
+  <link rel="stylesheet" href="/css/vaultsso-utilities.css">
+  <link rel="stylesheet" href="/css/vaultsso-base.css">
+  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20260928-turnstile-1">
+</head>
+<body class="bg-mesh min-h-screen flex flex-col text-on-surface">
+  <header class="page-header">
+    <div class="brand-title">
+      VaultSSO
+    </div>
+
+  </header>
+
+  <main class="page-main">
+    <section class="auth-card">
+      <div class="card-orb"></div>
+
+      <div class="card-section card-header">
+        <h1 class="card-title" id="panelTitle"></h1>
+        <p class="card-description" id="panelDescription"></p>
+      </div>
+
+      <div class="card-section hidden session-panel" id="sessionBanner">
+        <div class="session-card" id="sessionEntry" role="button" tabindex="0">
+          <div class="session-head">
+            <div class="min-w-0">
+              <strong class="session-title" id="sessionBannerTitle"></strong>
+            </div>
+            <button class="logout-button" id="logoutButton" type="button" data-i18n="common.action.logout_short">Log out</button>
+          </div>
+          <span class="session-text" id="sessionBannerText"></span>
+        </div>
+      </div>
+
+      <div class="card-section hidden oauth-panel" id="oauthCard">
+        <small class="oauth-eyebrow" data-i18n="auth.oauth.eyebrow">Authorization Request</small>
+        <strong class="oauth-title" id="oauthClientName"></strong>
+        <p class="oauth-text" id="oauthDescription"></p>
+        <div class="scope-list" id="scopeList"></div>
+        <div class="redirect-panel">
+          <span class="redirect-label" data-i18n="auth.oauth.redirect_label">Redirect URI</span>
+          <code class="redirect-code" id="redirectUriPreview"></code>
+        </div>
+      </div>
+
+      <div class="hidden auth-region card-section" id="authRegion">
+        <div class="tabs-row">
+          <button class="tab-button active" type="button" data-mode="login" data-i18n="auth.tab.login">Sign In</button>
+          <button class="tab-button" type="button" data-mode="register" data-i18n="auth.tab.register">Sign Up</button>
+        </div>
+
+        <div data-card="login">
+          <form class="auth-form" id="loginForm">
+            <input type="hidden" name="captcha_surface" value="web">
+            <input type="hidden" name="nonce">
+            <input type="hidden" name="response_type">
+            <input type="hidden" name="client_id">
+            <input type="hidden" name="redirect_uri">
+            <input type="hidden" name="scope">
+            <input type="hidden" name="state">
+            <input type="hidden" name="code_challenge">
+            <input type="hidden" name="code_challenge_method">
+
+            <div class="field-group">
+              <label class="field-label" for="loginUsername" data-i18n="auth.form.username_or_email">Username or Email</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">person</span>
+                <input class="field-input" id="loginUsername" name="username" type="text" data-i18n-placeholder="auth.placeholder.username_or_email" placeholder="name@company.com" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="loginPassword" data-i18n="auth.form.password">Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="loginPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password" placeholder="Enter your password" required>
+              </div>
+            </div>
+
+            <div class="field-group" data-captcha-group hidden>
+              <div data-image-captcha>
+                <label class="field-label" data-i18n="auth.captcha.label">图形验证码</label>
+                <div class="flex items-stretch gap-2">
+                  <div class="field-shell flex-1">
+                    <span class="material-symbols-outlined field-icon">image_search</span>
+                    <input class="field-input" name="captcha_code" type="text" maxlength="4" autocomplete="off" data-i18n-placeholder="auth.captcha.placeholder" placeholder="Enter the 4 characters">
+                  </div>
+                  <div class="flex w-[132px] shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden rounded-xl border border-line bg-white" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
+                    <span class="material-symbols-outlined text-muted">refresh</span>
+                  </div>
+                </div>
+              </div>
+              <div class="turnstile-widget" data-turnstile-widget hidden></div>
+              <input type="hidden" name="captcha_id">
+              <input type="hidden" name="turnstile_response">
+            </div>
+
+            <button class="text-action-button" id="showRecoveryBtn" type="button" data-i18n="auth.button.forgot_password">Forgot password?</button>
+            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.login">Sign In and Continue</button>
+            <div class="status-box" id="statusMessage" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div class="oidc-divider" id="oidcDivider" hidden><span data-i18n="auth.oidc.or">或使用</span></div>
+            <div class="grid gap-3" id="oidcProviders"></div>
+          </form>
+        </div>
+
+        <div class="hidden" data-card="register">
+          <form class="auth-form" id="registerForm">
+            <input type="hidden" name="captcha_surface" value="web">
+            <input type="hidden" name="nonce">
+            <input type="hidden" name="response_type">
+            <input type="hidden" name="client_id">
+            <input type="hidden" name="redirect_uri">
+            <input type="hidden" name="scope">
+            <input type="hidden" name="state">
+            <input type="hidden" name="code_challenge">
+            <input type="hidden" name="code_challenge_method">
+
+            <div class="field-group">
+              <label class="field-label" for="registerName" data-i18n="auth.form.display_name">Display Name</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">badge</span>
+                <input class="field-input" id="registerName" name="name" type="text" data-i18n-placeholder="auth.placeholder.display_name" placeholder="For example: Alexander Chen" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerUsername" data-i18n="auth.form.username">Username</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">person</span>
+                <input class="field-input" id="registerUsername" name="username" type="text" data-i18n-placeholder="auth.placeholder.username" placeholder="Leave empty to reuse your email">
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerEmail" data-i18n="auth.form.email">Email</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">mail</span>
+                <input class="field-input" id="registerEmail" name="email" type="email" data-i18n-placeholder="auth.placeholder.email" placeholder="name@company.com" required>
+              </div>
+            </div>
+
+            <button class="secondary-submit" id="sendRegisterCodeBtn" type="button" data-i18n="auth.button.send_code">Send verification code</button>
+
+            <div class="field-group">
+              <label class="field-label" for="registerEmailCode" data-i18n="auth.form.email_code">Email Verification Code</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">pin</span>
+                <input class="field-input" id="registerEmailCode" name="email_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" data-i18n-placeholder="auth.placeholder.email_code" placeholder="6-digit code" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerPassword" data-i18n="auth.form.password">Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="registerPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password_short" placeholder="At least 6 characters" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="registerConfirmPassword" data-i18n="auth.form.confirm_password">Confirm Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">verified_user</span>
+                <input class="field-input" id="registerConfirmPassword" name="confirm_password" type="password" data-i18n-placeholder="auth.placeholder.confirm_password" placeholder="Enter the password again" required>
+              </div>
+            </div>
+
+            <div class="field-group" data-captcha-group hidden>
+              <div data-image-captcha>
+                <label class="field-label" data-i18n="auth.captcha.label">图形验证码</label>
+                <div class="flex items-stretch gap-2">
+                  <div class="field-shell flex-1">
+                    <span class="material-symbols-outlined field-icon">image_search</span>
+                    <input class="field-input" name="captcha_code" type="text" maxlength="4" autocomplete="off" data-i18n-placeholder="auth.captcha.placeholder" placeholder="Enter the 4 characters">
+                  </div>
+                  <div class="flex w-[132px] shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden rounded-xl border border-line bg-white" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
+                    <span class="material-symbols-outlined text-muted">refresh</span>
+                  </div>
+                </div>
+              </div>
+              <div class="turnstile-widget" data-turnstile-widget hidden></div>
+              <input type="hidden" name="captcha_id">
+              <input type="hidden" name="turnstile_response">
+            </div>
+
+            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.register">Create Account and Continue</button>
+          </form>
+        </div>
+
+        <div class="hidden" data-card="recover">
+          <form class="auth-form" id="recoverForm">
+            <input type="hidden" name="nonce">
+            <input type="hidden" name="response_type">
+            <div class="field-group">
+              <label class="field-label" for="recoverEmail" data-i18n="auth.form.email">Email</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">mail</span>
+                <input class="field-input" id="recoverEmail" name="email" type="email" data-i18n-placeholder="auth.placeholder.email" placeholder="name@company.com" required>
+              </div>
+            </div>
+
+            <button class="secondary-submit" id="sendRecoveryCodeBtn" type="button" data-i18n="auth.button.send_code">Send verification code</button>
+
+            <div class="field-group">
+              <label class="field-label" for="recoverEmailCode" data-i18n="auth.form.email_code">Email Verification Code</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">pin</span>
+                <input class="field-input" id="recoverEmailCode" name="email_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" data-i18n-placeholder="auth.placeholder.email_code" placeholder="6-digit code" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="recoverPassword" data-i18n="auth.form.new_password">New Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="recoverPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password_short" placeholder="At least 6 characters" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="recoverConfirmPassword" data-i18n="auth.form.confirm_password">Confirm Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">verified_user</span>
+                <input class="field-input" id="recoverConfirmPassword" name="confirm_password" type="password" data-i18n-placeholder="auth.placeholder.confirm_password" placeholder="Enter the password again" required>
+              </div>
+            </div>
+
+            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.reset_password">Reset Password</button>
+            <button class="text-action-button" id="backToLoginBtn" type="button" data-i18n="auth.button.back_login">Back to sign in</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/shared/i18n.js?v=20260928-turnstile-1"></script>
+  <script src="/js/pages/auth/login.js?v=20260929-turnstile-2"></script>
+</body>
+</html>

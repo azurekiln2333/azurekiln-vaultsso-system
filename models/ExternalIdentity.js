@@ -6,9 +6,10 @@ function normalize(value) {
 
 function parseProfile(value) {
   if (!value) return {};
-  if (typeof value === 'object') return value;
+  if (typeof value === 'object') return Array.isArray(value) ? {} : value;
   try {
-    return JSON.parse(value);
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch (error) {
     return {};
   }
@@ -20,6 +21,7 @@ function serialize(row) {
     id: row.id,
     provider: row.provider,
     providerUserId: row.provider_user_id,
+    providerSecondaryId: row.provider_secondary_id || '',
     providerUsername: row.provider_username || '',
     displayName: row.display_name || '',
     avatar: row.avatar || '',
@@ -39,13 +41,14 @@ class ExternalIdentityModel {
     const id = crypto.randomUUID();
     await this.pool.execute(
       `INSERT INTO user_identities
-       (id, user_id, provider, provider_user_id, provider_username, display_name, avatar, email, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, user_id, provider, provider_user_id, provider_secondary_id, provider_username, display_name, avatar, email, profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         normalize(identityData.userId),
         normalize(identityData.provider).toLowerCase(),
         normalize(identityData.providerUserId),
+        normalize(identityData.providerSecondaryId) || null,
         normalize(identityData.providerUsername),
         normalize(identityData.displayName),
         normalize(identityData.avatar),
@@ -61,12 +64,46 @@ class ExternalIdentityModel {
     return rows[0] || null;
   }
 
+  async findAll() {
+    const [rows] = await this.pool.execute('SELECT * FROM user_identities ORDER BY user_id ASC, created_at ASC');
+    return rows;
+  }
+
+  async findByProviders(providers) {
+    if (!providers.length) return [];
+    const [rows] = await this.pool.execute(`SELECT * FROM user_identities WHERE provider IN (${providers.map(() => '?').join(', ')})`, providers);
+    return rows;
+  }
+
   async findByProviderUserId(provider, providerUserId) {
     const [rows] = await this.pool.execute(
       'SELECT * FROM user_identities WHERE provider = ? AND provider_user_id = ?',
       [normalize(provider).toLowerCase(), normalize(providerUserId)]
     );
     return rows[0] || null;
+  }
+
+  // 第二标识（华为 openID 这类应用维度标识）同样需要唯一命中。
+  async findByProviderSecondaryId(provider, providerSecondaryId) {
+    const secondary = normalize(providerSecondaryId);
+    if (!secondary) return null;
+    const [rows] = await this.pool.execute(
+      'SELECT * FROM user_identities WHERE provider = ? AND provider_secondary_id = ?',
+      [normalize(provider).toLowerCase(), secondary]
+    );
+    return rows[0] || null;
+  }
+
+  // 主标识优先、第二标识兜底。两者都必须查，否则换配置或老数据会分裂账号。
+  async findByProviderSubject(provider, providerUserId, providerSecondaryId = '') {
+    const byPrimary = await this.findByProviderUserId(provider, providerUserId);
+    const bySecondary = await this.findByProviderSecondaryId(provider, providerSecondaryId || providerUserId);
+    const legacyPrimary = providerSecondaryId ? await this.findByProviderUserId(provider, providerSecondaryId) : null;
+    const matches = [byPrimary, bySecondary, legacyPrimary].filter(Boolean);
+    if (new Set(matches.map(row => row.user_id)).size > 1) {
+      throw new Error('External account identifiers are bound to different users');
+    }
+    return matches[0] || null;
   }
 
   async findByUserId(userId) {
@@ -81,6 +118,7 @@ class ExternalIdentityModel {
     const fields = [];
     const values = [];
     const mappings = {
+      providerSecondaryId: 'provider_secondary_id',
       providerUsername: 'provider_username',
       displayName: 'display_name',
       avatar: 'avatar',

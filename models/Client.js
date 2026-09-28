@@ -1,3 +1,14 @@
+const { hashClientSecret } = require('../services/client-secrets');
+
+function deserializeClient(row) {
+  return {
+    ...row,
+    requirePkce: row.require_pkce === undefined ? true : Boolean(row.require_pkce),
+    redirectUris: JSON.parse(row.redirect_uris),
+    scopes: JSON.parse(row.scopes)
+  };
+}
+
 class ClientModel {
   constructor(pool) {
     this.pool = pool;
@@ -5,16 +16,17 @@ class ClientModel {
 
   async create(clientData) {
     const [result] = await this.pool.execute(
-      `INSERT INTO clients (id, name, secret, redirect_uris, scopes, logo_url, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO clients (id, name, secret, redirect_uris, scopes, logo_url, is_active, require_pkce)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         clientData.id,
         clientData.name,
-        clientData.secret,
+        await hashClientSecret(clientData.secret),
         JSON.stringify(clientData.redirectUris),
         JSON.stringify(clientData.scopes),
         clientData.logoUrl || null,
-        clientData.isActive !== false
+        clientData.isActive !== false,
+        clientData.requirePkce !== false
       ]
     );
     
@@ -29,11 +41,7 @@ class ClientModel {
     
     if (!rows[0]) return null;
     
-    return {
-      ...rows[0],
-      redirectUris: JSON.parse(rows[0].redirect_uris),
-      scopes: JSON.parse(rows[0].scopes)
-    };
+    return deserializeClient(rows[0]);
   }
 
   async findAll() {
@@ -41,11 +49,7 @@ class ClientModel {
       'SELECT * FROM clients ORDER BY created_at DESC'
     );
     
-    return rows.map(row => ({
-      ...row,
-      redirectUris: JSON.parse(row.redirect_uris),
-      scopes: JSON.parse(row.scopes)
-    }));
+    return rows.map(deserializeClient);
   }
 
   async update(id, clientData) {
@@ -58,7 +62,7 @@ class ClientModel {
     }
     if (clientData.secret) {
       fields.push('secret = ?');
-      values.push(clientData.secret);
+      values.push(await hashClientSecret(clientData.secret));
     }
     if (clientData.redirectUris) {
       fields.push('redirect_uris = ?');
@@ -75,6 +79,10 @@ class ClientModel {
     if (clientData.isActive !== undefined) {
       fields.push('is_active = ?');
       values.push(clientData.isActive);
+    }
+    if (clientData.requirePkce !== undefined) {
+      fields.push('require_pkce = ?');
+      values.push(clientData.requirePkce);
     }
     
     if (fields.length === 0) return this.findById(id);

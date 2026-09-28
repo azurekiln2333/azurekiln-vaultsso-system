@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <link rel="stylesheet" href="/assets/vaultsso-fonts.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultSSO | OAuth2 API Documentation</title>
+  <link rel="stylesheet" href="/css/vaultsso-utilities.css">
+  <link rel="stylesheet" href="/css/vaultsso-base.css">
+  <link rel="stylesheet" href="/css/vaultsso-docs.css">
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="mx-auto max-w-7xl px-6 py-6 lg:px-8">
+    <header class="mb-8 flex flex-col gap-5 rounded-xl border border-white/80 bg-white/75 px-6 py-5 shadow-sm backdrop-blur lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-xl primary-gradient text-xl font-black text-white">V</div>
+        <div>
+          <p class="font-headline text-2xl font-extrabold tracking-tight text-primary">VaultSSO</p>
+          <p class="text-sm text-muted">OAuth2 and OpenID Connect reference</p>
+        </div>
+      </div>
+
+      <nav class="flex flex-wrap items-center gap-3 text-sm font-semibold">
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/oauth2/authorize">Sign In</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/profile">Profile</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/apps.html">Apps</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/users.html">Users</a>
+        <a class="rounded-lg px-3 py-2 text-muted hover:bg-white hover:text-primary" href="/tokens.html">Tokens</a>
+        <a class="rounded-lg bg-primary px-3 py-2 text-white" href="/api-docs.html">API Docs</a>
+      </nav>
+    </header>
+
+    <main class="grid grid-cols-1 gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <aside class="hidden lg:block">
+        <nav class="sticky top-6 space-y-2 rounded-xl bg-white/80 p-5 text-sm font-semibold shadow-sm backdrop-blur">
+          <a class="block rounded-lg px-3 py-2 text-muted hover:bg-primary-soft hover:text-primary" href="#metadata">Metadata</a>
+          <a class="block rounded-lg px-3 py-2 text-muted hover:bg-primary-soft hover:text-primary" href="#oauth">OAuth2/OIDC</a>
+          <a class="block rounded-lg px-3 py-2 text-muted hover:bg-primary-soft hover:text-primary" href="#huawei">Huawei Quick Login</a>
+          <a class="block rounded-lg px-3 py-2 text-muted hover:bg-primary-soft hover:text-primary" href="#session">Session APIs</a>
+          <a class="block rounded-lg px-3 py-2 text-muted hover:bg-primary-soft hover:text-primary" href="#admin">Admin APIs</a>
+          <a class="block rounded-lg px-3 py-2 text-muted hover:bg-primary-soft hover:text-primary" href="#flows">Example Flows</a>
+        </nav>
+      </aside>
+
+      <div class="space-y-8">
+        <section class="rounded-xl bg-surface-container-low p-8 shadow-sm">
+          <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+            <span class="material-symbols-outlined text-base">verified_user</span>
+            Current implementation
+          </p>
+          <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight">OAuth2 API Documentation</h1>
+          <p class="max-w-3xl text-base leading-8 text-muted">This page documents the endpoints currently exposed by `server.js`, including OAuth2 grants, OpenID Connect discovery, profile APIs, admin client management, and token audit APIs.</p>
+        </section>
+
+        <section id="metadata" class="rounded-xl bg-white p-6 shadow-sm">
+          <h2 class="font-headline mb-4 text-2xl font-bold">Metadata</h2>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="border-b border-line text-muted">
+                <tr><th class="py-3 text-left">Method</th><th class="py-3 text-left">Path</th><th class="py-3 text-left">Purpose</th></tr>
+              </thead>
+              <tbody class="divide-y divide-line/60">
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/.well-known/openid-configuration</code></td><td>OpenID Connect discovery document.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/.well-known/oauth-authorization-server</code></td><td>OAuth2 Authorization Server Metadata.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/.well-known/jwks.json</code></td><td>RSA public signing keys for RS256 ID Tokens and Access Tokens.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <pre class="mt-5"><code>{
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+  "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+  "code_challenge_methods_supported": ["S256"],
+  "scopes_supported": ["openid", "profile", "email", "phone", "roles", "offline_access"],
+  "claims_supported": ["sub", "name", "preferred_username", "username", "email", "email_verified", "picture", "phone_number", "phone_number_verified", "updated_at"],
+  "id_token_signing_alg_values_supported": ["RS256"]
+}</code></pre>
+        </section>
+
+        <section id="oauth" class="rounded-xl bg-white p-6 shadow-sm">
+          <h2 class="font-headline mb-4 text-2xl font-bold">OAuth2 And OIDC Endpoints</h2>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="border-b border-line text-muted">
+                <tr><th class="py-3 text-left">Method</th><th class="py-3 text-left">Path</th><th class="py-3 text-left">Access</th><th class="py-3 text-left">Purpose</th></tr>
+              </thead>
+              <tbody class="divide-y divide-line/60">
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/oauth2/authorize</code></td><td>Public/session</td><td>Starts authorization code flow or renders sign-in/register UI.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/authorize</code></td><td>Public</td><td>Signs in and continues OAuth authorization.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/register</code></td><td>Public</td><td>Registers a user with an email verification code and continues OAuth authorization.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/api/email-verification/send</code></td><td>Public</td><td>Sends an email verification code for registration or password reset.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/api/password-reset</code></td><td>Public</td><td>Resets a sign-in password with an email verification code.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/token</code></td><td>Client auth</td><td>Supports authorization code, refresh token, and client credentials grants.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/oauth2/userinfo</code></td><td>Bearer token</td><td>Returns OIDC user claims.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/v1/auth/oauth/oidc/config</code></td><td>Public</td><td>Returns configured external login providers without client secrets.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/v1/auth/oauth/oidc/login</code></td><td>Public/session</td><td>Starts external sign-in, link or <code>intent=merge</code> for a recently signed-in existing account.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/v1/auth/oauth/huawei/config</code></td><td>Public</td><td>Returns Huawei one-click login availability, provider keys, and the endpoints an app should call.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/api/v1/auth/oauth/huawei/quick-login</code></td><td>Machine</td><td>Exchanges a Huawei Account Kit quick-login code for a session, an authorization code, or an MFA challenge.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/api/v1/auth/oauth/oidc/complete</code></td><td>Machine</td><td>Completes the second factor for an external login. Accepts the <code>X-Oidc-Pending</code> header instead of a cookie.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/account/identities</code></td><td>Session</td><td>Lists the current user's linked external identities.</td></tr>
+                <tr><td class="py-3 font-bold text-red-700">DELETE</td><td><code>/api/account/identities/:id</code></td><td>Session</td><td>Unlinks one external identity while retaining at least one.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/users/:id/identities</code></td><td>Admin</td><td>Lists external identities linked to a user.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/introspect</code></td><td>Client auth</td><td>Returns active state and JWT claims for access tokens issued to the same client.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/oauth2/revoke</code></td><td>Client auth</td><td>Revokes access or refresh tokens issued to the same client.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Authorization Request</h3>
+          <pre><code>GET /oauth2/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&scope=openid%20profile%20email&state=RANDOM_STATE&nonce=RANDOM_NONCE&code_challenge=BASE64URL_SHA256_OF_CODE_VERIFIER&code_challenge_method=S256</code></pre>
+          <p class="mt-3 text-sm leading-6 text-muted">Clients require PKCE by default. Administrators may disable it for a client that cannot support PKCE, but this reduces protection against authorization-code interception. For clients with PKCE disabled, both <code>code_challenge</code> and <code>code_challenge_method</code> may be omitted; if either is sent, both must form a valid S256 pair. The challenge is computed per request, never copied: it is the SHA-256 digest of <code>code_verifier</code> encoded as <strong>unpadded base64url</strong>, so it is exactly <strong>43 characters</strong> of <code>[A-Za-z0-9_-]</code>. Token redemption requires the matching verifier whenever the issued code contains a challenge, regardless of later client-setting changes.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Token Exchange</h3>
+          <pre><code>POST /oauth2/token
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=AUTHORIZATION_CODE&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback&code_verifier=CODE_VERIFIER</code></pre>
+          <p class="mt-3 text-sm leading-6 text-muted">Send <code>code_verifier</code> when redeeming a code issued with PKCE; codes issued without a challenge do not require one. The initial token response includes <code>refresh_token</code> only for <code>offline_access</code>. Every refresh rotates that credential: replace the stored refresh token with the new response value. ID Tokens require <code>openid</code>; profile and email claims require their corresponding scopes.</p>
+          <p class="mt-3 text-sm leading-6 text-muted">The non-standard <code>roles</code> scope adds <code>role</code> and <code>isAdmin</code> to the UserInfo response and the ID Token. It is intended for first-party clients that gate their own admin surfaces, and must be registered on the client before it can be requested.</p>
+          <p class="mt-3 text-sm leading-6 text-muted">The <code>phone</code> scope adds <code>phone_number</code> (E.164, e.g. <code>+8613800138000</code>) and <code>phone_number_verified</code>. Without it those claims are omitted entirely. Phone numbers are normalized server-side; the national trunk prefix (<code>0</code> in <code>013800138000</code>) is stripped, while the country code (<code>86</code>) is stored and drives uniqueness.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Merge An External OIDC Account</h3>
+          <p class="mt-3 text-sm leading-6 text-muted">Sign in again to the account to keep, then use the provider's Merge account action on the profile page. It starts <code>GET /api/v1/auth/oauth/oidc/login?provider=PROVIDER_KEY&amp;intent=merge&amp;return_to=/profile</code>. The gateway stores the target session in signed state and requires the same session to be less than five minutes old at start, callback and transaction. The provider authorization-code exchange proves the source identity. Success returns to <code>/profile?account_merged=1</code>; failure returns to the profile with an error message.</p>
+          <p class="mt-3 text-sm leading-6 text-muted">Only an automatically created ordinary source account with one provider identity and no local password, authenticator, phone, credits or modified profile can be merged. A verified provider email may be retained in the moved identity, but never replaces the target email. The transaction moves the identity and app-use history, deletes the source and its credentials, revokes other target sessions/tokens and keeps the current target session. Conflicting or populated source accounts require manual review. Matching email alone never authorizes a merge.</p>
+        </section>
+
+        <section id="huawei" class="rounded-xl bg-white p-6 shadow-sm">
+          <h2 class="font-headline mb-4 text-2xl font-bold">Huawei Account Kit Quick Login</h2>
+          <p class="mb-5 text-sm leading-6 text-muted">For applications with the Huawei Account Kit quick-login permission: the HarmonyOS client sends its short-lived Authorization Code over HTTPS to its application server. The application server calls this gateway's quick-login API. The gateway exchanges the code, resolves the Huawei identity and returns a login result or a pending binding/MFA step. Only the gateway calls Huawei with <strong>POST JSON <code>{ code, clientId, clientSecret }</code></strong> at <code>https://account-api.cloud.huawei.com/oauth2/v6/quickLogin/getPhoneNumber</code>. The client never receives the Huawei secret. An upstream HTTP 200 can still carry a failing <code>resultCode</code>.</p>
+
+          <h3 class="text-sm font-bold uppercase tracking-widest text-muted">Discover</h3>
+          <pre class="mt-3"><code>GET /api/v1/auth/oauth/huawei/config
+
+{
+  "enabled": true,
+  "providers": [{ "key": "huawei-main", "providerName": "华为账号" }],
+  "quickLoginUrl": "https://sso.example.com/api/v1/auth/oauth/huawei/quick-login",
+  "mfaCompleteUrl": "https://sso.example.com/api/v1/auth/oauth/oidc/complete",
+  "phoneAutolink": true
+}</code></pre>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Exchange The Code</h3>
+          <pre class="mt-3"><code>POST /api/v1/auth/oauth/huawei/quick-login
+Content-Type: application/json
+
+{
+  "authorizationCode": "CODE_FROM_HUAWEI_CLIENT_SDK",
+  "provider": "huawei-main",
+  "client_id": "YOUR_CLIENT_ID",
+  "redirect_uri": "https://app.example.com/callback",
+  "state": "RANDOM_STATE",
+  "nonce": "RANDOM_NONCE",
+  "scope": "openid profile phone",
+  "code_challenge": "BASE64URL_SHA256_OF_CODE_VERIFIER",
+  "code_challenge_method": "S256"
+}</code></pre>
+          <p class="mt-3 text-sm leading-6 text-muted"><code>provider</code> may be omitted when exactly one Huawei provider is configured. Legacy callers may send <code>code</code>; if both code fields are present they must agree. Sending <code>client_id</code> or <code>redirect_uri</code> switches to an OAuth authorization-code handoff for a registered client. To receive a full phone in that response, request <code>phone</code> scope and ensure the client is allowed that scope. New deployments currently default <code>phoneAutolink</code> to true, but applications should read the actual configured value.</p>
+
+          <div class="mt-5 overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="border-b border-line text-muted">
+                <tr><th class="py-3 text-left">Response</th><th class="py-3 text-left">When</th><th class="py-3 text-left">Body</th></tr>
+              </thead>
+              <tbody class="divide-y divide-line/60">
+                <tr><td class="py-3 font-bold">Authorization code</td><td><code>client_id</code> or <code>redirect_uri</code> supplied</td><td><code>{ authorization_code, state, redirect_uri, redirect, user, phone, phoneStatus, phoneBinding }</code> — redeem with <code>/oauth2/token</code>; without granted <code>phone</code> scope, <code>phone: null</code> and <code>phoneStatus: "scope_not_granted"</code></td></tr>
+                <tr><td class="py-3 font-bold">Session cookie</td><td>neither supplied</td><td><code>{ user, phone, phoneStatus, phoneBinding }</code> plus the gateway session cookie</td></tr>
+                <tr><td class="py-3 font-bold">MFA required</td><td>account has TOTP, or email codes are enabled</td><td><code>{ mfa_required: true, factor, email, pending_token, pending_header }</code></td></tr>
+                <tr><td class="py-3 font-bold">Binding decision</td><td>no existing identity or verified phone match</td><td><code>{ binding_required: true, binding_token, phone_available, phone_status }</code>; no account is created yet</td></tr>
+                <tr><td class="py-3 font-bold">Link result</td><td>request body sets <code>intent: "link"</code> (requires an active session)</td><td><code>{ linked: true, user, phone, phoneStatus, phoneBinding }</code></td></tr>
+                <tr><td class="py-3 font-bold">Merge result</td><td><code>intent: "merge"</code>, fresh existing-account session and new Huawei code</td><td><code>{ merged: true, user, phone, phoneStatus, phoneTransferred }</code>; if already linked, <code>{ merged: false, linked: true, user }</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-3 text-sm leading-6 text-muted">Only a complete, usable Huawei phone returned for this login is exposed as E.164 <code>phone</code>. <code>phoneStatus</code> is <code>verified</code>, <code>conflict</code>, <code>unverified</code>, <code>not_returned</code>, or <code>scope_not_granted</code> for an OAuth handoff without approved phone scope. <code>phoneBinding</code> reports whether the local phone binding succeeded. When disclosure is allowed, <code>user.phoneE164</code> is the stored account phone and can differ on conflict; without approved OAuth phone scope, the user's phone fields are redacted too. Pending binding and MFA responses are not final user data. Missing permission or an unusable Huawei response cannot produce a complete phone.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Bind Or Skip</h3>
+          <p class="mt-3 text-sm leading-6 text-muted">Keep <code>binding_token</code> on the application server for at most five minutes. To bind, first complete the existing account's password, CAPTCHA and second-factor login through <code>/oauth2/authorize</code> and <code>/oauth2/token</code>, then call <code>POST /api/v1/auth/oauth/huawei/bind</code> with <code>{ "binding_token": "..." }</code> and that account's bearer access token. The access token must belong to the same OAuth client. A successful bind consumes the pending token; use the existing account's tokens to finish login. To create a new account, call <code>POST /api/v1/auth/oauth/huawei/skip</code> with the pending token and the original OAuth authorization parameters. Skip also consumes the token and returns the normal authorization-code or MFA response. Expired and replayed tokens are rejected.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Merge An Accidentally Created Account</h3>
+          <p class="mt-3 text-sm leading-6 text-muted">Sign in again to the existing target account, then within five minutes call the same quick-login endpoint using that account's gateway session cookie and a newly obtained Huawei code: <code>{ "intent": "merge", "provider": "huawei-main", "authorizationCode": "FRESH_CODE" }</code>. The code proves the separate source identity. On success, the gateway atomically transfers safe Huawei bindings and app-use history, revokes source credentials and deletes the disposable source account. It preserves the target account's password, role, email and authenticators. A source with its own password, authenticator, meaningful profile data, credits or a phone conflict is rejected with 409 for manual review. A stale target session receives 403 <code>reauthentication_required</code>. Matching a UnionID within one trusted <code>huaweiUnionScope</code> already resolves unconflicted App OpenIDs to one local account; it does not need a merge call.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Second Factor Without Cookies</h3>
+          <pre class="mt-3"><code>POST /api/v1/auth/oauth/oidc/complete
+X-Oidc-Pending: PENDING_TOKEN
+Content-Type: application/json
+
+{ "code": "123456" }</code></pre>
+          <p class="mt-3 text-sm leading-6 text-muted">The pending token may also be sent as <code>body.pending_token</code>. Use the <code>pending_header</code> value from the previous response. After Huawei MFA with OAuth handoff, completion returns <code>{ authorization_code, state, redirect_uri, redirect, user, phone, phoneStatus, phoneBinding }</code> without a gateway session cookie; redeem the authorization code next. Without OAuth handoff it returns <code>{ redirect, user, phone, phoneStatus, phoneBinding }</code> and a gateway session cookie. The full phone in OAuth responses still requires requested and granted <code>phone</code> scope.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Identity Keys</h3>
+          <div class="mt-3 overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="border-b border-line text-muted">
+                <tr><th class="py-3 text-left">Huawei field</th><th class="py-3 text-left">Scope</th><th class="py-3 text-left">Stored as</th><th class="py-3 text-left">Use</th></tr>
+              </thead>
+              <tbody class="divide-y divide-line/60">
+                <tr><td class="py-3 font-bold"><code>openId</code></td><td>per application</td><td><code>provider_secondary_id</code> when UnionID exists; otherwise <code>provider_user_id</code></td><td>Retain one OpenID per app/provider</td></tr>
+                <tr><td class="py-3 font-bold"><code>unionId</code></td><td>per Huawei subject</td><td><code>user_identities.provider_user_id</code> when present</td><td>Match only within an administrator-configured, nonempty <code>huaweiUnionScope</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-3 text-sm leading-6 text-muted">Both identifiers are case-sensitive. Different apps under the same trusted <code>huaweiUnionScope</code> can have different OpenIDs and one UnionID, resolving to one local user with separate binding records. Without that scope or a returned UnionID, matching stays app-local. Existing bindings that already point to different local users are rejected; accidental duplicate-account merge requires the explicit fresh-proof flow above.</p>
+
+          <h3 class="mt-6 text-sm font-bold uppercase tracking-widest text-muted">Phone Autolink</h3>
+          <p class="mt-3 text-sm leading-6 text-muted">The <code>huaweiPhoneAutolink</code> security toggle controls matching an unbound Huawei identity to an existing account with the same verified E.164 phone. Its current new-deployment default is on; read the actual setting from the config endpoint because an administrator may change it. Carrier number reassignment can let a new owner claim an older account, so review this policy for each deployment. A missing, invalid or masked Huawei number cannot be used for matching. A phone conflict never overwrites the account's stored number.</p>
+          <p class="mt-3 text-sm leading-6 text-muted">If Huawei does not return an email, the gateway stores a synthetic <code>@users.invalid</code> placeholder and deliberately skips the email second-factor channel, so codes are never sent to an unreachable address. Such accounts fall back to an authenticator app.</p>
+          <p class="mt-3 text-sm leading-6 text-muted">This endpoint is treated as a machine caller: it is rejected when <code>Sec-Fetch-*</code>, <code>Origin</code>, or <code>Referer</code> prove a cross-site browser request. It is rate limited to 30 requests per 10 minutes per source IP. Huawei errors use fixed responses: invalid/expired code 400, missing permission 403, provider credential or client mismatch 503, and upstream/network failure 502. Raw upstream bodies, codes, phone numbers and credentials are not echoed to callers.</p>
+        </section>
+
+        <section id="session" class="rounded-xl bg-white p-6 shadow-sm">
+          <h2 class="font-headline mb-4 text-2xl font-bold">Session And Profile APIs</h2>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="border-b border-line text-muted">
+                <tr><th class="py-3 text-left">Method</th><th class="py-3 text-left">Path</th><th class="py-3 text-left">Purpose</th></tr>
+              </thead>
+              <tbody class="divide-y divide-line/60">
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/me</code></td><td>Returns current session user.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/profile</code></td><td>Returns current session user, including <code>phoneMasked</code>, <code>phoneE164</code>, <code>phoneVerified</code>, and the linked identities with their <code>providerSecondaryId</code>.</td></tr>
+                <tr><td class="py-3 font-bold text-amber-700">PUT</td><td><code>/api/profile</code></td><td>Updates display name, email, avatar, password or the account phone. Phone changes require recent authentication or the current password; they clear phone verification.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/oauth2/logout</code></td><td>Clears the session cookie and redirects to sign-in.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="admin" class="rounded-xl bg-white p-6 shadow-sm">
+          <h2 class="font-headline mb-4 text-2xl font-bold">Admin APIs</h2>
+          <p class="mb-5 text-sm leading-6 text-muted">These endpoints and the admin pages require a signed-in administrator. Browser account and admin write requests must be same-origin. Client secrets are provided only when created or explicitly changed, and stored as salted hashes.</p>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="border-b border-line text-muted">
+                <tr><th class="py-3 text-left">Method</th><th class="py-3 text-left">Path</th><th class="py-3 text-left">Purpose</th></tr>
+              </thead>
+              <tbody class="divide-y divide-line/60">
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/users</code></td><td>Lists all users for the admin user directory.</td></tr>
+                <tr><td class="py-3 font-bold text-amber-700">PUT</td><td><code>/api/users/:id</code></td><td>Updates role, profile fields, phone and verification state. A changed phone is not automatically verified.</td></tr>
+                <tr><td class="py-3 font-bold text-red-700">DELETE</td><td><code>/api/users/:id</code></td><td>Deletes a user, except the current administrator or the last administrator.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/clients</code></td><td>Lists OAuth clients.</td></tr>
+                <tr><td class="py-3 font-bold text-blue-700">POST</td><td><code>/api/clients</code></td><td>Creates an OAuth client and returns a generated secret when needed.</td></tr>
+                <tr><td class="py-3 font-bold text-amber-700">PUT</td><td><code>/api/clients/:id</code></td><td>Updates client name, secret, redirects, scopes, logo, active state, or <code>requirePkce</code>. The setting defaults to true on create; omitted updates preserve its current value.</td></tr>
+                <tr><td class="py-3 font-bold text-red-700">DELETE</td><td><code>/api/clients/:id</code></td><td>Deletes a client.</td></tr>
+                <tr><td class="py-3 font-bold text-green-700">GET</td><td><code>/api/tokens</code></td><td>Lists issued access tokens for audit.</td></tr>
+                <tr><td class="py-3 font-bold text-red-700">DELETE</td><td><code>/api/tokens/:id</code></td><td>Deletes an access token.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="flows" class="rounded-xl bg-white p-6 shadow-sm">
+          <h2 class="font-headline mb-4 text-2xl font-bold">Example Flows</h2>
+          <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <article class="rounded-xl border border-line p-5">
+              <h3 class="mb-3 font-bold">Refresh Token Grant</h3>
+              <pre><code>POST /oauth2/token
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token&refresh_token=REFRESH_TOKEN</code></pre>
+            </article>
+            <article class="rounded-xl border border-line p-5">
+              <h3 class="mb-3 font-bold">Client Credentials Grant</h3>
+              <pre><code>POST /oauth2/token
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=YOUR_REGISTERED_SERVICE_SCOPE</code></pre>
+              <p class="mt-3 text-sm text-muted">This grant represents the client itself. User identity scopes are not accepted.</p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

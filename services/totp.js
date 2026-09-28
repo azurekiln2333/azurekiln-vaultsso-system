@@ -69,20 +69,24 @@ function hotp(secret, counter) {
   return String(binary % 10 ** TOTP_DIGITS).padStart(TOTP_DIGITS, '0');
 }
 
-function verifyTotp(secret, code, window = TOTP_VERIFY_WINDOW) {
+function matchingTotpCounter(secret, code, window = TOTP_VERIFY_WINDOW) {
   const normalized = String(code || '').replace(/\s+/g, '');
   if (!new RegExp(`^\\d{${TOTP_DIGITS}}$`).test(normalized)) {
-    return false;
+    return null;
   }
 
   const counter = Math.floor(Date.now() / 1000 / TOTP_STEP_SECONDS);
   for (let drift = -window; drift <= window; drift++) {
     const expected = hotp(secret, counter + drift);
     if (expected && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(normalized))) {
-      return true;
+      return counter + drift;
     }
   }
-  return false;
+  return null;
+}
+
+function verifyTotp(secret, code, window = TOTP_VERIFY_WINDOW) {
+  return matchingTotpCounter(secret, code, window) !== null;
 }
 
 function buildOtpauthUri({ secret, account, issuer = 'VaultSSO' }) {
@@ -100,5 +104,6 @@ function buildOtpauthUri({ secret, account, issuer = 'VaultSSO' }) {
 module.exports = {
   generateSecret,
   verifyTotp,
+  matchingTotpCounter,
   buildOtpauthUri
 };

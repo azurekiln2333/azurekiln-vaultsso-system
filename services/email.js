@@ -87,8 +87,7 @@ async function sendVerificationEmail({ to, code, purpose, expiresInMinutes }) {
   const smtp = getTransporter();
 
   if (!smtp) {
-    console.log(`[email:dev] to=${to} purpose=${purpose} code=${code}`);
-    return { delivered: false, mode: 'console' };
+    throw new Error('SMTP is not configured; verification email could not be delivered');
   }
 
   try {

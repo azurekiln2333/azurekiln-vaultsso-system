@@ -1,4 +1,12 @@
 .env
+.env.*
+!.env.example
+keys/
+data/
+*.pem
+*.key
+.artifacts/
+dist/
 node_modules/
 npm-debug.log*
 *.log

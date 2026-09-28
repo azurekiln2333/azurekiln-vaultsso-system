@@ -30,7 +30,7 @@ class SessionModel {
 
   async findActiveByUserId(userId) {
     const [rows] = await this.pool.execute(
-      `SELECT id, user_id, ip_address, user_agent, created_at, expires_at FROM sessions
+      `SELECT id, user_id, token, ip_address, user_agent, created_at, expires_at FROM sessions
        WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
        ORDER BY created_at DESC`,
       [userId, new Date()]
@@ -40,6 +40,14 @@ class SessionModel {
 
   async revoke(id) {
     await this.pool.execute('UPDATE sessions SET revoked_at = ? WHERE id = ?', [new Date(), id]);
+  }
+
+  async extend(id, expiresAt) {
+    const [result] = await this.pool.execute(
+      'UPDATE sessions SET expires_at = ? WHERE id = ? AND revoked_at IS NULL AND expires_at > ?',
+      [new Date(expiresAt), id, new Date()]
+    );
+    return result.affectedRows === 1;
   }
 
   async revokeAllForUser(userId, exceptSessionId = null) {

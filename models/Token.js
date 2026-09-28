@@ -5,13 +5,20 @@ class TokenModel {
     this.pool = pool;
   }
 
+  hashToken(token) { return crypto.createHash('sha256').update(token).digest('hex'); }
+
+  matchesToken(record, token) {
+    if (!record || !/^[a-f0-9]{64}$/.test(record.token)) return false;
+    return crypto.timingSafeEqual(Buffer.from(record.token, 'hex'), Buffer.from(this.hashToken(token), 'hex'));
+  }
+
   async createAccessToken(data) {
     const id = data.id || crypto.randomUUID();
     
     await this.pool.execute(
       `INSERT INTO access_tokens (id, token, user_id, client_id, scopes, expires_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, data.token, data.userId, data.clientId, JSON.stringify(data.scopes), data.expiresAt]
+      [id, this.hashToken(data.token), data.userId, data.clientId, JSON.stringify(data.scopes), data.expiresAt]
     );
     
     return this.findAccessTokenById(id);
@@ -34,7 +41,7 @@ class TokenModel {
   async findAccessTokenByToken(token) {
     const [rows] = await this.pool.execute(
       'SELECT * FROM access_tokens WHERE token = ?',
-      [token]
+      [this.hashToken(token)]
     );
     
     if (!rows[0]) return null;
@@ -88,7 +95,7 @@ class TokenModel {
     await this.pool.execute(
       `INSERT INTO refresh_tokens (id, token, user_id, client_id, scopes, expires_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, data.token, data.userId, data.clientId, JSON.stringify(data.scopes || []), data.expiresAt]
+      [id, this.hashToken(data.token), data.userId, data.clientId, JSON.stringify(data.scopes || []), data.expiresAt]
     );
     
     return this.findRefreshTokenById(id);
@@ -111,7 +118,7 @@ class TokenModel {
   async findRefreshTokenByToken(token) {
     const [rows] = await this.pool.execute(
       'SELECT * FROM refresh_tokens WHERE token = ?',
-      [token]
+      [this.hashToken(token)]
     );
     
     if (!rows[0]) return null;
@@ -127,12 +134,17 @@ class TokenModel {
     return true;
   }
 
+  async consumeRefreshToken(id) {
+    const [result] = await this.pool.execute('DELETE FROM refresh_tokens WHERE id = ? AND expires_at > ?', [id, new Date()]);
+    return result.affectedRows === 1;
+  }
+
   async createAuthCode(data) {
     const code = data.code || crypto.randomUUID();
     
     await this.pool.execute(
-      `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         code,
         data.userId,
@@ -141,6 +153,7 @@ class TokenModel {
         JSON.stringify(data.scopes),
         data.codeChallenge || null,
         data.codeChallengeMethod || null,
+        data.nonce || null,
         data.expiresAt
       ]
     );
@@ -165,6 +178,24 @@ class TokenModel {
   async deleteAuthCode(code) {
     await this.pool.execute('DELETE FROM auth_codes WHERE code = ?', [code]);
     return true;
+  }
+
+  async consumeAuthCode(code) {
+    const [result] = await this.pool.execute('DELETE FROM auth_codes WHERE code = ? AND expires_at > ?', [code, new Date()]);
+    return result.affectedRows === 1;
+  }
+
+  async revokeByUser(userId) {
+    for (const table of ['access_tokens', 'refresh_tokens', 'auth_codes']) {
+      await this.pool.execute(`DELETE FROM ${table} WHERE user_id = ?`, [userId]);
+    }
+  }
+
+  async revokeByClient(clientId, { preserveAuthCodes = false } = {}) {
+    const tables = preserveAuthCodes ? ['access_tokens', 'refresh_tokens'] : ['access_tokens', 'refresh_tokens', 'auth_codes'];
+    for (const table of tables) {
+      await this.pool.execute(`DELETE FROM ${table} WHERE client_id = ?`, [clientId]);
+    }
   }
 
   async cleanExpiredTokens() {

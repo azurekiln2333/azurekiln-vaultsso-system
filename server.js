@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('./config/environment').loadProjectEnvironment();
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -6,94 +6,158 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const { readRuntimeConfig } = require('./config/runtime');
+const { loadSigningKeys } = require('./services/signing');
+const { verifyClientSecret } = require('./services/client-secrets');
+const { createSecretCipher } = require('./services/secret-storage');
+const { createStore } = require('./services/admin-settings');
+const { pageFile, adminPagePaths } = require('./views/page-registry');
 
 const { initDatabase, closePool } = require('./db/init');
 const UserModel = require('./models/User');
+const AuthenticatorModel = require('./models/Authenticator');
 const ClientModel = require('./models/Client');
 const TokenModel = require('./models/Token');
+const UserAppUsageModel = require('./models/UserAppUsage');
 const EmailVerificationCodeModel = require('./models/EmailVerificationCode');
 const ExternalIdentityModel = require('./models/ExternalIdentity');
 const LoginLogModel = require('./models/LoginLog');
 const SessionModel = require('./models/Session');
 const OidcProviderModel = require('./models/OidcProvider');
-const { generateSecret, verifyTotp, buildOtpauthUri } = require('./services/totp');
+const RateLimitModel = require('./models/RateLimit');
+const CaptchaModel = require('./models/Captcha');
+const { renderCaptcha } = require('./services/captcha');
+const { verifyTurnstile } = require('./services/turnstile');
+const { generateSecret, matchingTotpCounter, buildOtpauthUri } = require('./services/totp');
+const phoneNumbers = require('./services/phone');
+const huawei = require('./services/huawei');
+const { mergeHuaweiAccount, AccountMergeError } = require('./services/account-merge');
+const { mergeOidcAccount } = require('./services/oidc-account-merge');
 const QRCode = require('qrcode');
 const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail, sendBehaviorAlertEmail } = require('./services/email');
 
 const app = express();
+const RUNTIME = readRuntimeConfig();
+app.disable('x-powered-by');
+app.set('trust proxy', RUNTIME.trustedProxies.length ? RUNTIME.trustedProxies : false);
 
 const PORT = Number(process.env.PORT || 3146);
-const JWT_SECRET = process.env.JWT_SECRET || 'vaultsso-jwt-secret-key-2024-change-in-production';
-if (String(process.env.NODE_ENV || '').toLowerCase() === 'production'
-    && JWT_SECRET === 'vaultsso-jwt-secret-key-2024-change-in-production') {
-  console.error('❌ Refusing to start: set a strong JWT_SECRET in production.');
-  process.exit(1);
-}
+const JWT_SECRET = RUNTIME.jwtSecret;
+const adminSettingsStore = createStore(JWT_SECRET);
+let adminSettingsOverrides = {};
+let turnstileSettings = { siteKey: RUNTIME.turnstileSiteKey, secretKey: RUNTIME.turnstileSecretKey };
+const totpCipher = createSecretCipher(JWT_SECRET, 'totp-secret');
+const huaweiPendingPhoneCipher = createSecretCipher(JWT_SECRET, 'huawei-pending-phone');
 const TOKEN_EXPIRY = process.env.TOKEN_EXPIRY || '1h';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '7d';
-const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').trim();
-const SYSTEM_USER_EMAIL = 'system@vaultsso.local';
-const SYSTEM_USER_USERNAME = 'system@vaultsso.local';
+const PUBLIC_BASE_URL = RUNTIME.publicBaseUrl;
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(['/admin.html', '/apps.html', '/tokens.html', '/users.html', '/user.html', '/smtp.html', '/security.html']);
+const ADMIN_ONLY_STATIC_PATHS = new Set(adminPagePaths.keys());
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
 const OIDC_STATE_COOKIE = 'oidc_state';
+const HUAWEI_QUICK_LOGIN_PATH = '/api/v1/auth/oauth/huawei/quick-login';
+const HUAWEI_BIND_PATH = '/api/v1/auth/oauth/huawei/bind';
+const HUAWEI_SKIP_PATH = '/api/v1/auth/oauth/huawei/skip';
+const HUAWEI_BIND_TTL_MS = 5 * 60 * 1000;
+const pendingHuaweiBindings = new Map();
+setInterval(() => {
+  for (const [token, entry] of pendingHuaweiBindings) {
+    if (Date.now() - entry.createdAt >= HUAWEI_BIND_TTL_MS) pendingHuaweiBindings.delete(token);
+  }
+}, 60000).unref();
+// 这些端点由原生 App / 服务端直接调用，不经过浏览器，因此按机器调用校验来源。
+const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete']);
 
 let User;
+let Authenticator;
 let Client;
 let Token;
+let UserAppUsage;
 let EmailVerificationCode;
 let ExternalIdentity;
 let LoginLog;
 let Session;
 let OidcProvider;
+let RateLimit;
+let Captcha;
+let signingKeys;
 let pool = null;
-let oidcStorageSource = 'environment';
-
-const DEMO_CLIENTS = require('./config/demo-clients');
+let oidcStorageSource = 'database';
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: false, limit: '100kb', parameterLimit: 100 }));
 app.use(cookieParser());
-// CORS: credentialed requests are only allowed for same-origin (the request's own
-// host) or PUBLIC_BASE_URL. Reflecting arbitrary origins with credentials would let
-// any website read authenticated API responses cross-site.
-const TRUSTED_ORIGINS = new Set(
-  process.env.PUBLIC_BASE_URL ? [process.env.PUBLIC_BASE_URL.replace(/\/+$/, '')] : []
-);
-
-// CORS: credentialed requests are only allowed for same-origin (the request's own
-// host) or PUBLIC_BASE_URL. Reflecting arbitrary origins with credentials would let
-// any website read authenticated API responses cross-site.
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    let allowed = false;
-    try {
-      const normalized = origin.replace(/\/+$/, '');
-      if (TRUSTED_ORIGINS.has(normalized) || new URL(origin).host === req.headers.host) {
-        allowed = true;
-      }
-    } catch (error) {
-      // Malformed origin stays disallowed.
+function isSameOriginBrowserRequest(req) {
+    const origin = req.get('origin');
+    if (origin) return origin === PUBLIC_BASE_URL;
+    const referer = req.get('referer');
+    if (referer) {
+      try { return new URL(referer).origin === PUBLIC_BASE_URL; } catch { return false; }
     }
-    if (allowed) {
+    return req.get('sec-fetch-site') === 'same-origin';
+  }
+
+// 机器对机器端点（原生 App 直连）的调用方校验。
+// 浏览器一定会带 Origin / Referer / Sec-Fetch-*，据此拒绝跨站请求以防登录 CSRF；
+// 三者都不存在说明调用方不是浏览器，此时放行。
+function isMachineClientRequest(req) {
+    const site = normalizeText(req.get('sec-fetch-site')).toLowerCase();
+    if (site) return site === 'same-origin';
+    const origin = req.get('origin');
+    if (origin) return origin === PUBLIC_BASE_URL;
+    const referer = req.get('referer');
+    if (referer) {
+      try { return new URL(referer).origin === PUBLIC_BASE_URL; } catch { return false; }
+    }
+    return true;
+  }
+
+app.use(function requestBoundary(req, res, next) {
+    const origin = req.get('origin');
+    if (origin === PUBLIC_BASE_URL) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Vary', 'Origin');
+      res.vary('Origin');
     }
-  }
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type');
-    res.status(204).end();
-    return;
-  }
-  next();
-});
+    const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    const browserEndpoint = req.path.startsWith('/api/') || ['/oauth2/authorize', '/oauth2/register'].includes(req.path);
+    const allowed = MACHINE_ENDPOINTS.has(req.path)
+      ? isMachineClientRequest(req)
+      : isSameOriginBrowserRequest(req);
+    if (unsafe && browserEndpoint && !allowed) {
+      return res.status(403).json({ error: 'forbidden', error_description: 'A same-origin browser request is required' });
+    }
+    if (req.path.startsWith('/api/') || req.path.startsWith('/oauth2/') || req.cookies.session) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Pragma', 'no-cache');
+    }
+    if (RUNTIME.production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+    if (req.method === 'OPTIONS') {
+      if (origin && origin !== PUBLIC_BASE_URL) return res.status(403).end();
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+      return res.status(204).end();
+    }
+    next();
+  });
+
+app.use(asyncHandler(async function limitRequests(req, res, next) {
+    const isCaptcha = req.path === '/api/captcha';
+    const isSensitive = isCaptcha || req.path === '/api/v1/auth/oauth/oidc/login' || req.path === OIDC_CALLBACK_PATH || (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+      && (req.path.startsWith('/api/') || req.path.startsWith('/oauth2/')));
+    if (!isSensitive) return next();
+    const category = isCaptcha ? 'captcha' : req.path === '/api/email-verification/send' ? 'mail' : 'auth';
+    const limit = category === 'mail' ? 10 : category === 'captcha' ? 30 : 120;
+    const result = await RateLimit.consume(`http:${category}:${getClientIp(req)}`, limit, 60 * 1000);
+    if (!result.allowed) {
+      res.setHeader('Retry-After', String(result.retryAfter));
+      return res.status(429).json({ error: 'too_many_requests', error_description: 'Too many requests; try again later' });
+    }
+    next();
+  }));
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -103,13 +167,15 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "script-src 'self' https://challenges.cloudflare.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: https: http:",
-    "connect-src 'self'",
+    "connect-src 'self' https://challenges.cloudflare.com",
+    "frame-src 'self' https://challenges.cloudflare.com",
     "frame-ancestors 'self'",
-    "base-uri 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
     "form-action 'self'"
   ].join('; '));
   next();
@@ -130,11 +196,7 @@ function normalizeEmail(value) {
 }
 
 function getClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim().slice(0, 64);
-  }
-  return String(req.socket?.remoteAddress || '').slice(0, 64);
+  return String(req.ip || req.socket?.remoteAddress || '').slice(0, 64);
 }
 
 const RECOVERY_CODE_COUNT = 10;
@@ -149,9 +211,9 @@ function generateRecoveryCodes() {
   const codes = [];
   for (let index = 0; index < RECOVERY_CODE_COUNT; index++) {
     let code = '';
-    for (let position = 0; position < 8; position++) {
+    for (let position = 0; position < 16; position++) {
       code += alphabet[crypto.randomInt(0, alphabet.length)];
-      if (position === 3) code += '-';
+      if (position % 4 === 3 && position < 15) code += '-';
     }
     codes.push(code);
   }
@@ -167,7 +229,7 @@ function getRecoveryHashes(user) {
   }
 }
 
-function consumeRecoveryCode(user, code) {
+function consumeRecoveryCode(user, code, users = User) {
   const normalized = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!normalized) return false;
   const hash = hashRecoveryCode(normalized);
@@ -176,7 +238,7 @@ function consumeRecoveryCode(user, code) {
     && crypto.timingSafeEqual(Buffer.from(stored), Buffer.from(hash)));
   if (index < 0) return false;
   hashes.splice(index, 1);
-  return User.update(user.id, { recoveryCodes: JSON.stringify(hashes) }).then(() => true);
+  return users.consumeRecoveryCode(user.id, user.recovery_codes, JSON.stringify(hashes));
 }
 
 const SETTING_DEFAULTS = {
@@ -184,53 +246,43 @@ const SETTING_DEFAULTS = {
   captcha_register: 'false',
   login_email_code: 'false',
   registration_enabled: 'true',
-  password_min_length: '6',
+  password_min_length: '12',
   login_max_attempts: '5',
   login_lockout_minutes: '15',
   totp_allowed: 'true',
   password_require_mixed: 'false',
-  anomaly_detection: 'true'
+  anomaly_detection: 'true',
+  // 仅用华为已验证号码匹配本地已验证号码；管理员可关闭自动关联。
+  huawei_phone_autolink: 'true'
 };
-const SETTING_KEYS = Object.keys(SETTING_DEFAULTS);
-const settingCache = new Map();
-const SETTING_CACHE_TTL_MS = 15 * 1000;
 
-async function getSettingValue(key) {
-  const cached = settingCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.value;
-  }
-
+async function getSettingValue(key, database = pool) {
   let value = SETTING_DEFAULTS[key];
+  if (key === 'captcha_login' || key === 'captcha_register') value = turnstileSettings.siteKey ? 'true' : 'false';
   if (key === 'password_min_length') value = String(getSettingNumberFromEnv());
-  try {
-    const [rows] = await pool.query('SELECT setting_value FROM settings WHERE setting_key = ?', [key]);
-    if (rows.length && normalizeText(rows[0].setting_value) !== '') {
-      value = normalizeText(rows[0].setting_value);
-    }
-  } catch (error) {
-    // Missing table (fresh deployment before init-db) falls back to defaults.
+  const [rows] = await database.query('SELECT setting_value FROM settings WHERE setting_key = ?', [key]);
+  if (rows.length && normalizeText(rows[0].setting_value) !== '') {
+    value = normalizeText(rows[0].setting_value);
   }
 
-  settingCache.set(key, { value, expiresAt: Date.now() + SETTING_CACHE_TTL_MS });
   return value;
 }
 
 function getSettingNumberFromEnv() {
   const parsed = Number(process.env.PASSWORD_MIN_LENGTH);
-  return Number.isInteger(parsed) && parsed >= 4 && parsed <= 64 ? parsed : 6;
+  return Number.isInteger(parsed) && parsed >= 12 && parsed <= 64 ? parsed : 12;
 }
 
-async function saveSettingValue(key, value) {
-  await pool.query(
-    'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)',
-    [key, String(value)]
+async function saveSettingValues(changes) {
+  if (!changes.length) return;
+  await pool.execute(
+    `INSERT INTO settings (setting_key, setting_value) VALUES ${changes.map(() => '(?, ?)').join(', ')} ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+    changes.flat()
   );
-  settingCache.delete(key);
 }
 
-async function isSettingEnabled(key) {
-  return (await getSettingValue(key)) === 'true';
+async function isSettingEnabled(key, database = pool) {
+  return (await getSettingValue(key, database)) === 'true';
 }
 
 async function getSettingNumber(key, fallback) {
@@ -239,7 +291,7 @@ async function getSettingNumber(key, fallback) {
 }
 
 async function getPasswordMinLength() {
-  return getSettingNumber('password_min_length', 6);
+  return Math.max(12, await getSettingNumber('password_min_length', 12));
 }
 
 const COMMON_PASSWORDS = new Set([
@@ -250,6 +302,7 @@ const COMMON_PASSWORDS = new Set([
 ]);
 
 async function validatePasswordPolicy(password) {
+  if (Buffer.byteLength(password, 'utf8') > 72) return '密码不能超过 72 个 UTF-8 字节';
   const minLength = await getPasswordMinLength();
   if (password.length < minLength) {
     return `密码长度不能少于 ${minLength} 位`;
@@ -264,131 +317,64 @@ async function validatePasswordPolicy(password) {
   return '';
 }
 
-// --- CAPTCHA (self-hosted SVG; answers live in server memory, single use) ---
 const CAPTCHA_TTL_MS = 5 * 60 * 1000;
-const captchaStore = new Map();
 const CAPTCHA_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
 
-function pruneCaptchaStore() {
-  const now = Date.now();
-  for (const [id, entry] of captchaStore) {
-    if (entry.expiresAt < now) captchaStore.delete(id);
-  }
-}
+function hashCaptcha(id, text) { return crypto.createHmac('sha256', JWT_SECRET).update(`${id}:${text.toLowerCase()}`).digest('hex'); }
 
-function randomCaptchaText() {
-  let text = '';
-  for (let index = 0; index < 4; index++) {
-    text += CAPTCHA_CHARS[crypto.randomInt(0, CAPTCHA_CHARS.length)];
-  }
-  return text;
-}
-
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-function generateCaptchaSvg(text) {
-  const width = 132;
-  const height = 44;
-  const colors = ['#0b57d0', '#2049c8', '#3b5bdb', '#1e3fae'];
-  const glyphs = text.split('').map((char, index) => {
-    const x = 18 + index * 27 + randomBetween(-3, 3);
-    const y = 29 + randomBetween(-4, 4);
-    const rotate = randomBetween(-18, 18).toFixed(1);
-    const size = (21 + randomBetween(-2, 3)).toFixed(1);
-    const fill = colors[crypto.randomInt(0, colors.length)];
-    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Verdana,Arial,sans-serif" font-size="${size}" font-weight="700" fill="${fill}" transform="rotate(${rotate} ${x.toFixed(1)} ${y.toFixed(1)})">${char}</text>`;
-  }).join('');
-  const lines = [0, 1, 2].map(() => {
-    const x1 = randomBetween(0, width).toFixed(0);
-    const y1 = randomBetween(0, height).toFixed(0);
-    const x2 = randomBetween(0, width).toFixed(0);
-    const y2 = randomBetween(0, height).toFixed(0);
-    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${colors[crypto.randomInt(0, colors.length)]}" stroke-opacity="0.35" stroke-width="1.5"/>`;
-  }).join('');
-  const dots = [0, 1, 2, 3, 4, 5].map(() => {
-    return `<circle cx="${randomBetween(0, width).toFixed(0)}" cy="${randomBetween(0, height).toFixed(0)}" r="1.4" fill="#0b57d0" fill-opacity="0.35"/>`;
-  }).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="captcha"><rect width="${width}" height="${height}" rx="8" fill="#f4f7ff"/>${lines}${dots}${glyphs}</svg>`;
-}
-
-app.get('/api/captcha', (req, res) => {
-  pruneCaptchaStore();
-  if (captchaStore.size > 5000) captchaStore.clear();
-  const id = crypto.randomUUID();
-  const text = randomCaptchaText();
-  captchaStore.set(id, { text: text.toLowerCase(), expiresAt: Date.now() + CAPTCHA_TTL_MS });
-  res.json({ id, svg: generateCaptchaSvg(text), expiresInMinutes: Math.ceil(CAPTCHA_TTL_MS / 60000) });
-});
+app.get('/api/captcha', asyncHandler(async function captchaChallenge(req, res) {
+    const id = crypto.randomUUID();
+    const text = Array.from({ length: 4 }, () => CAPTCHA_CHARS[crypto.randomInt(CAPTCHA_CHARS.length)]).join('');
+    await Captcha.create(id, hashCaptcha(id, text), new Date(Date.now() + CAPTCHA_TTL_MS));
+    res.json({ id, image: renderCaptcha(text), expiresInMinutes: 5 });
+  }));
 
 app.get('/api/auth/config', asyncHandler(async (req, res) => {
+  const webTurnstile = req.query.surface === 'web' && Boolean(turnstileSettings.siteKey);
   res.json({
     captchaLogin: await isSettingEnabled('captcha_login'),
     captchaRegister: await isSettingEnabled('captcha_register'),
+    captchaProvider: webTurnstile ? 'turnstile' : 'image',
+    turnstileSiteKey: webTurnstile ? turnstileSettings.siteKey : '',
     loginEmailCode: await isSettingEnabled('login_email_code'),
     registrationEnabled: await isSettingEnabled('registration_enabled'),
     passwordMinLength: await getPasswordMinLength()
   });
 }));
 
-function verifyCaptcha(body) {
-  const id = normalizeText(body.captcha_id);
-  const code = normalizeText(body.captcha_code).toLowerCase();
-  const entry = id ? captchaStore.get(id) : null;
-  captchaStore.delete(id);
-  if (!entry || entry.expiresAt < Date.now()) {
-    return { ok: false, error_key: 'captcha.expired', error_description: '图形验证码已过期，请刷新后重试' };
-  }
-  if (!code || entry.text !== code) {
-    return { ok: false, error_key: 'captcha.invalid', error_description: '图形验证码不正确' };
-  }
-  return { ok: true };
-}
-
-// --- Brute force lockout (per username + IP, in process memory) ---
-const loginAttemptStore = new Map();
-const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
-// Captcha grace: after captcha+password pass but email 2FA is pending, step 2 may resubmit.
-const captchaGraceStore = new Map();
-const CAPTCHA_GRACE_TTL_MS = 3 * 60 * 1000;
-
-function pruneLoginAttempts() {
-  const now = Date.now();
-  for (const [key, entry] of loginAttemptStore) {
-    if ((entry.lockedUntil && entry.lockedUntil < now) || (!entry.lockedUntil && now - entry.firstAt > LOGIN_ATTEMPT_WINDOW_MS)) {
-      loginAttemptStore.delete(key);
+async function verifyCaptcha(body, req, action) {
+    if (body.captcha_surface === 'web' && turnstileSettings.siteKey) {
+      const token = normalizeText(body.turnstile_response);
+      if (!token) return { ok: false, error_key: 'turnstile.required', error_description: '请完成人机验证' };
+      if (token.length > 2048) return { ok: false, error_key: 'turnstile.invalid', error_description: '人机验证无效，请重试' };
+      const result = await verifyTurnstile({
+        token, secret: turnstileSettings.secretKey, ip: getClientIp(req),
+        hostname: RUNTIME.production ? new URL(PUBLIC_BASE_URL).hostname : '', action
+      });
+      if (!result.ok) return result.unavailable
+        ? { ok: false, status: 503, error_key: 'turnstile.unavailable', error_description: '人机验证暂时不可用，请稍后重试' }
+        : { ok: false, error_key: 'turnstile.invalid', error_description: '人机验证无效，请重试' };
+      return { ok: true };
     }
+    const id = normalizeText(body.captcha_id);
+    const code = normalizeText(body.captcha_code).toLowerCase();
+    const record = id ? await Captcha.consume(id) : null;
+    if (!record) return { ok: false, error_key: 'captcha.expired', error_description: '图形验证码已过期，请刷新后重试' };
+    if (!code || record.answer_hash !== hashCaptcha(id, code)) {
+      return { ok: false, error_key: 'captcha.invalid', error_description: '图形验证码不正确' };
+    }
+    return { ok: true };
   }
-  for (const [key, expiresAt] of captchaGraceStore) {
-    if (expiresAt < now) captchaGraceStore.delete(key);
+
+function grantCaptchaContinuation(req, res, userId) {
+    const value = encodeOidcState({ kind: 'captcha', userId, ip: getClientIp(req), expiresAt: Date.now() + 3 * 60 * 1000 });
+    res.cookie('login_step', value, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'strict', path: '/', maxAge: 3 * 60 * 1000 });
   }
-}
 
-function loginAttemptKey(username, ip) {
-  return `${normalizeText(username).toLowerCase()}|${ip || 'unknown'}`;
-}
-
-function isLoginLocked(entry) {
-  return Boolean(entry && entry.lockedUntil > Date.now());
-}
-
-function recordLoginFailure(key, maxAttempts, lockoutMs) {
-  const now = Date.now();
-  const entry = loginAttemptStore.get(key);
-  if (!entry || now - entry.firstAt > LOGIN_ATTEMPT_WINDOW_MS) {
-    loginAttemptStore.set(key, { count: 1, firstAt: now, lockedUntil: 0 });
-    return;
+function hasCaptchaContinuation(req, userId) {
+    const value = decodeOidcState(req.cookies.login_step);
+    return value && value.kind === 'captcha' && value.userId === userId && value.ip === getClientIp(req) && value.expiresAt > Date.now();
   }
-  entry.count += 1;
-  if (entry.count >= maxAttempts) {
-    entry.lockedUntil = now + lockoutMs;
-  }
-}
-
-function clearLoginAttempts(key) {
-  loginAttemptStore.delete(key);
-}
 
 function maskEmail(email) {
   const text = normalizeText(email);
@@ -399,9 +385,9 @@ function maskEmail(email) {
   return `${masked}${text.slice(atIndex)}`;
 }
 
-async function recordLoginLog({ username, userId = null, req, result, detail = '' }) {
+async function recordLoginLog({ username, userId = null, req, result, detail = '', database = pool }) {
   try {
-    await LoginLog.create({
+    await new LoginLogModel(database).create({
       username: username || '-',
       userId,
       ip: getClientIp(req),
@@ -421,9 +407,9 @@ const ANOMALY_DISTINCT_IP_SUCCESS = 3;
 
 // 行为分析：基于登录日志的滚动窗口判定。触发后给账户打上"下次登录强制图形验证码"
 // 标记，并发送警告邮件；成功通过验证码的登录会自动解除标记。
-async function detectAndFlagAnomalousLogin(user, req, event) {
+async function detectAndFlagAnomalousLogin(user, req, event, database = pool) {
   try {
-    if ((await getSettingValue('anomaly_detection')) !== 'true') {
+    if ((await getSettingValue('anomaly_detection', database)) !== 'true') {
       return;
     }
     if (user.captcha_required) {
@@ -431,7 +417,7 @@ async function detectAndFlagAnomalousLogin(user, req, event) {
     }
 
     const since = Date.now() - ANOMALY_WINDOW_MS;
-    const logs = await LoginLog.findRecentByUserId(user.id, new Date(since));
+    const logs = await new LoginLogModel(database).findRecentByUserId(user.id, new Date(since));
     const failures = logs.filter(log => log.result === 'invalid_credentials' || log.result === 'captcha_failed' || log.result === 'totp_invalid');
     const successIps = new Set(logs.filter(log => log.result === 'success').map(log => normalizeText(log.ip)).filter(Boolean));
     const failureIps = new Set(failures.map(log => normalizeText(log.ip)).filter(Boolean));
@@ -453,11 +439,13 @@ async function detectAndFlagAnomalousLogin(user, req, event) {
       return;
     }
 
-    await User.update(user.id, { captchaRequired: true });
+    await new UserModel(database).update(user.id, { captchaRequired: true });
     const description = reasons.join('；');
-    await recordLoginLog({ username: user.username, userId: user.id, req, result: 'anomaly_detected', detail: description });
+    await recordLoginLog({ username: user.username, userId: user.id, req, result: 'anomaly_detected', detail: description, database });
     if (user.email) {
-      await sendBehaviorAlertEmail({ to: user.email, username: user.username, reason: description });
+      sendBehaviorAlertEmail({ to: user.email, username: user.username, reason: description }).catch(error => {
+        console.error('Behavior alert delivery failed:', error.message);
+      });
     }
     console.log(`[security:anomaly] ${user.username}: ${description}`);
   } catch (error) {
@@ -475,14 +463,15 @@ async function recordAdminLog({ admin, req, action, detail = '' }) {
   });
 }
 
-setInterval(() => { pruneCaptchaStore(); pruneLoginAttempts(); Session.deleteExpired().catch(() => {}); }, 60 * 1000).unref();
+
 
 function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return typeof email === 'string' && email.length <= 254
+    && /^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$/.test(email);
 }
 
-function getBaseUrl(req) {
-  return PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+function getBaseUrl() {
+  return PUBLIC_BASE_URL;
 }
 
 function generateClientSecret() {
@@ -521,6 +510,7 @@ function parseDurationToMs(value, fallbackMs) {
 const ACCESS_TOKEN_TTL_MS = parseDurationToMs(TOKEN_EXPIRY, 60 * 60 * 1000);
 const REFRESH_TOKEN_TTL_MS = parseDurationToMs(REFRESH_TOKEN_EXPIRY, 7 * 24 * 60 * 60 * 1000);
 const SESSION_MAX_AGE = ACCESS_TOKEN_TTL_MS;
+const SESSION_ABSOLUTE_TTL_MS = parseDurationToMs(process.env.SESSION_ABSOLUTE_EXPIRY || '12h', 12 * 60 * 60 * 1000);
 // 登出后允许跳回的站点白名单（注册域名，逗号分隔；为空时保持原行为）
 const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
   .split(',').map(item => normalizeText(item).toLowerCase()).filter(Boolean);
@@ -535,48 +525,29 @@ const EMAIL_PURPOSE_LOGIN = 'login';
 const EMAIL_PURPOSE_EMAIL_CHANGE = 'email_change';
 const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
 const EMAIL_CODE_MAX_ATTEMPTS = Number(process.env.EMAIL_CODE_MAX_ATTEMPTS || 5);
-
-const OIDC_CONFIG = {
-  enabled: String(process.env.OIDC_ENABLED || '').trim().toLowerCase() === 'true',
-  providerName: normalizeText(process.env.OIDC_PROVIDER_NAME) || 'OIDC',
-  clientId: normalizeText(process.env.OIDC_CLIENT_ID),
-  clientSecret: String(process.env.OIDC_CLIENT_SECRET || ''),
-  issuerUrl: normalizeText(process.env.OIDC_ISSUER_URL),
-  discoveryUrl: normalizeText(process.env.OIDC_DISCOVERY_URL),
-  authorizeUrl: normalizeText(process.env.OIDC_AUTHORIZE_URL),
-  tokenUrl: normalizeText(process.env.OIDC_TOKEN_URL),
-  userinfoUrl: normalizeText(process.env.OIDC_USERINFO_URL),
-  jwksUrl: normalizeText(process.env.OIDC_JWKS_URL),
-  scopes: parseOidcScopes(process.env.OIDC_SCOPES || 'openid profile email'),
-  tokenAuthMethod: normalizeText(process.env.OIDC_TOKEN_AUTH_METHOD) || 'client_secret_basic',
-  clockTolerance: Number(process.env.OIDC_CLOCK_TOLERANCE || 60),
-  allowedAlgorithms: toStringArray(process.env.OIDC_ALLOWED_ALGS || 'RS256 ES256').flatMap(item => item.split(/\s+/)).map(item => normalizeText(item)).filter(Boolean),
-  pkceEnabled: String(process.env.OIDC_PKCE_ENABLED || 'true').trim().toLowerCase() !== 'false',
-  validateIdToken: String(process.env.OIDC_VALIDATE_ID_TOKEN || 'true').trim().toLowerCase() !== 'false',
-  requireEmailVerified: String(process.env.OIDC_REQUIRE_EMAIL_VERIFIED || '').trim().toLowerCase() === 'true',
-  userinfoEmailPath: normalizeText(process.env.OIDC_USERINFO_EMAIL_PATH) || 'email',
-  userinfoIdPath: normalizeText(process.env.OIDC_USERINFO_ID_PATH) || 'sub',
-  userinfoUsernamePath: normalizeText(process.env.OIDC_USERINFO_USERNAME_PATH) || 'preferred_username',
-  frontendCallbackPath: normalizeText(process.env.OIDC_FRONTEND_CALLBACK_PATH) || '/oauth2/success',
-  providerKey: normalizeText(process.env.OIDC_PROVIDER_KEY) || normalizeText(process.env.OIDC_ISSUER_URL) || 'oidc',
-  idTokenHmacSecret: String(process.env.OIDC_ID_TOKEN_HS_SECRET || process.env.OIDC_CLIENT_SECRET || ''),
-  emailVerifiedPath: normalizeText(process.env.OIDC_USERINFO_EMAIL_VERIFIED_PATH) || 'email_verified'
-};
-
-function parseOidcProviders() {
-  const raw = normalizeText(process.env.OIDC_PROVIDERS_JSON);
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return parsed;
-  } catch (error) {
-    console.error('Invalid OIDC_PROVIDERS_JSON:', error.message);
-    return {};
-  }
+if (![ACCESS_TOKEN_TTL_MS, REFRESH_TOKEN_TTL_MS, EMAIL_CODE_TTL_MS, SESSION_ABSOLUTE_TTL_MS].every(value => Number.isFinite(value) && value >= 1000)
+    || !Number.isInteger(EMAIL_CODE_MAX_ATTEMPTS) || EMAIL_CODE_MAX_ATTEMPTS < 1 || EMAIL_CODE_MAX_ATTEMPTS > 10) {
+  throw new Error('Invalid token/session/email expiry or email verification attempt limit');
 }
 
-let OIDC_PROVIDERS = parseOidcProviders();
+const OIDC_CONFIG = {
+  enabled: false, providerName: 'OIDC', providerKey: '', clientId: '', clientSecret: '',
+  issuerUrl: '', discoveryUrl: '', authorizeUrl: '', tokenUrl: '', userinfoUrl: '', jwksUrl: '',
+  scopes: ['openid', 'profile', 'email'], tokenAuthMethod: 'client_secret_basic',
+  clockTolerance: 60, allowedAlgorithms: ['RS256', 'ES256'], pkceEnabled: true,
+  validateIdToken: true, requireEmailVerified: true,
+  userinfoEmailPath: 'email', userinfoIdPath: 'sub', userinfoUsernamePath: 'preferred_username',
+  userinfoSecondaryIdPath: '', userinfoMethod: 'GET', userinfoTokenIn: 'header',
+  emailVerifiedPath: 'email_verified', frontendCallbackPath: '/profile'
+};
+
+// 提供方类型：通用 OIDC，以及需要专用协议的华为账号一键登录。
+const PROVIDER_TYPE_OIDC = 'oidc';
+const PROVIDER_TYPE_HUAWEI = 'huawei_quicklogin';
+const PROVIDER_TYPES = new Set([PROVIDER_TYPE_OIDC, PROVIDER_TYPE_HUAWEI]);
+const USERINFO_METHODS = new Set(['GET', 'POST']);
+const USERINFO_TOKEN_IN = new Set(['header', 'body_form']);
+let OIDC_PROVIDERS = Object.create(null);
 
 function oidcSecretKey() {
   return crypto.createHash('sha256').update(`${JWT_SECRET}:oidc-provider-secret`).digest();
@@ -605,12 +576,19 @@ function decryptOidcSecret(value) {
 }
 
 function oidcDatabaseRowToConfig(row) {
+  let clientSecret = '';
+  let credentialError = false;
+  try { clientSecret = decryptOidcSecret(row.client_secret); } catch { credentialError = true; }
+  const algorithms = toStringArray(row.allowed_algorithms || '').flatMap(item => item.split(/\s+/)).filter(Boolean);
   return {
     providerKey: row.provider_key,
     providerName: row.provider_name,
+    providerType: PROVIDER_TYPES.has(row.provider_type) ? row.provider_type : PROVIDER_TYPE_OIDC,
     enabled: Boolean(row.enabled),
     clientId: row.client_id,
-    clientSecret: decryptOidcSecret(row.client_secret),
+    huaweiUnionScope: row.huawei_union_scope || '',
+    clientSecret,
+    credentialError,
     issuerUrl: row.issuer_url || '',
     discoveryUrl: row.discovery_url || '',
     authorizeUrl: row.authorize_url || '',
@@ -619,17 +597,20 @@ function oidcDatabaseRowToConfig(row) {
     jwksUrl: row.jwks_url || '',
     scopes: parseOidcScopes(row.scopes || '', Boolean(row.validate_id_token)),
     tokenAuthMethod: row.token_auth_method || 'client_secret_basic',
-    clockTolerance: Number(row.clock_tolerance) || 60,
-    allowedAlgorithms: toStringArray(row.allowed_algorithms || '').flatMap(item => item.split(/\s+/)).filter(Boolean),
+    clockTolerance: Number.isFinite(Number(row.clock_tolerance)) ? Math.min(120, Math.max(0, Number(row.clock_tolerance))) : 60,
+    allowedAlgorithms: algorithms.length ? algorithms : ['RS256', 'ES256'],
     pkceEnabled: Boolean(row.pkce_enabled),
     validateIdToken: Boolean(row.validate_id_token),
     requireEmailVerified: Boolean(row.require_email_verified),
     userinfoEmailPath: row.userinfo_email_path || 'email',
     emailVerifiedPath: row.email_verified_path || 'email_verified',
     userinfoIdPath: row.userinfo_id_path || 'sub',
+    userinfoSecondaryIdPath: row.userinfo_secondary_id_path || '',
     userinfoUsernamePath: row.userinfo_username_path || 'preferred_username',
+    userinfoMethod: String(row.userinfo_method || 'GET').toUpperCase() === 'POST' ? 'POST' : 'GET',
+    userinfoTokenIn: String(row.userinfo_token_in || 'header').toLowerCase() === 'body_form' ? 'body_form' : 'header',
     frontendCallbackPath: row.frontend_callback_path || '/oauth2/success',
-    idTokenHmacSecret: decryptOidcSecret(row.client_secret)
+    idTokenHmacSecret: clientSecret
   };
 }
 
@@ -637,34 +618,14 @@ async function refreshOidcProvidersFromDatabase() {
   if (!OidcProvider) return;
   const rows = await OidcProvider.findAll();
   oidcStorageSource = 'database';
-  const providers = {};
+  const providers = Object.create(null);
   for (const row of rows) {
     providers[row.provider_key] = oidcDatabaseRowToConfig(row);
   }
   OIDC_PROVIDERS = providers;
 }
 
-async function migrateOidcProvidersToDatabase() {
-  if (!OidcProvider) return;
-  const existing = await OidcProvider.findAll();
-  if (existing.length) {
-    await refreshOidcProvidersFromDatabase();
-    return;
-  }
 
-  const legacyProviders = Object.keys(OIDC_PROVIDERS).length
-    ? Object.values(OIDC_PROVIDERS)
-    : OIDC_CONFIG.clientId ? [OIDC_CONFIG] : [];
-  for (const config of legacyProviders) {
-    await OidcProvider.upsert({
-      ...config,
-      clientSecret: encryptOidcSecret(config.clientSecret),
-      scopes: config.scopes,
-      allowedAlgorithms: config.allowedAlgorithms
-    });
-  }
-  await refreshOidcProvidersFromDatabase();
-}
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null) return fallback;
@@ -679,15 +640,14 @@ function parseOidcScopes(value, requireOpenid = true) {
 
 function getOidcProviderConfig(providerKey) {
   const key = normalizeText(providerKey).toLowerCase();
-  if (!Object.keys(OIDC_PROVIDERS).length) return OIDC_CONFIG;
-  const provider = key && OIDC_PROVIDERS[key];
-  if (!key) return OIDC_CONFIG;
+  const keys = Object.keys(OIDC_PROVIDERS);
+  const provider = key ? OIDC_PROVIDERS[key] : keys.length === 1 ? OIDC_PROVIDERS[keys[0]] : null;
   if (!provider || typeof provider !== 'object') return null;
   const validateIdToken = parseBoolean(provider.validateIdToken, OIDC_CONFIG.validateIdToken);
   return {
     ...OIDC_CONFIG,
     ...provider,
-    providerKey: key,
+    providerKey: key || provider.providerKey,
     enabled: parseBoolean(provider.enabled, true),
     scopes: parseOidcScopes(provider.scopes || provider.scope || OIDC_CONFIG.scopes.join(' '), validateIdToken),
     allowedAlgorithms: toStringArray(provider.allowedAlgorithms || provider.allowedAlgs || OIDC_CONFIG.allowedAlgorithms.join(' ')).flatMap(item => item.split(/\s+/)).filter(Boolean),
@@ -699,20 +659,53 @@ function getOidcProviderConfig(providerKey) {
     userinfoEmailPath: normalizeText(provider.userinfoEmailPath) || OIDC_CONFIG.userinfoEmailPath,
     emailVerifiedPath: normalizeText(provider.emailVerifiedPath || provider.userinfoEmailVerifiedPath) || OIDC_CONFIG.emailVerifiedPath,
     userinfoIdPath: normalizeText(provider.userinfoIdPath) || OIDC_CONFIG.userinfoIdPath,
-    userinfoUsernamePath: normalizeText(provider.userinfoUsernamePath) || OIDC_CONFIG.userinfoUsernamePath
+    userinfoSecondaryIdPath: normalizeText(provider.userinfoSecondaryIdPath),
+    userinfoUsernamePath: normalizeText(provider.userinfoUsernamePath) || OIDC_CONFIG.userinfoUsernamePath,
+    userinfoMethod: USERINFO_METHODS.has(String(provider.userinfoMethod || '').toUpperCase())
+      ? String(provider.userinfoMethod).toUpperCase()
+      : OIDC_CONFIG.userinfoMethod,
+    userinfoTokenIn: USERINFO_TOKEN_IN.has(String(provider.userinfoTokenIn || '').toLowerCase())
+      ? String(provider.userinfoTokenIn).toLowerCase()
+      : OIDC_CONFIG.userinfoTokenIn
   };
+}
+
+function isOidcProvider(config) {
+  return (config?.providerType || PROVIDER_TYPE_OIDC) === PROVIDER_TYPE_OIDC;
 }
 
 function getConfiguredOidcProviders() {
   const keys = Object.keys(OIDC_PROVIDERS);
-  if (!keys.length) return isOidcEnabled(OIDC_CONFIG) ? [OIDC_CONFIG] : [];
-  return keys.map(getOidcProviderConfig).filter(isOidcEnabled);
+  if (!keys.length) return [];
+  return keys.map(getOidcProviderConfig).filter(config => isOidcProvider(config) && isOidcEnabled(config));
+}
+
+// 华为一键登录不是 OIDC：只需要凭据和换码地址，不参与通用 OIDC 发现流程。
+function isHuaweiEnabled(config) {
+  return Boolean(config && config.enabled !== false && config.clientId && config.clientSecret
+    && config.providerType === PROVIDER_TYPE_HUAWEI);
+}
+
+function getConfiguredHuaweiProviders() {
+  return Object.keys(OIDC_PROVIDERS)
+    .map(getOidcProviderConfig)
+    .filter(isHuaweiEnabled);
+}
+
+function getHuaweiProviderConfig(providerKey) {
+  const config = getOidcProviderConfig(providerKey);
+  if (!config || config.providerType !== PROVIDER_TYPE_HUAWEI) return null;
+  return config;
+}
+
+function huaweiQuickLoginEndpoint(config) {
+  return normalizeText(config?.tokenUrl) || huawei.HUAWEI_QUICK_LOGIN_URL;
 }
 
 const OIDC_STATE_MAX_AGE = 10 * 60 * 1000;
 
 function isOidcEnabled(config = OIDC_CONFIG) {
-  return Boolean(config.enabled !== false && config.clientId && config.clientSecret &&
+  return Boolean(config && config.enabled !== false && config.clientId && config.clientSecret &&
     (config.issuerUrl || config.discoveryUrl || config.authorizeUrl) &&
     (config.tokenUrl || config.discoveryUrl || config.issuerUrl) &&
     (!config.validateIdToken || config.issuerUrl || config.discoveryUrl));
@@ -720,8 +713,9 @@ function isOidcEnabled(config = OIDC_CONFIG) {
 
 function isHttpUrl(value) {
   try {
-    const protocol = new URL(value).protocol;
-    return protocol === 'https:' || protocol === 'http:';
+    const url = new URL(value);
+    return !url.username && !url.password && !url.hash
+      && (url.protocol === 'https:' || (!RUNTIME.production && url.protocol === 'http:'));
   } catch (error) {
     return false;
   }
@@ -734,23 +728,34 @@ function oidcDiscoveryUrl(config = OIDC_CONFIG) {
 }
 
 async function fetchJson(url, options = {}) {
-  if (!isHttpUrl(url)) throw new Error(`Invalid OIDC endpoint URL: ${url || '(empty)'}`);
+  if (!isHttpUrl(url)) throw new Error('Invalid OIDC endpoint URL');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const response = await fetch(url, {
       ...options,
+      redirect: 'error',
       signal: controller.signal,
       headers: { Accept: 'application/json', ...(options.headers || {}) }
     });
-    const text = await response.text();
+    const chunks = [];
+    let bytes = 0;
+    for await (const chunk of response.body) {
+      bytes += chunk.length;
+      if (bytes > 1024 * 1024) {
+        controller.abort();
+        throw new Error('OIDC response exceeds the maximum size');
+      }
+      chunks.push(chunk);
+    }
+    const text = Buffer.concat(chunks).toString('utf8');
     let payload;
     try {
       payload = text ? JSON.parse(text) : {};
     } catch (error) {
       throw new Error(`OIDC endpoint returned invalid JSON (${response.status})`);
     }
-    if (!response.ok) throw new Error(payload.error_description || payload.error || `OIDC endpoint returned HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`OIDC endpoint returned HTTP ${response.status}`);
     return payload;
   } finally {
     clearTimeout(timeout);
@@ -762,6 +767,9 @@ async function resolveOidcEndpoints(config = OIDC_CONFIG) {
   const needsDiscovery = !config.authorizeUrl || !config.tokenUrl ||
     (!config.userinfoUrl && !config.jwksUrl);
   const discovery = discoveryAddress && needsDiscovery ? await fetchJson(discoveryAddress) : {};
+  if (config.issuerUrl && discovery.issuer && config.issuerUrl !== discovery.issuer) {
+    throw new Error('OIDC discovery issuer does not match the configured issuer');
+  }
   const endpoints = {
     issuer: config.issuerUrl || normalizeText(discovery.issuer),
     authorizeUrl: config.authorizeUrl || normalizeText(discovery.authorization_endpoint),
@@ -796,7 +804,8 @@ function decodeOidcState(value) {
 }
 
 function isSafeFrontendPath(value) {
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\');
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u0020\u007f]/.test(value)) return false;
+  try { return new URL(value, PUBLIC_BASE_URL).origin === PUBLIC_BASE_URL; } catch { return false; }
 }
 
 function getOidcReturnPath(value) {
@@ -830,6 +839,12 @@ function claimText(source, pathValue) {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function claimIdentifier(source, pathValue) {
+  const value = getClaimByPath(source, pathValue);
+  const id = typeof value === 'string' ? value : Number.isSafeInteger(value) ? String(value) : '';
+  return id && id === id.trim() && id.length <= 512 && id.isWellFormed() ? id : '';
+}
+
 function claimBoolean(source, pathValue) {
   const value = getClaimByPath(source, pathValue);
   if (typeof value === 'boolean') return value;
@@ -847,7 +862,10 @@ async function verifyOidcIdToken(idToken, endpoints, nonce, config = OIDC_CONFIG
   const algorithm = normalizeText(decoded.header.alg);
   const allowedAlgorithms = config.allowedAlgorithms.length ? config.allowedAlgorithms : ['RS256'];
   if (!allowedAlgorithms.includes(algorithm)) throw new Error(`OIDC ID Token algorithm ${algorithm} is not allowed`);
-  if (!config.validateIdToken) return decoded.payload;
+  if (!config.validateIdToken) throw new Error('Unverified ID Tokens cannot be used as identity claims');
+  if (!['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512', 'HS256', 'HS384', 'HS512'].includes(algorithm)) {
+    throw new Error('Unsupported OIDC signature algorithm');
+  }
   const verifyOptions = {
     algorithms: allowedAlgorithms,
     audience: config.clientId,
@@ -859,13 +877,21 @@ async function verifyOidcIdToken(idToken, endpoints, nonce, config = OIDC_CONFIG
     if (!endpoints.jwksUrl) throw new Error('OIDC JWKS URL is required for asymmetric ID Token validation');
     const jwks = await fetchJson(endpoints.jwksUrl);
     const keys = Array.isArray(jwks.keys) ? jwks.keys : [];
-    const jwk = keys.find(key => key.kid === decoded.header.kid && (!key.alg || key.alg === algorithm)) || (keys.length === 1 ? keys[0] : null);
+    const candidates = keys.filter(key => (!key.use || key.use === 'sig') && (!key.alg || key.alg === algorithm)
+      && (!key.key_ops || key.key_ops.includes('verify')) && (!decoded.header.kid || key.kid === decoded.header.kid));
+    const jwk = candidates.length === 1 ? candidates[0] : null;
     if (!jwk) throw new Error('No matching OIDC signing key was found');
     verificationKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
   } else if (!verificationKey) {
     throw new Error('OIDC HMAC validation secret is not configured');
   }
   const verified = jwt.verify(idToken, verificationKey, verifyOptions);
+  if (!Number.isInteger(verified.exp) || !Number.isInteger(verified.iat) || typeof verified.sub !== 'string' || !claimIdentifier(verified, 'sub')
+      || verified.iat > Date.now() / 1000 + verifyOptions.clockTolerance
+      || (Array.isArray(verified.aud) && verified.aud.length > 1 && verified.azp !== config.clientId)
+      || (verified.azp && verified.azp !== config.clientId)) {
+    throw new Error('OIDC ID Token is missing required claims or has an invalid authorized party');
+  }
   if (nonce && verified.nonce !== nonce) throw new Error('OIDC nonce mismatch');
   return verified;
 }
@@ -876,7 +902,7 @@ function appendQuery(pathname, params) {
 }
 
 function oidcErrorRedirect(state, message) {
-  return appendQuery(getOidcReturnPath(state?.returnTo), {
+  return appendQuery(state?.linkUserId || state?.mergeUserId ? '/profile' : '/oauth2/authorize', {
     oidc_error: 'login_failed',
     oidc_error_description: String(message || 'OIDC login failed').slice(0, 300)
   });
@@ -897,26 +923,69 @@ async function exchangeOidcCode(code, codeVerifier, endpoints, redirectUri, conf
   return fetchJson(endpoints.tokenUrl, { method: 'POST', headers, body: body.toString() });
 }
 
+// 华为等提供方的 userinfo 不接受 Bearer 头，需要 POST + form 传递 access_token。
+// 请求方式必须可配，否则「配置看起来正确、调用必然失败」。
+async function fetchOidcUserinfo(config, endpoints, accessToken) {
+  if (!endpoints.userinfoUrl || !accessToken) return {};
+  const method = config.userinfoMethod === 'POST' ? 'POST' : 'GET';
+  const formBody = new URLSearchParams();
+
+  if (config.userinfoTokenIn === 'body_form') {
+    formBody.set('access_token', accessToken);
+    if (method === 'GET') {
+      const separator = endpoints.userinfoUrl.includes('?') ? '&' : '?';
+      return fetchJson(`${endpoints.userinfoUrl}${separator}${formBody.toString()}`);
+    }
+    return fetchJson(endpoints.userinfoUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString()
+    });
+  }
+
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  if (method === 'POST') {
+    return fetchJson(endpoints.userinfoUrl, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString()
+    });
+  }
+  return fetchJson(endpoints.userinfoUrl, { headers });
+}
+
 async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFIG) {
   const provider = normalizeText(config.providerKey).toLowerCase();
   const providerUserId = normalizeText(claims.id);
+  const providerSecondaryId = normalizeText(claims.secondaryId);
   const email = normalizeEmail(claims.email);
   if (!providerUserId) throw new Error('OIDC account did not provide a subject identifier');
 
-  const existingIdentity = await ExternalIdentity.findByProviderUserId(provider, providerUserId);
+  // 主标识（华为 unionID）与第二标识（华为 openID）都要参与匹配，否则换配置会分裂账号。
+  const existingIdentity = await ExternalIdentity.findByProviderSubject(provider, providerUserId, providerSecondaryId);
   if (existingIdentity) {
     const linkedUser = await User.findById(existingIdentity.user_id);
     if (!linkedUser) throw new Error('The linked local user no longer exists');
     if (linkUserId && existingIdentity.user_id !== linkUserId) {
       throw new Error('This third-party account is already linked to another user');
     }
-    await ExternalIdentity.update(existingIdentity.id, {
+    const priorProfile = ExternalIdentity.serialize(existingIdentity).profile;
+    const changes = {
       providerUsername: claims.username,
       displayName: claims.name,
       avatar: claims.picture,
       email: claims.email,
-      profile: claims.profile
-    });
+      profile: {
+        ...claims.profile,
+        _vaultsso: priorProfile._vaultsso
+          || { issuer: priorProfile.iss || '', clientId: priorProfile.aud || '' }
+      }
+    };
+    // 第二标识缺失时补写，保证后续换应用/换配置仍能命中同一个账号。
+    if (providerSecondaryId && !existingIdentity.provider_secondary_id) {
+      changes.providerSecondaryId = providerSecondaryId;
+    }
+    await ExternalIdentity.update(existingIdentity.id, changes);
     return linkedUser;
   }
 
@@ -927,6 +996,7 @@ async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFI
       userId: linkedUser.id,
       provider,
       providerUserId,
+      providerSecondaryId,
       providerUsername: claims.username,
       displayName: claims.name,
       avatar: claims.picture,
@@ -938,28 +1008,14 @@ async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFI
 
   const emailVerified = Boolean(claims.emailVerified);
   if (config.requireEmailVerified && !emailVerified) throw new Error('OIDC account email is not verified');
-  let existingUser = email && isValidEmail(email) && emailVerified ? await User.findByEmail(email) : null;
-  if (!existingUser && email && isValidEmail(email) && !emailVerified) {
-    const emailOwner = await User.findByEmail(email);
-    if (emailOwner) {
-      throw new Error('OIDC email is not verified; sign in locally before linking this account');
-    }
-  }
+  const existingUser = email && isValidEmail(email) ? await User.findByUsername(email) : null;
   if (existingUser) {
-    await ExternalIdentity.create({
-      userId: existingUser.id,
-      provider,
-      providerUserId,
-      providerUsername: claims.username,
-      displayName: claims.name,
-      avatar: claims.picture,
-      email,
-      profile: claims.profile
-    });
-    return existingUser;
+    throw new Error('Sign in to the existing local account and explicitly link this identity from your profile');
   }
 
-  const localEmail = email && isValidEmail(email)
+  if (!await isSettingEnabled('registration_enabled')) throw new Error('Registration is disabled');
+
+  const localEmail = email && isValidEmail(email) && emailVerified
     ? email
     : `${provider}-${crypto.createHash('sha256').update(providerUserId).digest('hex').slice(0, 24)}@users.invalid`;
   const usernameBase = (claims.username || (email ? email.split('@')[0] : '') || 'oidc-user').slice(0, 220);
@@ -969,11 +1025,12 @@ async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFI
     suffix += 1;
     username = `${usernameBase}-${suffix}`;
   }
-  const user = await User.create({ username, email: localEmail, password: crypto.randomBytes(32).toString('base64url'), name: claims.name || claims.username || email || username, avatar: claims.picture || '', emailVerified });
+  const user = await User.create({ username, email: localEmail, password: '', name: claims.name || claims.username || email || username, avatar: claims.picture || '', emailVerified });
   await ExternalIdentity.create({
     userId: user.id,
     provider,
     providerUserId,
+    providerSecondaryId,
     providerUsername: claims.username,
     displayName: claims.name,
     avatar: claims.picture,
@@ -999,6 +1056,12 @@ function serializeUser(user) {
     description: user.description || '',
     credits: Number(user.credits ?? 0) || 0,
     lastLoginIp: user.last_login_ip || user.lastLoginIp || '',
+    phoneCountryCode: user.phone_country_code || '',
+    phoneNationalNumber: user.phone_number || '',
+    phoneE164: user.phone_e164 || '',
+    phoneMasked: phoneNumbers.maskPhone(user.phone_country_code, user.phone_number),
+    phoneVerified: Boolean(user.phone_verified),
+    phoneVerifiedAt: user.phone_verified_at || null,
     totpEnabled: Boolean(user.totp_enabled),
     captchaRequired: Boolean(user.captcha_required),
     createdAt: user.createdAt || user.created_at || null,
@@ -1006,78 +1069,234 @@ function serializeUser(user) {
   };
 }
 
-function validateToken(token) {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
-    return null;
+function scopedUserClaims(user, scopes) {
+  const claims = { sub: user.id };
+  if (scopes.includes('profile')) {
+    Object.assign(claims, {
+      name: user.name, preferred_username: user.username, username: user.username, picture: user.avatar,
+      description: user.description || '',
+      updated_at: Math.floor(new Date(user.updated_at || Date.now()).getTime() / 1000)
+    });
   }
-}
-
-function createSessionToken(user, sid) {
-  return jwt.sign(
-    { sub: user.id, email: user.email, role: normalizeText(user.role).toLowerCase() || 'user', sid },
-    JWT_SECRET,
-    { expiresIn: TOKEN_EXPIRY }
-  );
-}
-
-function sessionCookieOptions() {
-  const options = {
-    httpOnly: true,
-    secure: String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true',
-    sameSite: 'lax',
-    maxAge: SESSION_MAX_AGE
-  };
-  if (COOKIE_DOMAIN) {
-    options.domain = COOKIE_DOMAIN;
+  if (scopes.includes('email')) {
+    claims.email = user.email;
+    claims.email_verified = Boolean(user.email_verified);
   }
-  return options;
+  // 手机号属于个人信息，只有显式申请 phone scope 才下发，且一律使用 E.164。
+  if (scopes.includes('phone') && user.phone_e164) {
+    claims.phone_number = user.phone_e164;
+    claims.phone_number_verified = Boolean(user.phone_verified);
+  }
+  // 角色属于非标准声明，只在客户端显式请求 roles scope 时下发，
+  // 避免任何拿到 profile 的客户端都能看到用户的权限级别。
+  if (scopes.includes('roles')) {
+    const role = normalizeText(user.role).toLowerCase() || USER_ROLE_USER;
+    claims.role = role;
+    claims.isAdmin = role === USER_ROLE_ADMIN;
+  }
+  return claims;
 }
 
-async function setSessionCookie(req, res, user) {
-  const sid = crypto.randomUUID();
-  const token = createSessionToken(user, sid);
-  await Session.create({
-    userId: user.id,
-    token: sid,
-    ip: getClientIp(req),
-    userAgent: req.headers['user-agent'] || '',
-    expiresAt: Date.now() + SESSION_MAX_AGE
-  });
-  res.cookie('session', token, sessionCookieOptions());
-}
+function validateToken(token, expectedType = 'session') {
+    try {
+      const decoded = expectedType === 'access'
+        ? signingKeys.verify(token, PUBLIC_BASE_URL)
+        : jwt.verify(token, JWT_SECRET, {
+          algorithms: ['HS256'], issuer: PUBLIC_BASE_URL,
+          ...(['session', 'oidc_pending'].includes(expectedType) ? { audience: PUBLIC_BASE_URL } : {})
+        });
+      if (decoded.type !== expectedType || typeof decoded.sub !== 'string' || !Number.isInteger(decoded.exp)) return null;
+      return decoded;
+    } catch { return null; }
+  }
+
+function createSessionToken(user, sid, expiresAt) {
+    return jwt.sign({
+      sub: user.id, sid, type: 'session', iss: PUBLIC_BASE_URL, aud: PUBLIC_BASE_URL,
+      exp: Math.floor(expiresAt / 1000)
+    }, JWT_SECRET, { algorithm: 'HS256' });
+  }
+
+function sessionCookieOptions(maxAge = SESSION_MAX_AGE) {
+    const options = { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' };
+    if (maxAge !== null) options.maxAge = maxAge;
+    if (COOKIE_DOMAIN) options.domain = COOKIE_DOMAIN;
+    return options;
+  }
+
+async function setSessionCookie(req, res, user, database = pool) {
+    const sid = crypto.randomUUID();
+    const maxAge = Math.min(SESSION_MAX_AGE, SESSION_ABSOLUTE_TTL_MS);
+    const expiresAt = Date.now() + maxAge;
+    req.authSession = await new SessionModel(database).create({
+      userId: user.id, token: sid, ip: getClientIp(req),
+      userAgent: req.headers['user-agent'] || '', expiresAt
+    });
+    req.authenticatedUser = user;
+    res.cookie('session', createSessionToken(user, sid, expiresAt), sessionCookieOptions(maxAge));
+  }
 
 async function getAuthenticatedUser(req, res = null) {
-  const sessionToken = req.cookies.session;
-  if (!sessionToken) {
-    return null;
+    if (req.authenticatedUser) return req.authenticatedUser;
+    const session = validateToken(req.cookies.session);
+    if (!session || !session.sid) return null;
+    const row = await Session.findActiveTokenByToken(session.sid);
+    if (!row || row.user_id !== session.sub) return null;
+    const absoluteExpiry = new Date(row.created_at).getTime() + SESSION_ABSOLUTE_TTL_MS;
+    if (!Number.isFinite(absoluteExpiry) || absoluteExpiry <= Date.now()) return null;
+    const user = await User.findById(row.user_id);
+    if (!user || isUserBanned(user)) return null;
+    req.authSession = row;
+    req.authenticatedUser = user;
+    if (res && session.iat * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
+      const expiresAt = Math.min(Date.now() + SESSION_MAX_AGE, absoluteExpiry);
+      if (await Session.extend(row.id, expiresAt)) {
+        res.cookie('session', createSessionToken(user, row.token, expiresAt), sessionCookieOptions(expiresAt - Date.now()));
+      } else {
+        req.authenticatedUser = null;
+        return null;
+      }
+    }
+    return user;
   }
 
-  const session = validateToken(sessionToken);
-  if (!session || !session.sid) {
-    return null;
-  }
+async function verifyTotpLocked(user, code, authenticators, users) {
+    const rows = await authenticators.list(user.id);
+    for (const credential of rows.filter(row => row.activated_at)) {
+      let secret;
+      try { secret = totpCipher.decrypt(credential.secret); } catch { continue; }
+      const counter = matchingTotpCounter(secret, code);
+      if (counter !== null && await authenticators.consumeCounter(credential.id, counter)) return true;
+    }
+    if (!user.totp_secret) return false;
+    let secret;
+    try { secret = totpCipher.decrypt(user.totp_secret); } catch { return false; }
+    const counter = matchingTotpCounter(secret, code);
+    return counter !== null && await users.consumeTotpCounter(user.id, counter);
+}
 
-  // Server-side session check: revoking the row kills the cookie immediately.
-  const sessionRow = await Session.findActiveTokenByToken(session.sid);
-  if (!sessionRow) {
-    return null;
-  }
+async function verifyTotpOnce(user, code) {
+    const limit = await RateLimit.consume(`totp:${user.id}`, 10, 5 * 60 * 1000);
+    if (!limit.allowed) return false;
+    const valid = await Authenticator.withUser(user.id, async (current, authenticators, users) => {
+      if (!current || !current.totp_enabled || pendingLoginSecurityState(current) !== pendingLoginSecurityState(user)) return false;
+      return verifyTotpLocked(current, code, authenticators, users);
+    });
+    if (valid) await RateLimit.clear(`totp:${user.id}`);
+    return valid;
+}
 
-  const user = await User.findById(session.sub);
-  if (!user || isUserBanned(user)) {
-    return null;
-  }
+const OIDC_PENDING_COOKIE = 'oidc_pending';
 
-  // 滑动续期：会话签发时长超过阈值一半时重发 session cookie，避免活跃用户被登出
-  // （此前该分支写在 return 之后，永远不会执行，导致 SSO 会话到期即被强制重新登录）
-  if (res && Number(session.iat) * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
-    await Session.revoke(session.sid).catch(() => {});
-    await setSessionCookie(req, res, user);
-  }
+function pendingLoginSecurityState(user) {
+  return crypto.createHmac('sha256', JWT_SECRET).update(JSON.stringify([
+    user.password, user.email, user.role, user.banned, user.phone_e164,
+    user.phone_country_code, user.phone_number, user.totp_enabled, user.totp_secret, Number(user.totp_revision || 0)
+  ])).digest('hex');
+}
 
-  return user;
+async function beginOidcSecondFactor(res, user, returnTo, factor, providerKey, source = 'external', extraContext = {}) {
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const challenge = crypto.randomBytes(32).toString('base64url');
+  if (factor === 'email') {
+    await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
+  }
+  const record = await EmailVerificationCode.create({
+    email: user.email, userId: user.id, purpose: source === 'password' ? 'password_mfa' : 'oidc_mfa',
+    codeHash: crypto.createHash('sha256').update(challenge).digest('hex'), expiresAt,
+    pendingContext: { returnTo: getOidcReturnPath(returnTo), ...extraContext }
+  });
+  const pending = jwt.sign({
+    sub: user.id, jti: record.id, challenge, factor, provider: providerKey, source,
+    securityState: pendingLoginSecurityState(user),
+    type: 'oidc_pending', iss: PUBLIC_BASE_URL, aud: PUBLIC_BASE_URL, exp: Math.floor(expiresAt.getTime() / 1000)
+  }, JWT_SECRET, { algorithm: 'HS256' });
+  res.cookie(OIDC_PENDING_COOKIE, pending, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/', maxAge: 5 * 60 * 1000 });
+  // 原生 App 未必保留 Cookie，因此同时返回同一个凭据，供 X-Oidc-Pending 头回传。
+  return pending;
+}
+
+const OIDC_PENDING_HEADER = 'x-oidc-pending';
+
+async function getPendingOidcLogin(req) {
+  const supplied = normalizeText(req.get(OIDC_PENDING_HEADER)) || normalizeText(req.body?.pending_token);
+  const pending = validateToken(supplied || req.cookies[OIDC_PENDING_COOKIE], 'oidc_pending');
+  if (!pending) return null;
+  if (pending.source !== 'password') {
+    await refreshOidcProvidersFromDatabase();
+    // External pending logins may originate from either OIDC or Huawei.
+    const providerConfig = getOidcProviderConfig(pending.provider);
+    if (!isOidcEnabled(providerConfig) && !isHuaweiEnabled(providerConfig)) return null;
+  }
+  const record = await EmailVerificationCode.findById(pending.jti);
+  const purpose = pending.source === 'password' ? 'password_mfa' : 'oidc_mfa';
+  if (!record || record.purpose !== purpose || record.user_id !== pending.sub || record.consumed_at
+      || new Date(record.expires_at) <= new Date()
+      || record.code_hash !== crypto.createHash('sha256').update(pending.challenge).digest('hex')) return null;
+  let context;
+  try {
+    context = typeof record.pending_context === 'string' ? JSON.parse(record.pending_context) : record.pending_context;
+  } catch { return null; }
+  if (!context || !isSafeFrontendPath(context.returnTo)) return null;
+  if (pending.source === 'huawei' && (!context.huawei || typeof context.huawei !== 'object')) return null;
+  pending.returnTo = context.returnTo;
+  const user = await User.findById(pending.sub);
+  if (!user || isUserBanned(user) || pending.securityState !== pendingLoginSecurityState(user)) return null;
+  return { pending, record, user, context };
+}
+
+async function beginPasswordSecondFactor(req, res, user, factor) {
+  const validation = await validateAuthorizationRequest(req.body);
+  if (validation.body) return res.status(validation.status).json(validation.body);
+  const continuation = new URLSearchParams();
+  if (validation.value) {
+    for (const key of ['client_id', 'redirect_uri', 'scope', 'state', 'nonce', 'response_type', 'code_challenge', 'code_challenge_method']) {
+      if (req.body[key] !== undefined) continuation.set(key, normalizeText(req.body[key]));
+    }
+  }
+  await beginOidcSecondFactor(res, user, validation.value ? `/oauth2/authorize?${continuation}` : '/profile', factor, '', 'password');
+  grantCaptchaContinuation(req, res, user.id);
+  await recordLoginLog({ username: user.username, userId: user.id, req, result: factor === 'totp' ? 'totp_required' : 'email_code_required' });
+  return res.json({
+    mfa_url: '/oauth2/mfa', require_totp: factor === 'totp', require_email_code: factor === 'email',
+    email_masked: factor === 'email' ? maskEmail(user.email) : undefined,
+    message_key: factor === 'totp' ? 'auth.totp.required' : 'auth.login_code.sent'
+  });
+}
+
+async function completePasswordLogin(req, res, user, database = pool) {
+  const users = new UserModel(database);
+  const ip = getClientIp(req);
+  await new RateLimitModel(database).clear(`login:${user.id}`);
+  res.clearCookie('login_step', { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'strict', path: '/' });
+  await detectAndFlagAnomalousLogin(user, req, 'success', database);
+  if (user.captcha_required) await users.update(user.id, { captchaRequired: false });
+  const previousIp = normalizeText(user.last_login_ip || user.lastLoginIp);
+  if (previousIp && previousIp !== ip && user.email) {
+    sendLoginAlertEmail({ to: user.email, ip, userAgent: req.headers['user-agent'] }).catch(() => {});
+  }
+  await users.update(user.id, { lastLoginIp: ip });
+  await recordLoginLog({ username: user.username, userId: user.id, req, result: 'success', database });
+  await setSessionCookie(req, res, user, database);
+}
+
+async function finishAccountLogin(user, work) {
+  return Authenticator.withUser(user.id, async (current, authenticators, users, connection) => {
+    if (!current || isUserBanned(current) || pendingLoginSecurityState(current) !== pendingLoginSecurityState(user)) {
+      return authenticatorError(401, 'auth.mfa.expired', '账户安全状态已改变，请重新登录');
+    }
+    return work(current, connection);
+  });
+}
+
+async function rejectLockedLogin(req, res, username, attempt) {
+  const minutes = Math.max(1, Math.ceil(attempt.retryAfter / 60));
+  res.setHeader('Retry-After', String(attempt.retryAfter));
+  await recordLoginLog({ username, req, result: 'locked' });
+  return res.status(429).json({
+    error: 'too_many_attempts', error_key: 'auth.locked',
+    error_description: `登录失败次数过多，请 ${minutes} 分钟后再试`
+  });
 }
 
 function isAdminUser(user) {
@@ -1130,39 +1349,20 @@ function findUnsupportedScopes(requestedScopes, allowedScopes) {
   return requestedScopes.filter(scope => !allowedSet.has(scope));
 }
 
-function isValidPkceChallenge(value) {
-  return CODE_CHALLENGE_PATTERN.test(normalizeText(value));
-}
-
-function normalizePkceMethod(value) {
-  const method = normalizeText(value) || 'plain';
-  return method.toUpperCase() === 'S256' ? 'S256' : method.toLowerCase();
-}
-
 function verifyPkceChallenge(authCodeData, codeVerifier) {
-  const codeChallenge = normalizeText(authCodeData.code_challenge);
-  if (!codeChallenge) {
-    return true;
+  if (authCodeData.code_challenge === null || authCodeData.code_challenge === undefined) {
+    return authCodeData.code_challenge_method === null || authCodeData.code_challenge_method === undefined;
   }
+  const codeChallenge = normalizeText(authCodeData.code_challenge);
+  if (authCodeData.code_challenge_method !== 'S256' || !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) return false;
 
   const verifier = normalizeText(codeVerifier);
   if (!CODE_CHALLENGE_PATTERN.test(verifier)) {
     return false;
   }
 
-  const method = normalizePkceMethod(authCodeData.code_challenge_method);
-  if (method === 'S256') {
-    const digest = crypto.createHash('sha256').update(verifier).digest('base64url');
-    if (digest.length !== codeChallenge.length) {
-      return false;
-    }
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(codeChallenge));
-  }
-
-  if (verifier.length !== codeChallenge.length) {
-    return false;
-  }
-  return crypto.timingSafeEqual(Buffer.from(verifier), Buffer.from(codeChallenge));
+  const digest = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return digest.length === codeChallenge.length && crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(codeChallenge));
 }
 
 function buildAuthorizationServerMetadata(baseUrl) {
@@ -1174,12 +1374,12 @@ function buildAuthorizationServerMetadata(baseUrl) {
     jwks_uri: `${baseUrl}/.well-known/jwks.json`,
     response_types_supported: ['code'],
     subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['HS256'],
-    scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+    id_token_signing_alg_values_supported: ['RS256'],
+    scopes_supported: ['openid', 'profile', 'email', 'phone', 'roles', 'offline_access'],
     token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
     grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials'],
-    code_challenge_methods_supported: ['plain', 'S256'],
-    claims_supported: ['sub', 'name', 'preferred_username', 'username', 'email', 'email_verified', 'picture', 'updated_at'],
+    code_challenge_methods_supported: ['S256'],
+    claims_supported: ['sub', 'name', 'preferred_username', 'username', 'email', 'email_verified', 'picture', 'phone_number', 'phone_number_verified', 'updated_at'],
     introspection_endpoint: `${baseUrl}/oauth2/introspect`,
     revocation_endpoint: `${baseUrl}/oauth2/revoke`,
     service_documentation: `${baseUrl}/api-docs.html`,
@@ -1189,20 +1389,23 @@ function buildAuthorizationServerMetadata(baseUrl) {
 
 function parseClientCredentials(req) {
   const authHeader = normalizeText(req.headers.authorization);
-  if (authHeader.toLowerCase().startsWith('basic ')) {
+  if (authHeader) {
+    const invalid = { clientId: '', clientSecret: '', method: 'client_secret_basic' };
+    if (!/^Basic [A-Za-z0-9+/]+={0,2}$/i.test(authHeader) || req.body.client_secret !== undefined) return invalid;
     try {
       const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
       const separator = decoded.indexOf(':');
       if (separator >= 0) {
         return {
-          clientId: decoded.slice(0, separator),
-          clientSecret: decoded.slice(separator + 1),
+          clientId: decodeURIComponent(decoded.slice(0, separator).replace(/\+/g, ' ')),
+          clientSecret: decodeURIComponent(decoded.slice(separator + 1).replace(/\+/g, ' ')),
           method: 'client_secret_basic'
         };
       }
     } catch (error) {
-      return { clientId: '', clientSecret: '', method: 'client_secret_basic' };
+      return invalid;
     }
+    return invalid;
   }
 
   return {
@@ -1214,7 +1417,7 @@ function parseClientCredentials(req) {
 
 async function authenticateClient(req, res) {
   const credentials = parseClientCredentials(req);
-  if (!credentials.clientId || !credentials.clientSecret) {
+  if (!credentials.clientId || !credentials.clientSecret || (RUNTIME.production && Buffer.byteLength(credentials.clientSecret) < 32)) {
     res.status(401).json({
       error: 'invalid_client',
       error_key: 'oauth.client.credentials.required',
@@ -1224,7 +1427,8 @@ async function authenticateClient(req, res) {
   }
 
   const client = await Client.findById(credentials.clientId);
-  if (!client || client.secret !== credentials.clientSecret) {
+  if (!client || client.id !== credentials.clientId || !await verifyClientSecret(credentials.clientSecret, client.secret)) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="oauth2"');
     res.status(401).json({
       error: 'invalid_client',
       error_key: 'oauth.client.credentials.invalid',
@@ -1297,7 +1501,17 @@ app.use(asyncHandler(async (req, res, next) => {
   next();
 }));
 
-app.use(express.static(PUBLIC_DIR));
+for (const [staticPath, pageName] of adminPagePaths) {
+  app.get(staticPath, asyncHandler(async (req, res) => {
+    const user = await requireAdminUser(req, res);
+    if (user) res.sendFile(pageFile(pageName));
+  }));
+}
+app.get('/i18n.js', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'js', 'shared', 'i18n.js')));
+app.get('/api-docs.html', (req, res) => res.sendFile(pageFile('docs')));
+app.use('/assets', express.static(path.join(PUBLIC_DIR, 'assets'), { dotfiles: 'deny', index: false }));
+app.use('/css', express.static(path.join(PUBLIC_DIR, 'css'), { dotfiles: 'deny', index: false }));
+app.use('/js', express.static(path.join(PUBLIC_DIR, 'js'), { dotfiles: 'deny', index: false }));
 
 function serializeClient(client) {
   return {
@@ -1305,6 +1519,7 @@ function serializeClient(client) {
     name: client.name,
     logoUrl: client.logo_url || '',
     isActive: Boolean(client.is_active),
+    requirePkce: client.requirePkce !== false,
     redirectUris: client.redirectUris,
     scopes: client.scopes,
     createdAt: client.created_at || null,
@@ -1330,6 +1545,12 @@ function toStringArray(value) {
 }
 
 function validateClientPayload(body, options = {}) {
+  if (body.isActive !== undefined && typeof body.isActive !== 'boolean') {
+    return { ok: false, status: 400, body: { error: 'invalid_request', error_description: 'isActive must be a boolean' } };
+  }
+  if (body.requirePkce !== undefined && typeof body.requirePkce !== 'boolean') {
+    return { ok: false, status: 400, body: { error: 'invalid_request', error_description: 'requirePkce must be a boolean' } };
+  }
   const requireSecret = options.requireSecret === true;
   const clientId = normalizeText(body.id);
   const name = normalizeText(body.name);
@@ -1338,6 +1559,7 @@ function validateClientPayload(body, options = {}) {
   const redirectUris = toStringArray(body.redirectUris);
   const scopes = toStringArray(body.scopes);
   const isActive = body.isActive !== undefined ? Boolean(body.isActive) : true;
+  const requirePkce = body.requirePkce !== undefined ? body.requirePkce : true;
 
   if (options.requireId !== false) {
     if (!clientId || !/^[a-zA-Z0-9][a-zA-Z0-9-_]{1,127}$/.test(clientId)) {
@@ -1377,6 +1599,13 @@ function validateClientPayload(body, options = {}) {
     };
   }
 
+  if (secret && (Buffer.byteLength(secret) < 32 || Buffer.byteLength(secret) > 256)) {
+    return { ok: false, status: 400, body: { error: 'invalid_request', error_description: 'Client secrets must contain 32-256 bytes' } };
+  }
+  if (name.length > 255 || redirectUris.length > 30 || scopes.length > 50) {
+    return { ok: false, status: 400, body: { error: 'invalid_request', error_description: 'Client configuration exceeds the supported limits' } };
+  }
+
   if (!redirectUris.length) {
     return {
       ok: false,
@@ -1391,7 +1620,12 @@ function validateClientPayload(body, options = {}) {
 
   for (const redirectUri of redirectUris) {
     try {
-      new URL(redirectUri);
+      const url = new URL(redirectUri);
+      const loopback = ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname);
+      if (url.username || url.password || url.hash || redirectUri.length > 2048
+          || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback && !RUNTIME.production))) {
+        throw new Error('Redirects must use HTTPS without credentials or fragments');
+      }
     } catch (error) {
       return {
         ok: false,
@@ -1419,7 +1653,8 @@ function validateClientPayload(body, options = {}) {
 
   if (logoUrl) {
     try {
-      new URL(logoUrl);
+      const url = new URL(logoUrl);
+      if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Invalid logo URL');
     } catch (error) {
       return {
         ok: false,
@@ -1442,15 +1677,16 @@ function validateClientPayload(body, options = {}) {
       redirectUris,
       scopes,
       logoUrl,
-      isActive
+      isActive,
+      requirePkce
     }
   };
 }
 
 async function findUserConflicts({ username, email, excludeUserId }) {
-  const users = await User.findAll();
   const normalizedUsername = normalizeText(username).toLowerCase();
   const normalizedEmail = normalizeEmail(email);
+  const users = await User.findPotentialConflicts(normalizedUsername, normalizedEmail);
 
   let usernameConflict = null;
   let emailConflict = null;
@@ -1460,11 +1696,11 @@ async function findUserConflicts({ username, email, excludeUserId }) {
       continue;
     }
 
-    if (!usernameConflict && normalizedUsername && user.username.toLowerCase() === normalizedUsername) {
+    if (!usernameConflict && normalizedUsername && [user.username.toLowerCase(), user.email.toLowerCase()].includes(normalizedUsername)) {
       usernameConflict = user;
     }
 
-    if (!emailConflict && normalizedEmail && user.email.toLowerCase() === normalizedEmail) {
+    if (!emailConflict && normalizedEmail && [user.email.toLowerCase(), user.username.toLowerCase()].includes(normalizedEmail)) {
       emailConflict = user;
     }
   }
@@ -1478,11 +1714,6 @@ function normalizeEmailPurpose(value) {
 }
 
 function generateEmailCode() {
-  const devCode = normalizeText(process.env.EMAIL_DEV_CODE);
-  if (process.env.NODE_ENV !== 'production' && /^\d{6}$/.test(devCode)) {
-    return devCode;
-  }
-
   return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 }
 
@@ -1502,9 +1733,16 @@ function getEmailCodeExpiryMinutes() {
 }
 
 async function issueEmailVerificationCode({ email, purpose, userId = null }) {
+  const cooldown = await RateLimit.consume(`email:${purpose}:${normalizeEmail(email)}`, 1, 60 * 1000);
+  if (!cooldown.allowed) {
+    const error = new Error('发送过于频繁，请 1 分钟后再试');
+    error.status = 429;
+    error.code = 'email_code.cooldown';
+    throw error;
+  }
   const code = generateEmailCode();
-  await EmailVerificationCode.deleteExpired();
-  await EmailVerificationCode.create({
+  await EmailVerificationCode.invalidate(email, purpose);
+  const record = await EmailVerificationCode.create({
     email,
     purpose,
     userId,
@@ -1512,15 +1750,18 @@ async function issueEmailVerificationCode({ email, purpose, userId = null }) {
     expiresAt: getEmailCodeExpiresAt()
   });
 
-  return sendVerificationEmail({
-    to: email,
-    code,
-    purpose,
-    expiresInMinutes: getEmailCodeExpiryMinutes()
-  });
+  try {
+    return await sendVerificationEmail({ to: email, code, purpose, expiresInMinutes: getEmailCodeExpiryMinutes() });
+  } catch (error) {
+    await EmailVerificationCode.consume(record.id);
+    const deliveryError = new Error('验证码邮件发送失败，请稍后再试或联系管理员');
+    deliveryError.status = 502;
+    deliveryError.code = 'email_delivery_failed';
+    throw deliveryError;
+  }
 }
 
-async function verifyEmailCode({ email, purpose, code }) {
+async function verifyEmailCode({ email, purpose, code, userId }) {
   const normalizedCode = normalizeText(code);
   if (!/^\d{6}$/.test(normalizedCode)) {
     return {
@@ -1532,7 +1773,7 @@ async function verifyEmailCode({ email, purpose, code }) {
   }
 
   const record = await EmailVerificationCode.findLatestActive(email, purpose);
-  if (!record) {
+  if (!record || (userId !== undefined && record.user_id !== userId)) {
     return {
       ok: false,
       status: 400,
@@ -1541,7 +1782,7 @@ async function verifyEmailCode({ email, purpose, code }) {
     };
   }
 
-  if (Number(record.attempts || 0) >= EMAIL_CODE_MAX_ATTEMPTS) {
+  if (!await EmailVerificationCode.incrementAttempts(record.id, EMAIL_CODE_MAX_ATTEMPTS)) {
     return {
       ok: false,
       status: 429,
@@ -1551,7 +1792,6 @@ async function verifyEmailCode({ email, purpose, code }) {
   }
 
   if (record.code_hash !== hashEmailCode(email, purpose, normalizedCode)) {
-    await EmailVerificationCode.incrementAttempts(record.id);
     return {
       ok: false,
       status: 400,
@@ -1560,21 +1800,26 @@ async function verifyEmailCode({ email, purpose, code }) {
     };
   }
 
-  await EmailVerificationCode.consume(record.id);
+  if (!await EmailVerificationCode.consume(record.id)) {
+    return { ok: false, status: 400, error_key: 'email_code.expired', error_description: '验证码已被使用或已过期' };
+  }
   return { ok: true };
 }
 
 async function generateAccessToken(userId, clientId, scopes) {
   const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
-  const token = jwt.sign({
-    sub: userId,
+  const token = signingKeys.sign({
+    sub: userId || clientId,
+    type: 'access',
+    iss: PUBLIC_BASE_URL,
+    grant_type: userId ? 'authorization_code' : 'client_credentials',
     aud: clientId,
     scope: scopes.join(' '),
     jti: tokenId,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(expiresAt.getTime() / 1000)
-  }, JWT_SECRET);
+  });
 
   await Token.createAccessToken({
     id: tokenId,
@@ -1595,10 +1840,11 @@ async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profi
     sub: userId,
     aud: clientId,
     type: 'refresh',
+    iss: PUBLIC_BASE_URL,
     jti: tokenId,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(expiresAt.getTime() / 1000)
-  }, JWT_SECRET);
+  }, JWT_SECRET, { algorithm: 'HS256' });
 
   await Token.createRefreshToken({
     id: tokenId,
@@ -1612,257 +1858,62 @@ async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profi
   return token;
 }
 
-async function buildAuthorizationResponse(user, params) {
-  const clientId = normalizeText(params.client_id);
-  const redirectUri = normalizeText(params.redirect_uri);
-  const scopeValue = normalizeText(params.scope);
-  const state = normalizeText(params.state);
 
-  if (clientId || redirectUri) {
-    if (!clientId || !redirectUri) {
-      return {
-        status: 400,
-        body: {
-          error: 'invalid_request',
-          error_key: 'auth.request.missing_pair',
-          error_description: 'client_id 和 redirect_uri 必须同时提供'
-        }
-      };
+
+async function validateAuthorizationRequest(params, database = pool) {
+    const clientId = normalizeText(params.client_id);
+    const redirectUri = normalizeText(params.redirect_uri);
+    const error = (name, description, status = 400) => ({ status, body: { error: name, error_description: description } });
+    if (!clientId && !redirectUri) return { value: null };
+  if (!clientId || !redirectUri) return error('invalid_request', 'client_id and redirect_uri are required together');
+  if (params.prompt !== undefined || params.max_age !== undefined || (params.response_mode && params.response_mode !== 'query')) {
+    return error('invalid_request', 'prompt, max_age and non-query response modes are not supported');
+  }
+    if ((normalizeText(params.response_type) || 'code') !== 'code') return error('unsupported_response_type', 'Only response_type=code is supported');
+    const client = await new ClientModel(database).findById(clientId);
+    if (!client || client.id !== clientId) return error('invalid_client', 'Unknown client');
+    if (!isClientActive(client)) return error('access_denied', 'Client is disabled', 403);
+    if (!client.redirectUris.includes(redirectUri)) return error('invalid_redirect_uri', 'Invalid redirect URI');
+    let url;
+    try { url = new URL(redirectUri); } catch { return error('invalid_redirect_uri', 'Invalid redirect URI'); }
+    const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    if (url.username || url.password || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback && !RUNTIME.production))) {
+      return error('invalid_redirect_uri', 'Redirect URI must use HTTPS without credentials or fragments');
     }
-
-    const client = await Client.findById(clientId);
-    if (!client) {
-      return {
-        status: 400,
-        body: {
-          error: 'invalid_client',
-          error_key: 'auth.request.unknown_client',
-          error_description: `未知客户端：${clientId}`
-        }
-      };
+    const scopes = parseRequestedScopes(params.scope);
+    if (findUnsupportedScopes(scopes, client.scopes).length) return error('invalid_scope', 'Unsupported scope');
+    const hasCodeChallenge = params.code_challenge !== undefined;
+    const hasCodeChallengeMethod = params.code_challenge_method !== undefined;
+    const requirePkce = client.requirePkce !== false;
+    let codeChallenge = null;
+    let codeChallengeMethod = null;
+    if (requirePkce || hasCodeChallenge || hasCodeChallengeMethod) {
+      codeChallenge = normalizeText(params.code_challenge);
+      codeChallengeMethod = normalizeText(params.code_challenge_method);
+      if (codeChallengeMethod !== 'S256' || !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) {
+        return error('invalid_request', 'A valid S256 code_challenge and code_challenge_method are required for this client or request');
+      }
     }
+    const nonce = normalizeText(params.nonce);
+    const state = normalizeText(params.state);
+    if (nonce.length > 255 || state.length > 2048) return error('invalid_request', 'nonce or state is too long');
+    return { value: { client, redirectUri, scopes, codeChallenge, codeChallengeMethod, nonce, state } };
+  }
 
-    if (!client.redirectUris.includes(redirectUri)) {
-      return {
-        status: 400,
-        body: {
-          error: 'invalid_redirect_uri',
-          error_key: 'auth.request.invalid_redirect_uri',
-          error_description: '无效的回调地址'
-        }
-      };
-    }
-
-    const authCodeData = await Token.createAuthCode({
-      userId: user.id,
-      clientId,
-      redirectUri,
-      scopes: scopeValue ? scopeValue.split(' ') : ['openid'],
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+async function buildAuthorizationResponse(user, params, database = pool) {
+    const result = await validateAuthorizationRequest(params, database);
+    if (result.body) return result;
+    if (!result.value) return { status: 200, body: { message_key: 'auth.login_success', message: '登录成功', redirect: '/profile' } };
+    const { client, redirectUri, scopes, codeChallenge, codeChallengeMethod, nonce, state } = result.value;
+    const authCode = await new TokenModel(database).createAuthCode({
+      userId: user.id, clientId: client.id, redirectUri, scopes, codeChallenge,
+      codeChallengeMethod, nonce, expiresAt: new Date(Date.now() + 5 * 60 * 1000)
     });
-
-    const redirectUrl = new URL(redirectUri);
-    redirectUrl.searchParams.set('code', authCodeData.code);
-    if (state) {
-      redirectUrl.searchParams.set('state', state);
-    }
-
-    return {
-      status: 200,
-      body: {
-        redirect: redirectUrl.toString()
-      }
-    };
+    const redirect = new URL(redirectUri);
+    redirect.searchParams.set('code', authCode.code);
+    if (state) redirect.searchParams.set('state', state);
+    return { status: 200, body: { redirect: redirect.toString() } };
   }
-
-  return {
-    status: 200,
-    body: {
-      message_key: 'auth.login_success',
-      message: '登录成功'
-    }
-  };
-}
-
-async function buildAuthorizationResponseV2(user, params) {
-  const clientId = normalizeText(params.client_id);
-  const redirectUri = normalizeText(params.redirect_uri);
-  const scopeValue = normalizeText(params.scope);
-  const state = normalizeText(params.state);
-  const responseType = normalizeText(params.response_type) || 'code';
-  const codeChallenge = normalizeText(params.code_challenge);
-  const codeChallengeMethod = normalizePkceMethod(params.code_challenge_method);
-
-  if (!clientId && !redirectUri) {
-    return {
-      status: 200,
-      body: {
-        message_key: 'auth.login_success',
-        message: 'Login successful',
-        redirect: '/profile'
-      }
-    };
-  }
-
-  if (!clientId || !redirectUri) {
-    return {
-      status: 400,
-      body: {
-        error: 'invalid_request',
-        error_key: 'auth.request.missing_pair',
-        error_description: 'client_id and redirect_uri must be provided together'
-      }
-    };
-  }
-
-  if (responseType !== 'code') {
-    return {
-      status: 400,
-      body: {
-        error: 'unsupported_response_type',
-        error_key: 'auth.request.response_type',
-        error_description: 'Only response_type=code is supported'
-      }
-    };
-  }
-
-  if (codeChallenge) {
-    if (!isValidPkceChallenge(codeChallenge)) {
-      return {
-        status: 400,
-        body: {
-          error: 'invalid_request',
-          error_key: 'auth.request.pkce.challenge',
-          error_description: 'code_challenge must be 43-128 URL-safe characters'
-        }
-      };
-    }
-
-    if (!['plain', 'S256'].includes(codeChallengeMethod)) {
-      return {
-        status: 400,
-        body: {
-          error: 'invalid_request',
-          error_key: 'auth.request.pkce.method',
-          error_description: 'code_challenge_method must be plain or S256'
-        }
-      };
-    }
-  }
-
-  const client = await Client.findById(clientId);
-  if (!client) {
-    return {
-      status: 400,
-      body: {
-        error: 'invalid_client',
-        error_key: 'auth.request.unknown_client',
-        error_description: `Unknown client: ${clientId}`
-      }
-    };
-  }
-
-  if (!isClientActive(client)) {
-    return {
-      status: 403,
-      body: {
-        error: 'access_denied',
-        error_key: 'oauth.client.inactive',
-        error_description: 'Client is disabled'
-      }
-    };
-  }
-
-  if (!client.redirectUris.includes(redirectUri)) {
-    return {
-      status: 400,
-      body: {
-        error: 'invalid_redirect_uri',
-        error_key: 'auth.request.invalid_redirect_uri',
-        error_description: 'Invalid redirect URI'
-      }
-    };
-  }
-
-  const requestedScopes = parseRequestedScopes(scopeValue);
-  const unsupportedScopes = findUnsupportedScopes(requestedScopes, client.scopes);
-  if (unsupportedScopes.length) {
-    return {
-      status: 400,
-      body: {
-        error: 'invalid_scope',
-        error_key: 'auth.request.invalid_scope',
-        error_description: `Unsupported scope: ${unsupportedScopes.join(' ')}`
-      }
-    };
-  }
-
-  const authCodeData = await Token.createAuthCode({
-    userId: user.id,
-    clientId,
-    redirectUri,
-    scopes: requestedScopes,
-    codeChallenge,
-    codeChallengeMethod: codeChallenge ? codeChallengeMethod : '',
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000)
-  });
-
-  const redirectUrl = new URL(redirectUri);
-  redirectUrl.searchParams.set('code', authCodeData.code);
-  if (state) {
-    redirectUrl.searchParams.set('state', state);
-  }
-
-  return {
-    status: 200,
-    body: {
-      redirect: redirectUrl.toString()
-    }
-  };
-}
-
-async function ensureSystemUser() {
-  const existing = await User.findByEmail(SYSTEM_USER_EMAIL);
-  if (existing) {
-    return existing;
-  }
-
-  return User.create({
-    username: SYSTEM_USER_USERNAME,
-    email: SYSTEM_USER_EMAIL,
-    password: crypto.randomUUID(),
-    name: 'VaultSSO System',
-    avatar: '',
-    emailVerified: true,
-    role: USER_ROLE_USER
-  });
-}
-
-async function seedMemoryDemoData() {
-  if (String(process.env.DB_DRIVER || '').trim().toLowerCase() !== 'memory') {
-    return;
-  }
-
-  const existingDemoUser = await User.findByEmail('demo@vaultsso.com');
-  if (!existingDemoUser) {
-    await User.create({
-      username: 'demo@vaultsso.com',
-      email: 'demo@vaultsso.com',
-      password: 'demo123',
-      name: 'Alexander Chen',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAeJvKl7fU1iqZh6zOZs1aafVqUuYiG5yITDbH2UYR4RvaLznuMOqj8sGGOh1goH16sh4Jq75d9IeEbhUtLzk8V_ShUGkRIRYsEqo47Ads_1pw_6ySjt3T4vIDRjraWDGUoLRxXLVv7EFVRgKp9Mjfa4sHjuoM9MM5o2VIPg0rF66x0vP9_zEV3twEjYqDi1fMs_24JUSsFwuNUa7Kdjm6U7EfrzZzUMwm4IGtYm7pSX12FASsT6BxFQxtLiP-qzQ-YOymo-NhULTCI',
-      emailVerified: true,
-      role: USER_ROLE_ADMIN
-    });
-  }
-
-  for (const clientData of DEMO_CLIENTS) {
-    const existingClient = await Client.findById(clientData.id);
-    if (!existingClient) {
-      await Client.create(clientData);
-    }
-  }
-}
 
 app.get('/.well-known/openid-configuration', (req, res) => {
   res.json(buildAuthorizationServerMetadata(getBaseUrl(req)));
@@ -1873,48 +1924,27 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
 });
 
 app.get('/.well-known/jwks.json', (req, res) => {
-  res.json({
-    keys: [],
-    note: 'This provider signs tokens with HS256 using the configured shared secret. No public keys are exposed.'
-  });
+  res.json(signingKeys.jwks);
 });
 
-app.get('/oauth2/authorize', asyncHandler(async (req, res) => {
-  const clientId = normalizeText(req.query.client_id);
-  const redirectUri = normalizeText(req.query.redirect_uri);
-  const scope = normalizeText(req.query.scope);
-  const state = normalizeText(req.query.state);
-
-  if (clientId || redirectUri) {
-    if (!clientId || !redirectUri) {
-      return res.redirect(`/oauth2/error?error=invalid_request&error_description=${encodeURIComponent('client_id 和 redirect_uri 必须同时提供')}`);
-    }
-
-    const client = await Client.findById(clientId);
-    if (!client) {
-      return res.redirect(`/oauth2/error?error=invalid_client&error_description=${encodeURIComponent(`未知客户端：${clientId}`)}&state=${state || ''}`);
-    }
-
-    if (!client.redirectUris.includes(redirectUri)) {
-      return res.redirect(`/oauth2/error?error=invalid_redirect_uri&error_description=${encodeURIComponent('无效的回调地址')}&state=${state || ''}`);
-    }
-
+app.get('/oauth2/authorize', asyncHandler(async function authorizePage(req, res) {
+  const validation = await validateAuthorizationRequest(req.query);
+  if (validation.body) return res.status(validation.status).json(validation.body);
+  if (validation.value) {
     const user = await getAuthenticatedUser(req, res);
     if (user) {
-      const result = await buildAuthorizationResponseV2(user, {
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        scope,
-        state,
-        response_type: req.query.response_type,
-        code_challenge: req.query.code_challenge,
-        code_challenge_method: req.query.code_challenge_method
+      const result = await finishAccountLogin(user, async (current, connection) => {
+        const session = await new SessionModel(connection).findById(req.authSession.id);
+        if (!session || session.revoked_at || new Date(session.expires_at) <= new Date()) {
+          return authenticatorError(401, 'auth.mfa.expired', '登录已失效，请重新登录');
+        }
+        return buildAuthorizationResponse(current, req.query, connection);
       });
+      if (result.status !== 200) return res.status(result.status).json(result.body);
       return res.redirect(result.body.redirect);
     }
   }
-
-  res.sendFile(path.join(__dirname, 'authorize.html'));
+  res.sendFile(pageFile('login'));
 }));
 
 app.get('/login', (req, res) => {
@@ -1922,6 +1952,7 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
+  await refreshOidcProvidersFromDatabase();
   const config = getOidcProviderConfig(req.query.provider);
   if (!config || !isOidcEnabled(config)) {
     return res.status(503).json({
@@ -1930,6 +1961,16 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
     });
   }
 
+  const linkIntent = req.query.intent === 'link';
+  const mergeIntent = req.query.intent === 'merge';
+  const currentUser = await getAuthenticatedUser(req);
+  if ((linkIntent || mergeIntent) && (!currentUser || !isSameOriginBrowserRequest(req))) {
+    return res.status(403).json({ error: 'forbidden', error_description: 'Manage identities from your authenticated profile page' });
+  }
+  if ((linkIntent || mergeIntent) && (!Number.isFinite(new Date(req.authSession.created_at).getTime())
+      || Date.now() - new Date(req.authSession.created_at).getTime() >= 5 * 60 * 1000)) {
+    return res.status(403).json({ error: 'reauthentication_required', error_description: '处理第三方账号前，请重新登录' });
+  }
   const endpoints = await resolveOidcEndpoints(config);
   const state = crypto.randomBytes(32).toString('base64url');
   const nonce = crypto.randomBytes(32).toString('base64url');
@@ -1938,7 +1979,10 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
     nonce,
     returnTo: getOidcReturnPath(req.query.return_to),
     createdAt: Date.now(),
-    linkUserId: (await getAuthenticatedUser(req))?.id || '',
+    linkUserId: linkIntent ? currentUser.id : '',
+    linkSessionId: linkIntent ? req.authSession.id : '',
+    mergeUserId: mergeIntent ? currentUser.id : '',
+    mergeSessionId: mergeIntent ? req.authSession.id : '',
     provider: config.providerKey
   };
   const authorizeParams = {
@@ -1960,14 +2004,15 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
 
   res.cookie(OIDC_STATE_COOKIE, encodeOidcState(stateData), {
     httpOnly: true,
-    secure: req.secure || req.get('x-forwarded-proto') === 'https',
+    secure: RUNTIME.secureCookies,
     sameSite: 'lax',
     maxAge: OIDC_STATE_MAX_AGE
   });
   return res.redirect(`${endpoints.authorizeUrl}${endpoints.authorizeUrl.includes('?') ? '&' : '?'}${new URLSearchParams(authorizeParams).toString()}`);
 }));
 
-app.get('/api/v1/auth/oauth/oidc/config', (req, res) => {
+app.get('/api/v1/auth/oauth/oidc/config', asyncHandler(async (req, res) => {
+  await refreshOidcProvidersFromDatabase();
   const providers = getConfiguredOidcProviders().map(config => ({
     key: config.providerKey,
     providerName: config.providerName,
@@ -1979,14 +2024,14 @@ app.get('/api/v1/auth/oauth/oidc/config', (req, res) => {
     loginUrl: providers[0]?.loginUrl || getOidcLoginUrl(req),
     providers
   });
-});
+}));
 
 app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
   const cookieState = decodeOidcState(req.cookies[OIDC_STATE_COOKIE]);
-  res.clearCookie(OIDC_STATE_COOKIE);
+  res.clearCookie(OIDC_STATE_COOKIE, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' });
   const queryState = normalizeText(req.query.state);
   const stateIsValid = cookieState && queryState && cookieState.state === queryState &&
-    Number(cookieState.createdAt) + OIDC_STATE_MAX_AGE >= Date.now();
+    Number(cookieState.createdAt) <= Date.now() && Number(cookieState.createdAt) + OIDC_STATE_MAX_AGE >= Date.now();
 
   if (!stateIsValid) {
     return res.redirect(oidcErrorRedirect(cookieState, 'Invalid or expired OIDC state'));
@@ -2001,6 +2046,15 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
   }
 
   try {
+    await refreshOidcProvidersFromDatabase();
+    if (cookieState.linkUserId || cookieState.mergeUserId) {
+      const linkingUser = await getAuthenticatedUser(req);
+      if (!linkingUser || linkingUser.id !== (cookieState.linkUserId || cookieState.mergeUserId)
+          || req.authSession.id !== (cookieState.linkSessionId || cookieState.mergeSessionId)
+          || (cookieState.mergeUserId && (Date.now() - new Date(req.authSession.created_at).getTime() >= 5 * 60 * 1000))) {
+        throw new Error('The session that requested identity management is no longer fresh and active');
+      }
+    }
     const config = getOidcProviderConfig(cookieState.provider);
     if (!config || !isOidcEnabled(config)) throw new Error('OIDC provider is no longer configured');
     const endpoints = await resolveOidcEndpoints(config);
@@ -2008,37 +2062,71 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
     if (config.validateIdToken && !tokenPayload.id_token) {
       throw new Error('OIDC token response did not include an ID Token');
     }
-    const idTokenClaims = tokenPayload.id_token
+    const idTokenClaims = config.validateIdToken && tokenPayload.id_token
       ? await verifyOidcIdToken(tokenPayload.id_token, endpoints, cookieState.nonce, config)
       : {};
-    let userinfoClaims = {};
-    if (endpoints.userinfoUrl && tokenPayload.access_token) {
-      userinfoClaims = await fetchJson(endpoints.userinfoUrl, {
-        headers: { Authorization: `Bearer ${tokenPayload.access_token}` }
-      });
-    }
+    const userinfoClaims = await fetchOidcUserinfo(config, endpoints, tokenPayload.access_token);
 
-    const userinfoId = claimText(userinfoClaims, config.userinfoIdPath);
-    const idTokenId = claimText(idTokenClaims, 'sub');
-    if (userinfoId && idTokenId && userinfoId !== idTokenId) {
+    const userinfoId = claimIdentifier(userinfoClaims, config.userinfoIdPath);
+    const idTokenId = claimIdentifier(idTokenClaims, 'sub');
+    if (getClaimByPath(userinfoClaims, config.userinfoIdPath) !== undefined && !userinfoId) {
+      throw new Error('OIDC UserInfo contains an invalid subject identifier');
+    }
+    // 仅当主标识取自标准 sub 时才与 ID Token 比对；自定义路径与 sub 不同源，比对无意义。
+    if (config.userinfoIdPath === 'sub' && userinfoId && idTokenId && userinfoId !== idTokenId) {
       throw new Error('OIDC UserInfo subject does not match the ID Token subject');
     }
+    const secondaryId = config.userinfoSecondaryIdPath
+      ? claimIdentifier(userinfoClaims, config.userinfoSecondaryIdPath) || claimIdentifier(idTokenClaims, config.userinfoSecondaryIdPath)
+      : '';
+    const emailSource = claimText(userinfoClaims, config.userinfoEmailPath) ? userinfoClaims : idTokenClaims;
     const claims = {
       id: userinfoId || idTokenId,
-      email: claimText(userinfoClaims, config.userinfoEmailPath) || claimText(idTokenClaims, config.userinfoEmailPath) || claimText(idTokenClaims, 'email'),
-      emailVerified: claimBoolean(userinfoClaims, config.emailVerifiedPath) || claimBoolean(idTokenClaims, config.emailVerifiedPath) || claimBoolean(idTokenClaims, 'email_verified'),
+      secondaryId,
+      email: claimText(emailSource, config.userinfoEmailPath),
+      emailVerified: claimBoolean(emailSource, config.emailVerifiedPath),
       username: claimText(userinfoClaims, config.userinfoUsernamePath) || claimText(idTokenClaims, config.userinfoUsernamePath) || claimText(idTokenClaims, 'preferred_username'),
       name: claimText(userinfoClaims, 'name') || claimText(idTokenClaims, 'name'),
       picture: claimText(userinfoClaims, 'picture') || claimText(idTokenClaims, 'picture'),
-      profile: { ...idTokenClaims, ...userinfoClaims }
+      profile: { ...idTokenClaims, ...userinfoClaims,
+        _vaultsso: { issuer: endpoints.issuer || '', clientId: config.clientId } }
     };
     if (!claims.id) throw new Error('OIDC account did not provide a subject identifier');
+    if (cookieState.mergeUserId) {
+      const row = await ExternalIdentity.findByProviderSubject(config.providerKey, claims.id, claims.secondaryId);
+      if (!row) throw new AccountMergeError('The external identity has no separate account; use binding instead', 'account_merge_not_found');
+      if (row.user_id !== cookieState.mergeUserId) {
+        const merged = await mergeOidcAccount({ pool, targetUserId: cookieState.mergeUserId, sourceUserId: row.user_id,
+          provenIdentity: claims, providerConfig: { ...config, resolvedIssuer: endpoints.issuer }, keepSessionId: req.authSession.id });
+        const target = await User.findById(merged.userId);
+        try {
+          await recordLoginLog({ username: target.username, userId: target.id, req, result: 'admin_action',
+            detail: `merge_oidc_account | source:${row.user_id} | provider:${config.providerKey}` });
+        } catch (auditError) {
+          console.error('OIDC account merge audit failed:', auditError.message);
+        }
+      }
+      return res.redirect(appendQuery('/profile', { account_merged: '1' }));
+    }
     const user = await findOrCreateOidcUser(claims, cookieState.linkUserId, config);
     if (isUserBanned(user)) {
       return res.redirect(oidcErrorRedirect(cookieState, '账户已被封禁，请联系管理员'));
     }
-    await User.update(user.id, { lastLoginIp: getClientIp(req) });
-    await setSessionCookie(req, res, user);
+    // 外部登录创建的用户可能没有真实邮箱，此时不能走邮件二次验证。
+    const oidcFactor = user.totp_enabled
+      ? 'totp'
+      : (await isSettingEnabled('login_email_code')) && !isSyntheticEmail(user.email) ? 'email' : '';
+    if (!cookieState.linkUserId && oidcFactor) {
+      await beginOidcSecondFactor(res, user, cookieState.returnTo, oidcFactor, config.providerKey);
+      return res.redirect('/oauth2/mfa');
+    }
+    const completed = await finishAccountLogin(user, async (current, connection) => {
+      await new UserModel(connection).update(current.id, { lastLoginIp: getClientIp(req) });
+      await recordLoginLog({ username: current.username, userId: current.id, req, result: 'success', detail: 'External identity authentication', database: connection });
+      await setSessionCookie(req, res, current, connection);
+      return { status: 200 };
+    });
+    if (completed.status !== 200) return res.redirect(oidcErrorRedirect(cookieState, completed.body.error_description));
     return res.redirect(getOidcReturnPath(cookieState.returnTo));
   } catch (error) {
     console.error('OIDC callback failed:', error.message);
@@ -2046,30 +2134,570 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
-  const username = normalizeText(req.body.username);
-  const password = String(req.body.password || '');
-  const ip = getClientIp(req);
-  const attemptKey = loginAttemptKey(username, ip);
+// ── 华为账号一键登录 ─────────────────────────────────────────────
+// 原生 App 从华为 SDK 拿到 authorization code 后直接 POST 本接口，
+// 不需要 WebView，也不依赖 Cookie：会话用 Cookie 下发，二次验证凭据同时用响应体返回。
 
-  const maxAttempts = await getSettingNumber('login_max_attempts', 5);
-  const lockoutMinutes = await getSettingNumber('login_lockout_minutes', 15);
-  const lockedEntry = loginAttemptStore.get(attemptKey);
-  if (isLoginLocked(lockedEntry)) {
-    const minutes = Math.max(1, Math.ceil((lockedEntry.lockedUntil - Date.now()) / 60000));
-    await recordLoginLog({ username, req, result: 'locked' });
-    return res.status(429).json({
-      error: 'too_many_attempts',
-      error_key: 'auth.locked',
-      error_description: `登录失败次数过多，请 ${minutes} 分钟后再试`
+function isSyntheticEmail(email) {
+  return /@users\.invalid$/i.test(normalizeText(email));
+}
+
+function resolveHuaweiProvider(requestedKey) {
+  const config = getHuaweiProviderConfig(requestedKey);
+  if (config) return isHuaweiEnabled(config) ? config : null;
+  const available = getConfiguredHuaweiProviders();
+  return available.length === 1 ? available[0] : null;
+}
+
+// 只保存审计所需的标识与掩码手机号，不重复落明文号码。
+function buildHuaweiProfile(identity, config) {
+  return {
+    provider: PROVIDER_TYPE_HUAWEI,
+    openID: identity.openId,
+    unionID: identity.unionId,
+    clientId: config.clientId || '',
+    providerName: config.providerName || config.providerKey,
+    huaweiUnionScope: normalizeText(config.huaweiUnionScope),
+    displayName: identity.displayName || '',
+    reportedPhoneMasked: identity.phone ? phoneNumbers.maskPhone(identity.phone.countryCode, identity.phone.nationalNumber) : ''
+  };
+}
+
+// 手机号只做绑定，不静默覆盖：本地已有号码且不一致时保留本地值并记录冲突。
+async function applyHuaweiPhone(user, identity) {
+  const phone = identity.phone;
+  if (!phone) return { user, action: 'none' };
+  const verified = Boolean(identity.phoneVerified);
+  if (!verified) return { user, action: 'unverified' };
+
+  if (!user.phone_e164) {
+    const owner = await User.findByPhone(phone.e164);
+    if (owner && owner.id !== user.id) return { user, action: 'conflict' };
+    try {
+      const bound = await User.bindPhoneIfEmpty(user.id, phone, verified);
+      user = await User.findById(user.id) || user;
+      if (bound) return { user, action: 'bound' };
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') return { user: await User.findById(user.id) || user, action: 'conflict' };
+      throw error;
+    }
+  }
+  if (!phoneNumbers.isSamePhone(user.phone_e164, phone.e164)) {
+    return { user, action: 'conflict' };
+  }
+  if (verified && !user.phone_verified) {
+    const applied = await User.verifyPhoneIfUnchanged(user.id, phone.e164);
+    user = await User.findById(user.id) || user;
+    return { user, action: applied ? 'verified' : phoneNumbers.isSamePhone(user.phone_e164, phone.e164) ? 'unchanged' : 'conflict' };
+  }
+  return { user, action: 'unchanged' };
+}
+
+async function findOrCreateHuaweiUser(identity, config, linkUserId = '', allowCreate = true) {
+  const provider = normalizeText(config.providerKey).toLowerCase();
+  const scope = normalizeText(config.huaweiUnionScope);
+  const subjects = [identity.unionId, identity.openId].filter(Boolean).map(id => `provider:${provider}:${id}`);
+  if (scope && identity.unionId) subjects.push(`scope:${scope}:${identity.unionId}`);
+  const lockKeys = [...new Set(subjects.map(subject => crypto.createHash('sha256').update(`huawei:${subject}`).digest('hex')))].sort();
+  const phoneAutolink = await isSettingEnabled('huawei_phone_autolink');
+  const registrationEnabled = await isSettingEnabled('registration_enabled');
+  const connection = await pool.getConnection();
+  const acquired = [];
+  let transaction = false;
+  try {
+    for (const key of lockKeys) {
+      const [rows] = await connection.query('SELECT GET_LOCK(?, 10) AS acquired', [key]);
+      if (Number(rows[0]?.acquired) !== 1) throw new Error('华为账号关联忙，请稍后重试');
+      acquired.push(key);
+    }
+    await connection.beginTransaction();
+    transaction = true;
+    const result = await resolveHuaweiUser(identity, config, linkUserId, connection, { phoneAutolink, registrationEnabled, allowCreate });
+    await connection.commit();
+    transaction = false;
+    return result;
+  } catch (error) {
+    if (transaction) await connection.rollback();
+    throw error;
+  } finally {
+    try {
+      for (const key of acquired.reverse()) await connection.query('SELECT RELEASE_LOCK(?) AS released', [key]);
+      connection.release();
+    } catch (error) {
+      connection.destroy();
+      throw error;
+    }
+  }
+}
+
+async function resolveHuaweiUser(identity, config, linkUserId, connection, settings) {
+  const User = new UserModel(connection);
+  const ExternalIdentity = new ExternalIdentityModel(connection);
+  const provider = normalizeText(config.providerKey).toLowerCase();
+  const primaryId = identity.unionId || identity.openId;
+  const secondaryId = identity.unionId ? identity.openId : '';
+  if (!primaryId) throw new Error('华为账号未返回 UnionID/OpenID');
+
+  const existingIdentity = await ExternalIdentity.findByProviderSubject(provider, primaryId, secondaryId);
+  const scope = normalizeText(config.huaweiUnionScope);
+  // Only an explicit common subject permits inspecting another app's bindings.
+  const sameScopeProviders = new Set([provider, ...Object.values(OIDC_PROVIDERS)
+    .filter(item => scope && item.providerType === PROVIDER_TYPE_HUAWEI && normalizeText(item.huaweiUnionScope) === scope)
+    .map(item => item.providerKey)]);
+  const identityRows = await ExternalIdentity.findByProviders([...sameScopeProviders]);
+  if (identityRows.some(row => row.provider === provider && ExternalIdentity.serialize(row).profile.clientId
+    && ExternalIdentity.serialize(row).profile.clientId !== config.clientId)) {
+    throw new Error('该提供方已绑定其他华为 App，请为每个 App 使用独立 Provider key');
+  }
+  let scopeUserId = '';
+  if (scope && identity.unionId) {
+    // Include disabled providers: disabling an app cannot erase an identity conflict.
+    const matches = identityRows.filter(row => {
+      if (!sameScopeProviders.has(row.provider)) return false;
+      const profile = ExternalIdentity.serialize(row).profile;
+      return profile.provider === PROVIDER_TYPE_HUAWEI && profile.unionID === identity.unionId
+        && (!normalizeText(profile.huaweiUnionScope) || profile.huaweiUnionScope === scope);
+    });
+    const matchedUsers = new Set(matches.map(row => row.user_id));
+    if (existingIdentity) matchedUsers.add(existingIdentity.user_id);
+    if (linkUserId) matchedUsers.add(linkUserId);
+    if (matchedUsers.size > 1) throw new Error('同一华为主体的 UnionID 已绑定到不同用户，请由管理员核查');
+    scopeUserId = matches[0]?.user_id || '';
+  }
+  if (existingIdentity) {
+    const previousUnionId = normalizeText(ExternalIdentity.serialize(existingIdentity).profile.unionID);
+    if (previousUnionId && identity.unionId && previousUnionId !== identity.unionId) {
+      throw new Error('该华为 OpenID 返回的 UnionID 与已有绑定不一致，请由管理员核查');
+    }
+    const linked = await User.findById(existingIdentity.user_id);
+    if (!linked) throw new Error('该华为账号绑定的本地账号已不存在');
+    if (linkUserId && existingIdentity.user_id !== linkUserId) throw new Error('该华为账号已绑定到其他用户');
+    await ExternalIdentity.update(existingIdentity.id, {
+      providerSecondaryId: secondaryId && !existingIdentity.provider_secondary_id ? secondaryId : undefined,
+      displayName: identity.displayName || undefined,
+      avatar: identity.avatar || undefined,
+      profile: {
+        ...buildHuaweiProfile(identity, config),
+        openID: existingIdentity.provider_secondary_id || identity.openId,
+        unionID: identity.unionId || ExternalIdentity.serialize(existingIdentity).profile.unionID || ''
+      }
+    });
+    return { user: linked, created: false, matched: 'identity' };
+  }
+
+  if (linkUserId || scopeUserId) {
+    const linked = await User.findById(linkUserId || scopeUserId);
+    if (!linked) throw new Error('用于绑定的本地账号已不存在');
+    await ExternalIdentity.create({
+      userId: linked.id, provider, providerUserId: primaryId, providerSecondaryId: secondaryId,
+      providerUsername: linked.username, displayName: identity.displayName,
+      avatar: identity.avatar, email: linked.email, profile: buildHuaweiProfile(identity, config)
+    });
+    return { user: linked, created: false, matched: linkUserId ? 'link' : 'union_scope' };
+  }
+
+  // 华为明确验证的完整号码可关联同样已验证的本地号码。
+  if (settings.phoneAutolink && identity.phone && identity.phoneVerified) {
+    const byPhone = await User.findByPhone(identity.phone.e164);
+    if (byPhone) {
+      if (isUserBanned(byPhone)) throw new Error('账户已被封禁，请联系管理员');
+      if (byPhone.phone_verified) {
+        await ExternalIdentity.create({
+          userId: byPhone.id, provider, providerUserId: primaryId, providerSecondaryId: secondaryId,
+          providerUsername: byPhone.username, displayName: identity.displayName,
+          avatar: identity.avatar, email: byPhone.email, profile: buildHuaweiProfile(identity, config)
+        });
+        return { user: byPhone, created: false, matched: 'phone' };
+      }
+    }
+  }
+
+  if (!settings.allowCreate) return { pending: true };
+  if (!settings.registrationEnabled) throw new Error('Registration is disabled');
+
+  const digest = crypto.createHash('sha256').update(primaryId).digest('hex');
+  const email = `${provider}-${digest.slice(0, 24)}@users.invalid`;
+  const usernameBase = normalizeText(identity.displayName).replace(/\s+/g, '').slice(0, 180) || `${provider}-${digest.slice(0, 12)}`;
+  let username = usernameBase;
+  let suffix = 0;
+  while ((await User.findByUsername(username)) && suffix < 20) {
+    suffix += 1;
+    username = `${usernameBase}-${suffix}`;
+  }
+  const user = await User.create({
+    username, email, password: '',
+    name: identity.displayName || username,
+    avatar: identity.avatar || '',
+    emailVerified: false
+  });
+  await ExternalIdentity.create({
+    userId: user.id, provider, providerUserId: primaryId, providerSecondaryId: secondaryId,
+    providerUsername: username, displayName: identity.displayName,
+    avatar: identity.avatar, email: '', profile: buildHuaweiProfile(identity, config)
+  });
+  return { user, created: true, matched: 'new' };
+}
+
+function pendingHuaweiBinding(token) {
+  const entry = pendingHuaweiBindings.get(normalizeText(token));
+  if (!entry || Date.now() - entry.createdAt >= HUAWEI_BIND_TTL_MS) {
+    pendingHuaweiBindings.delete(normalizeText(token));
+    return null;
+  }
+  return entry;
+}
+
+async function completeHuaweiQuickLogin(req, res, identity, config, result, linkIntent = false, currentUser = null) {
+  let user = result.user;
+  const phoneOutcome = await applyHuaweiPhone(user, identity);
+  user = phoneOutcome.user;
+  const phone = identity.phoneVerified ? identity.phone?.e164 || null : null;
+  const phoneStatus = !identity.phone ? 'not_returned'
+    : !identity.phoneVerified ? 'unverified'
+      : phoneOutcome.action === 'conflict' ? 'conflict' : 'verified';
+  if (isUserBanned(user)) {
+    return res.status(403).json({ error: 'access_denied', error_description: '账户已被封禁，请联系管理员' });
+  }
+
+  const detail = `Huawei quick login (${result.created ? 'created' : `matched:${result.matched}`}, phone:${phoneOutcome.action})`;
+  await recordLoginLog({ username: user.username, userId: user.id, req, result: 'success', detail });
+
+  if (linkIntent) {
+    await recordAdminLog({ admin: currentUser, req, action: 'link_identity', detail: `provider:${config.providerKey}` });
+    return res.json({ linked: true, user: serializeUser(user), phone, phoneStatus, phoneBinding: phoneOutcome.action });
+  }
+
+  const factor = user.totp_enabled
+    ? 'totp'
+    : (await isSettingEnabled('login_email_code')) && !isSyntheticEmail(user.email) ? 'email' : '';
+  if (factor) {
+    const authorization = await validateAuthorizationRequest(req.body);
+    if (authorization.body) return res.status(authorization.status).json(authorization.body);
+    const oauth = authorization.value ? {
+      client_id: authorization.value.client.id,
+      redirect_uri: authorization.value.redirectUri,
+      scope: authorization.value.scopes.join(' '),
+      state: authorization.value.state,
+      nonce: authorization.value.nonce,
+      response_type: 'code',
+      ...(authorization.value.codeChallenge ? {
+        code_challenge: authorization.value.codeChallenge,
+        code_challenge_method: authorization.value.codeChallengeMethod
+      } : {})
+    } : null;
+    const pendingToken = await beginOidcSecondFactor(res, user, req.body.return_to, factor, config.providerKey, 'huawei', {
+      huawei: {
+        oauth,
+        phone: huaweiPendingPhoneCipher.encrypt(phone),
+        phoneStatus,
+        phoneBinding: phoneOutcome.action
+      }
+    });
+    return res.json({
+      mfa_required: true,
+      factor,
+      email: maskEmail(user.email),
+      pending_token: pendingToken,
+      pending_header: 'X-Oidc-Pending'
     });
   }
 
+  const completed = await finishAccountLogin(user, async (current, connection) => {
+    await new UserModel(connection).update(current.id, { lastLoginIp: getClientIp(req) });
+    const wantsAuthorizationCode = Boolean(normalizeText(req.body.client_id) || normalizeText(req.body.redirect_uri));
+    if (wantsAuthorizationCode) {
+      const authorized = await buildAuthorizationResponse(current, {
+        client_id: req.body.client_id,
+        redirect_uri: req.body.redirect_uri,
+        scope: req.body.scope,
+        state: req.body.state,
+        nonce: req.body.nonce,
+        code_challenge: req.body.code_challenge,
+        code_challenge_method: req.body.code_challenge_method
+      }, connection);
+      if (authorized.status !== 200) return authorized;
+      const redirect = new URL(authorized.body.redirect);
+      const phoneGranted = normalizeText(req.body.scope).split(/\s+/).includes('phone');
+      const responseUser = serializeUser(current);
+      if (!phoneGranted) {
+        Object.assign(responseUser, { phoneCountryCode: '', phoneNationalNumber: '', phoneE164: '',
+          phoneMasked: '', phoneVerified: false, phoneVerifiedAt: null });
+      }
+      return { status: 200, body: {
+        authorization_code: redirect.searchParams.get('code'),
+        state: redirect.searchParams.get('state') || '',
+        redirect_uri: normalizeText(req.body.redirect_uri),
+        redirect: authorized.body.redirect,
+        user: responseUser,
+        phone: phoneGranted ? phone : null,
+        phoneStatus: phoneGranted ? phoneStatus : 'scope_not_granted',
+        phoneBinding: phoneOutcome.action
+      } };
+    }
+    await setSessionCookie(req, res, current, connection);
+    return { status: 200, body: { user: serializeUser(current), phone, phoneStatus, phoneBinding: phoneOutcome.action } };
+  });
+  return res.status(completed.status).json(completed.body);
+}
+
+app.get('/api/v1/auth/oauth/huawei/config', asyncHandler(async (req, res) => {
+  await refreshOidcProvidersFromDatabase();
+  const providers = getConfiguredHuaweiProviders().map(config => ({
+    key: config.providerKey,
+    providerName: config.providerName
+  }));
+  res.json({
+    enabled: providers.length > 0,
+    providers,
+    quickLoginUrl: `${getBaseUrl().replace(/\/+$/, '')}${HUAWEI_QUICK_LOGIN_PATH}`,
+    mfaCompleteUrl: `${getBaseUrl().replace(/\/+$/, '')}/api/v1/auth/oauth/oidc/complete`,
+    phoneAutolink: await isSettingEnabled('huawei_phone_autolink')
+  });
+}));
+
+app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
+  if (!isMachineClientRequest(req)) {
+    return res.status(403).json({ error: 'forbidden', error_description: '该接口不接受跨站浏览器请求' });
+  }
+  await refreshOidcProvidersFromDatabase();
+  const config = resolveHuaweiProvider(req.body.provider);
+  if (!config) {
+    return res.status(503).json({ error: 'huawei_not_configured', error_description: '华为账号登录未配置或未启用' });
+  }
+
+  const limit = await RateLimit.consume(`huawei-quick-login:${getClientIp(req)}`, 30, 10 * 60 * 1000);
+  if (!limit.allowed) {
+    res.setHeader('Retry-After', String(limit.retryAfter));
+    return res.status(429).json({ error: 'too_many_requests', error_description: '尝试次数过多，请稍后再试' });
+  }
+
+  const linkIntent = req.body.intent === 'link';
+  const mergeIntent = req.body.intent === 'merge';
+  const currentUser = await getAuthenticatedUser(req);
+  if ((linkIntent || mergeIntent) && !currentUser) {
+    return res.status(403).json({ error: 'forbidden', error_description: '请先登录后再绑定华为账号' });
+  }
+  if (mergeIntent && (!req.authSession || Date.now() - new Date(req.authSession.created_at).getTime() >= 5 * 60 * 1000)) {
+    return res.status(403).json({ error: 'reauthentication_required', error_description: '合并账号前请重新登录已有账号' });
+  }
+
+  const authorizationCode = normalizeText(req.body.authorizationCode);
+  const legacyCode = normalizeText(req.body.code);
+  if (authorizationCode && legacyCode && authorizationCode !== legacyCode) {
+    return res.status(400).json({ error: 'invalid_request', error_description: '授权码字段不一致' });
+  }
+
+  let identity;
+  try {
+    identity = await huawei.exchangeQuickLoginCode(config, authorizationCode || legacyCode, huaweiQuickLoginEndpoint(config));
+  } catch (error) {
+    // 不回显华为原始报文，避免把凭据写进日志或响应。
+    console.error('Huawei quick login failed:', error.message);
+    const failure = error instanceof huawei.HuaweiError ? error : new huawei.HuaweiError('Huawei exchange failed');
+    return res.status(failure.status).json({ error: failure.publicCode, error_description: failure.publicDescription });
+  }
+  if (!identity.openId && !identity.unionId) {
+    return res.status(400).json({ error: 'invalid_grant', error_description: '华为账号未返回用户标识' });
+  }
+
+  if (mergeIntent) {
+    try {
+      const provider = normalizeText(config.providerKey).toLowerCase();
+      const row = await ExternalIdentity.findByProviderSubject(provider, identity.unionId || identity.openId,
+        identity.unionId ? identity.openId : '');
+      if (!row) return res.status(409).json({ error: 'account_merge_not_found', error_description: '该华为账号尚未绑定独立账号，请使用普通绑定流程' });
+      if (row.user_id === currentUser.id) {
+        return res.json({ merged: false, linked: true, user: serializeUser(currentUser) });
+      }
+      const merged = await mergeHuaweiAccount({ pool, targetUserId: currentUser.id, sourceUserId: row.user_id,
+        provenIdentity: identity, providerConfig: config, keepSessionId: req.authSession.id });
+      await recordLoginLog({ username: merged.user.username, userId: merged.userId, req, result: 'admin_action',
+        detail: `merge_huawei_account | source:${row.user_id} | identities:${merged.movedIdentityIds.length}` });
+      return res.json({ merged: true, user: serializeUser(merged.user),
+        phone: identity.phoneVerified ? identity.phone?.e164 || null : null,
+        phoneStatus: merged.phoneBinding === 'conflict' ? 'conflict'
+          : identity.phoneVerified ? 'verified' : identity.phone ? 'unverified' : 'not_returned',
+        phoneBinding: merged.phoneBinding, phoneTransferred: merged.phoneTransferred });
+    } catch (error) {
+      if (error instanceof AccountMergeError) {
+        return res.status(error.status).json({ error: error.code, error_description: error.message });
+      }
+      if (error.message === 'External account identifiers are bound to different users') {
+        return res.status(409).json({ error: 'account_merge_conflict', error_description: '该华为身份的标识分别属于不同账号，需人工核查' });
+      }
+      throw error;
+    }
+  }
+
+  let result;
+  try {
+    result = await findOrCreateHuaweiUser(identity, config, linkIntent ? currentUser.id : '', false);
+  } catch (error) {
+    return res.status(400).json({ error: 'invalid_request', error_description: error.message });
+  }
+
+  if (result.pending) {
+    if (pendingHuaweiBindings.size >= 1000) return res.status(429).json({ error: 'too_many_requests', error_description: '待绑定请求过多，请稍后重试' });
+    const bindingToken = crypto.randomBytes(32).toString('base64url');
+    const { raw, ...verifiedIdentity } = identity;
+    const { providerKey, providerName, huaweiUnionScope, clientId } = config;
+    pendingHuaweiBindings.set(bindingToken, {
+      identity: verifiedIdentity, config: { providerKey, providerName, huaweiUnionScope, clientId },
+      clientId: normalizeText(req.body.client_id), createdAt: Date.now(), inProgress: false
+    });
+    return res.json({ binding_required: true, binding_token: bindingToken,
+      phone_available: Boolean(identity.phone && identity.phoneVerified),
+      phone_status: !identity.phone ? 'not_returned' : identity.phoneVerified ? 'verified' : 'unverified' });
+  }
+
+  return completeHuaweiQuickLogin(req, res, identity, config, result, linkIntent, currentUser);
+}));
+
+app.post(HUAWEI_SKIP_PATH, asyncHandler(async (req, res) => {
+  const token = normalizeText(req.body.binding_token);
+  const entry = pendingHuaweiBinding(token);
+  if (!entry) return res.status(400).json({ error: 'invalid_grant', error_description: '华为绑定请求已过期，请重新登录' });
+  if (entry.inProgress) return res.status(409).json({ error: 'conflict', error_description: '请求正在处理' });
+  if (normalizeText(req.body.client_id) !== entry.clientId) return res.status(403).json({ error: 'forbidden', error_description: '登录客户端不一致' });
+  entry.inProgress = true;
+  try {
+    let result;
+    try {
+      result = await findOrCreateHuaweiUser(entry.identity, entry.config);
+    } catch (error) {
+      return res.status(400).json({ error: 'invalid_request', error_description: error.message });
+    }
+    pendingHuaweiBindings.delete(token);
+    return await completeHuaweiQuickLogin(req, res, entry.identity, entry.config, result);
+  } finally {
+    entry.inProgress = false;
+  }
+}));
+
+app.post(HUAWEI_BIND_PATH, asyncHandler(async (req, res) => {
+  const token = normalizeText(req.body.binding_token);
+  const entry = pendingHuaweiBinding(token);
+  if (!entry) return res.status(400).json({ error: 'invalid_grant', error_description: '华为绑定请求已过期，请重新登录' });
+  if (entry.inProgress) return res.status(409).json({ error: 'conflict', error_description: '请求正在处理' });
+  const rawToken = /^Bearer (.+)$/.exec(req.get('authorization') || '')?.[1];
+  const decoded = rawToken && validateToken(rawToken, 'access');
+  const tokenData = decoded && await Token.findAccessTokenById(decoded.jti);
+  const client = tokenData && await Client.findById(tokenData.client_id);
+  if (!tokenData || !Token.matchesToken(tokenData, rawToken) || !isClientActive(client)
+      || tokenData.client_id !== entry.clientId || tokenData.user_id !== decoded.sub
+      || new Date(tokenData.expires_at) <= new Date() || !tokenData.scopes.includes('openid')) {
+    return res.status(401).json({ error: 'invalid_token', error_description: '请重新验证已有账号' });
+  }
+  entry.inProgress = true;
+  try {
+    let result;
+    try {
+      result = await findOrCreateHuaweiUser(entry.identity, entry.config, tokenData.user_id, false);
+    } catch (error) {
+      return res.status(409).json({ error: 'conflict', error_description: error.message });
+    }
+    if (result.user.id !== tokenData.user_id) return res.status(409).json({ error: 'conflict', error_description: '华为账号已绑定其他用户' });
+    pendingHuaweiBindings.delete(token);
+    return res.json({ linked: true });
+  } finally {
+    entry.inProgress = false;
+  }
+}));
+
+app.get('/oauth2/mfa', asyncHandler(async (req, res) => {
+  if (!await getPendingOidcLogin(req)) return res.redirect('/oauth2/authorize');
+  res.sendFile(pageFile('mfa'));
+}));
+
+app.get('/api/v1/auth/oauth/oidc/pending', asyncHandler(async (req, res) => {
+  const login = await getPendingOidcLogin(req);
+  if (!login) return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.mfa.expired', error_description: '登录验证已过期，请重新登录' });
+  res.json({ factor: login.pending.factor, email: maskEmail(login.user.email), login_url: login.pending.source === 'password' && login.pending.returnTo.startsWith('/oauth2/authorize?') ? login.pending.returnTo : '/oauth2/authorize' });
+}));
+
+app.post('/api/v1/auth/oauth/oidc/complete', asyncHandler(async (req, res) => {
+  const login = await getPendingOidcLogin(req);
+  if (!login) return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.mfa.expired', error_description: '登录验证已过期，请重新登录' });
+  const { pending, record, user, context } = login;
+  if (!await EmailVerificationCode.incrementAttempts(record.id, 5)) {
+    return res.status(429).json({ error: 'too_many_attempts', error_key: 'auth.mfa.locked', error_description: '尝试次数过多，请重新登录' });
+  }
+  const code = normalizeText(req.body.code);
+  let valid = false;
+  if (pending.factor === 'totp' && user.totp_enabled) {
+    valid = await verifyTotpOnce(user, code) || await consumeRecoveryCode(user, code);
+  } else if (pending.factor === 'email' && !user.totp_enabled) {
+    valid = (await verifyEmailCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, code, userId: user.id })).ok;
+  }
+  if (!valid || !await getPendingOidcLogin(req)) {
+    return res.status(400).json({ error: 'invalid_grant', error_key: 'auth.mfa.invalid', error_description: '验证码不正确、已使用或已过期' });
+  }
+  const result = await finishAccountLogin(user, async (current, connection) => {
+    if (!await new EmailVerificationCodeModel(connection).consume(record.id)) {
+      return authenticatorError(400, 'auth.mfa.invalid', '验证码不正确、已使用或已过期');
+    }
+    if (pending.source === 'password') {
+      await completePasswordLogin(req, res, current, connection);
+    } else if (pending.source === 'huawei' && context.huawei.oauth) {
+      const oauth = context.huawei.oauth;
+      const authorized = await buildAuthorizationResponse(current, oauth, connection);
+      if (authorized.status !== 200) return authorized;
+      const redirect = new URL(authorized.body.redirect);
+      const phoneGranted = oauth.scope.split(/\s+/).includes('phone');
+      const responseUser = serializeUser(current);
+      if (!phoneGranted) {
+        Object.assign(responseUser, { phoneCountryCode: '', phoneNationalNumber: '', phoneE164: '',
+          phoneMasked: '', phoneVerified: false, phoneVerifiedAt: null });
+      }
+      await new UserModel(connection).update(current.id, { lastLoginIp: getClientIp(req) });
+      await recordLoginLog({ username: current.username, userId: current.id, req, result: 'success',
+        detail: 'Huawei identity with second factor', database: connection });
+      return { status: 200, body: {
+        authorization_code: redirect.searchParams.get('code'),
+        state: redirect.searchParams.get('state') || '',
+        redirect_uri: oauth.redirect_uri,
+        redirect: authorized.body.redirect,
+        user: responseUser,
+        phone: phoneGranted ? huaweiPendingPhoneCipher.decrypt(context.huawei.phone) || null : null,
+        phoneStatus: phoneGranted ? context.huawei.phoneStatus : 'scope_not_granted',
+        phoneBinding: context.huawei.phoneBinding
+      } };
+    } else {
+      await new UserModel(connection).update(current.id, { lastLoginIp: getClientIp(req) });
+      await recordLoginLog({ username: current.username, userId: current.id, req, result: 'success', detail: 'External identity with second factor', database: connection });
+      await setSessionCookie(req, res, current, connection);
+      if (pending.source === 'huawei') {
+        return { status: 200, body: {
+          redirect: getOidcReturnPath(pending.returnTo),
+          user: serializeUser(current),
+          phone: huaweiPendingPhoneCipher.decrypt(context.huawei.phone) || null,
+          phoneStatus: context.huawei.phoneStatus,
+          phoneBinding: context.huawei.phoneBinding
+        } };
+      }
+    }
+    return { status: 200, body: { redirect: getOidcReturnPath(pending.returnTo) } };
+  });
+  if (result.status === 200) res.clearCookie(OIDC_PENDING_COOKIE, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' });
+  res.status(result.status).json(result.body);
+}));
+
+app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
+  const username = normalizeText(req.body.username);
+  const password = String(req.body.password || '');
+  if (!username || username.length > 255 || !password || Buffer.byteLength(password, 'utf8') > 72) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid username or password length' });
+  }
+  const user = await User.findByUsername(username);
+  const attemptKey = `login:${user?.id || username.toLowerCase()}`;
+  const maxAttempts = await getSettingNumber('login_max_attempts', 5);
+  const lockoutMinutes = await getSettingNumber('login_lockout_minutes', 15);
+  const existingAttempt = await RateLimit.check(attemptKey, maxAttempts);
+  if (!existingAttempt.allowed) return rejectLockedLogin(req, res, username, existingAttempt);
+
   const submittedEmailCode = normalizeText(req.body.email_code);
   const submittedTotpCode = normalizeText(req.body.totp_code);
-  const loginCaptchaGrace = captchaGraceStore.get(attemptKey) > Date.now();
-
-  const user = await User.findByUsername(username);
+  const loginCaptchaGrace = hasCaptchaContinuation(req, user?.id);
 
   if (user && isUserBanned(user)) {
     await recordLoginLog({ username, userId: user.id, req, result: 'banned' });
@@ -2089,6 +2717,37 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     });
   }
 
+  // Native forms collect MFA before CAPTCHA. This probe cannot create a session.
+  if (req.body.check_verification === true) {
+    const validation = await validateAuthorizationRequest(req.body);
+    if (validation.body) return res.status(validation.status).json(validation.body);
+    const attempt = await RateLimit.consume(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
+    if (!attempt.allowed) return rejectLockedLogin(req, res, username, attempt);
+    if (!user || !user.password || !await bcrypt.compare(password, user.password)) {
+      await recordLoginLog({ username, userId: user?.id || null, req, result: 'invalid_credentials' });
+      if (user) await detectAndFlagAnomalousLogin(user, req, 'failure');
+      return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.invalid_credentials', error_description: '用户名或密码错误' });
+    }
+    const factor = user.totp_enabled ? 'totp' : await isSettingEnabled('login_email_code') ? 'email' : '';
+    if (factor === 'email') {
+      try {
+        await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
+      } catch (error) {
+        return res.status(error.status || 502).json({
+          error: error.code === 'email_code.cooldown' ? 'too_many_requests' : 'email_delivery_failed',
+          error_key: error.code || 'smtp.test_failed',
+          error_description: error.message
+        });
+      }
+    }
+    return res.json({
+      verification_required: true, factor,
+      email_masked: factor === 'email' ? maskEmail(user.email) : undefined,
+      captcha_required: Boolean(user.captcha_required) || await isSettingEnabled('captcha_login'),
+      captcha_provider: 'image'
+    });
+  }
+
   // The captcha grace window only covers the second-step resubmission (email or
   // authenticator code), which carries the code from the request that already
   // passed the captcha. A fresh login must always pass the captcha — either
@@ -2097,11 +2756,12 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   const captchaSkipped = loginCaptchaGrace && Boolean(submittedEmailCode || submittedTotpCode);
   const captchaNeeded = ((await isSettingEnabled('captcha_login')) || userCaptchaRequired) && !captchaSkipped;
   if (captchaNeeded) {
-    const captcha = verifyCaptcha(req.body);
+    const captcha = await verifyCaptcha(req.body, req, 'login');
     if (!captcha.ok) {
       await recordLoginLog({ username, userId: user?.id || null, req, result: 'captcha_failed' });
-      const fieldsMissing = !normalizeText(req.body.captcha_id) && !normalizeText(req.body.captcha_code);
-      return res.status(400).json({
+      const fieldsMissing = !(req.body.captcha_surface === 'web' && turnstileSettings.siteKey)
+        && !normalizeText(req.body.captcha_id) && !normalizeText(req.body.captcha_code);
+      return res.status(captcha.status || 400).json({
         error: 'invalid_request',
         error_key: fieldsMissing ? 'captcha.required' : captcha.error_key,
         error_description: fieldsMissing ? '检测到异常行为，本次登录需要输入图形验证码' : captcha.error_description
@@ -2109,10 +2769,12 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     }
   }
 
+  // Revealing or refreshing a CAPTCHA is not a password attempt.
+  const attempt = await RateLimit.consume(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
+  if (!attempt.allowed) return rejectLockedLogin(req, res, username, attempt);
+
   if (!user || !user.password || !await bcrypt.compare(password, user.password)) {
-    recordLoginFailure(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
-    const entry = loginAttemptStore.get(attemptKey);
-    const remaining = maxAttempts - (entry ? entry.count : 1);
+    const remaining = attempt.remaining;
     await recordLoginLog({ username, userId: user?.id || null, req, result: 'invalid_credentials' });
     if (user) {
       await detectAndFlagAnomalousLogin(user, req, 'failure');
@@ -2126,24 +2788,17 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   }
 
   // Authenticator (TOTP) verification takes precedence over the email code.
-  const totpActive = (await isSettingEnabled('totp_allowed')) && user.totp_enabled && user.totp_secret;
+  const totpActive = Boolean(user.totp_enabled);
   if (totpActive) {
     if (!submittedTotpCode) {
-      await recordLoginLog({ username, userId: user.id, req, result: 'totp_required' });
-      captchaGraceStore.set(attemptKey, Date.now() + CAPTCHA_GRACE_TTL_MS);
-      return res.json({
-        require_totp: true,
-        message_key: 'auth.totp.required',
-        message: '请输入验证器 App 中的 6 位动态码'
-      });
+      return beginPasswordSecondFactor(req, res, user, 'totp');
     }
-    const totpOk = /^\d{6}$/.test(submittedTotpCode) && verifyTotp(user.totp_secret, submittedTotpCode);
+    const totpOk = /^\d{6}$/.test(submittedTotpCode) && await verifyTotpOnce(user, submittedTotpCode);
     let recoveryOk = false;
     if (!totpOk) {
       recoveryOk = await consumeRecoveryCode(user, submittedTotpCode);
     }
     if (!totpOk && !recoveryOk) {
-      recordLoginFailure(attemptKey, maxAttempts, lockoutMinutes * 60 * 1000);
       await recordLoginLog({ username, userId: user.id, req, result: 'totp_invalid' });
       return res.status(400).json({
         error: 'invalid_request',
@@ -2157,26 +2812,21 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     const emailCode = submittedEmailCode;
     if (!emailCode) {
       try {
-        await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
+        return await beginPasswordSecondFactor(req, res, user, 'email');
       } catch (error) {
         console.error('Failed to send login code:', error.message);
+        if (error.code === 'email_code.cooldown') {
+          return res.status(429).json({ error: 'too_many_attempts', error_key: error.code, error_description: error.message });
+        }
         return res.status(502).json({
           error: 'email_delivery_failed',
           error_key: 'smtp.test_failed',
           error_description: '验证码邮件发送失败，请稍后再试或联系管理员检查发件设置'
         });
       }
-      await recordLoginLog({ username, userId: user.id, req, result: 'email_code_required' });
-      captchaGraceStore.set(attemptKey, Date.now() + CAPTCHA_GRACE_TTL_MS);
-      return res.json({
-        require_email_code: true,
-        email_masked: maskEmail(user.email),
-        message_key: 'auth.login_code.sent',
-        message: `验证码已发送至邮箱 ${maskEmail(user.email)}，请输入以完成登录`
-      });
     }
 
-    const verification = await verifyEmailCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, code: emailCode });
+    const verification = await verifyEmailCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, code: emailCode, userId: user.id });
     if (!verification.ok) {
       await recordLoginLog({ username, userId: user.id, req, result: 'email_code_invalid' });
       return res.status(verification.status).json({
@@ -2187,21 +2837,10 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     }
   }
 
-  clearLoginAttempts(attemptKey);
-  captchaGraceStore.delete(attemptKey);
-  await detectAndFlagAnomalousLogin(user, req, 'success');
-  if (userCaptchaRequired) {
-    await User.update(user.id, { captchaRequired: false });
-  }
-  const previousIp = normalizeText(user.last_login_ip || user.lastLoginIp);
-  if (previousIp && previousIp !== ip && user.email) {
-    sendLoginAlertEmail({ to: user.email, ip, userAgent: req.headers['user-agent'] }).catch(() => {});
-  }
-  await User.update(user.id, { lastLoginIp: ip });
-  await recordLoginLog({ username, userId: user.id, req, result: 'success' });
-  await setSessionCookie(req, res, user);
-
-  const result = await buildAuthorizationResponseV2(user, req.body);
+  const result = await finishAccountLogin(user, async (current, connection) => {
+    await completePasswordLogin(req, res, current, connection);
+    return buildAuthorizationResponse(current, req.body, connection);
+  });
   return res.status(result.status).json(result.body);
 }));
 
@@ -2217,12 +2856,16 @@ app.post('/api/email-verification/send', asyncHandler(async (req, res) => {
     });
   }
 
-  if (!purpose) {
+  if (![EMAIL_PURPOSE_REGISTER, EMAIL_PURPOSE_PASSWORD_RESET].includes(purpose)) {
     return res.status(400).json({
       error: 'invalid_request',
       error_key: 'email_code.purpose.invalid',
       error_description: '验证码用途无效'
     });
+  }
+
+  if (purpose === EMAIL_PURPOSE_REGISTER && !await isSettingEnabled('registration_enabled')) {
+    return res.status(403).json({ error: 'forbidden', error_description: 'Registration is disabled' });
   }
 
   const existingUser = await User.findByEmail(email);
@@ -2273,9 +2916,9 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
   }
 
   if (await isSettingEnabled('captcha_register')) {
-    const captcha = verifyCaptcha(req.body);
+    const captcha = await verifyCaptcha(req.body, req, 'register');
     if (!captcha.ok) {
-      return res.status(400).json({
+      return res.status(captcha.status || 400).json({
         error: 'invalid_request',
         error_key: captcha.error_key,
         error_description: captcha.error_description
@@ -2367,7 +3010,7 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
   await recordLoginLog({ username, userId: user.id, req, result: 'register', detail: email });
   await setSessionCookie(req, res, user);
 
-  const result = await buildAuthorizationResponseV2(user, req.body);
+  const result = await buildAuthorizationResponse(user, req.body);
   return res.status(result.status).json(result.body);
 }));
 
@@ -2414,7 +3057,8 @@ app.post('/api/password-reset', asyncHandler(async (req, res) => {
   const verification = await verifyEmailCode({
     email,
     purpose: EMAIL_PURPOSE_PASSWORD_RESET,
-    code: emailCode
+    code: emailCode,
+    userId: user.id
   });
 
   if (!verification.ok) {
@@ -2427,6 +3071,7 @@ app.post('/api/password-reset', asyncHandler(async (req, res) => {
 
   await User.updatePassword(user.id, password);
   await Session.revokeAllForUser(user.id);
+  await Token.revokeByUser(user.id);
   await User.update(user.id, { emailVerified: true });
 
   res.json({
@@ -2451,6 +3096,49 @@ app.get(['/api/me', '/api/profile'], asyncHandler(async (req, res) => {
   });
 }));
 
+async function preparePhoneUpdate(req, res, user, requireReauthentication = false) {
+  const body = req.body;
+  if (body.phone === undefined && body.phoneNumber === undefined && body.phoneCountryCode === undefined) {
+    return { updates: {}, changed: false };
+  }
+  const hasNumber = body.phone !== undefined || body.phoneNumber !== undefined;
+  const input = String(hasNumber ? (body.phone !== undefined ? body.phone : body.phoneNumber) ?? '' : user.phone_number ?? '').trim();
+  const countryCode = phoneNumbers.normalizeCountryCode(body.phoneCountryCode ?? user.phone_country_code ?? phoneNumbers.DEFAULT_COUNTRY_CODE);
+  const fullNumber = body.phone !== undefined || /^\+|^00/.test(input);
+  const phone = input && countryCode && /^\+?[0-9\s().\-]+$/.test(input)
+    ? fullNumber ? phoneNumbers.normalizePhone(input, countryCode) : phoneNumbers.normalizeParts(countryCode, input)
+    : null;
+  if (input && !phone) {
+    res.status(400).json({ error: 'invalid_request', error_key: 'validation.phone.invalid', error_description: '请输入有效的国家/地区代码和手机号' });
+    return null;
+  }
+  const currentE164 = user.phone_e164 || phoneNumbers.toE164(user.phone_country_code, user.phone_number);
+  const changed = (phone?.e164 || '') !== (currentE164 || '');
+  if (changed && requireReauthentication) {
+    const recent = req.authSession && Date.now() - new Date(req.authSession.created_at).getTime() < 5 * 60 * 1000;
+    const password = String(body.currentPassword || '');
+    const passwordVerified = !recent && user.password && password && Buffer.byteLength(password) <= 72
+      && await bcrypt.compare(password, user.password);
+    if (!recent && !passwordVerified) {
+      res.status(403).json({ error: 'reauthentication_required', error_key: 'profile.phone.reauthentication_required', error_description: '修改手机号前请填写当前密码，或重新登录后重试' });
+      return null;
+    }
+  }
+  if (phone) {
+    const conflict = await User.findByPhone(phone.e164);
+    if (conflict && conflict.id !== user.id) {
+      res.status(409).json({ error: 'conflict', error_key: 'validation.phone.taken', error_description: '该手机号已被其他账户绑定' });
+      return null;
+    }
+  }
+  return {
+    changed,
+    updates: changed ? {
+      phoneCountryCode: phone?.countryCode || '', phoneNumber: phone?.nationalNumber || '', phoneVerified: false
+    } : {}
+  };
+}
+
 app.put('/api/profile', asyncHandler(async (req, res) => {
   const currentUser = await getAuthenticatedUser(req, res);
   if (!currentUser) {
@@ -2467,6 +3155,8 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   const hasAvatar = Object.prototype.hasOwnProperty.call(req.body, 'avatar');
   const hasDescription = Object.prototype.hasOwnProperty.call(req.body, 'description');
   const hasEmailVerifyCode = normalizeText(req.body.email_code) !== '';
+  const phoneUpdate = await preparePhoneUpdate(req, res, currentUser, true);
+  if (!phoneUpdate) return;
 
   let nextName = currentUser.name;
   let nextUsername = currentUser.username;
@@ -2514,6 +3204,15 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
         error_description: '请输入有效的邮箱地址'
       });
     }
+    if (normalizedEmail !== normalizeEmail(currentUser.email)) {
+      const recentlyAuthenticated = req.authSession && Date.now() - new Date(req.authSession.created_at).getTime() < 5 * 60 * 1000;
+      const suppliedPassword = String(req.body.currentPassword || '');
+      const passwordVerified = !recentlyAuthenticated && currentUser.password && suppliedPassword
+        && Buffer.byteLength(suppliedPassword) <= 72 && await bcrypt.compare(suppliedPassword, currentUser.password);
+      if (!recentlyAuthenticated && !passwordVerified) {
+        return res.status(403).json({ error: 'reauthentication_required', error_description: '修改邮箱前请填写当前密码，或重新登录后重试' });
+      }
+    }
     // A changed email must be confirmed with a code sent to the NEW address.
     if (normalizedEmail !== normalizeEmail(currentUser.email) && !hasEmailVerifyCode) {
       const conflictUser = await User.findByEmail(normalizedEmail);
@@ -2548,7 +3247,8 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
       const verification = await verifyEmailCode({
         email: normalizedEmail,
         purpose: EMAIL_PURPOSE_EMAIL_CHANGE,
-        code: req.body.email_code
+        code: req.body.email_code,
+        userId: currentUser.id
       });
       if (!verification.ok) {
         return res.status(verification.status).json({
@@ -2580,6 +3280,7 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   const { usernameConflict, emailConflict } = await findUserConflicts({
     username: nextUsername,
     email: nextEmail,
+    emailVerified: nextEmail !== currentUser.email ? true : undefined,
     excludeUserId: currentUser.id
   });
 
@@ -2622,10 +3323,8 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
     }
 
     await User.updatePassword(currentUser.id, newPassword);
-    const changedSession = validateToken(String(req.cookies.session || ''));
-    if (changedSession && changedSession.sid) {
-      await Session.revokeAllForUser(currentUser.id, changedSession.sid);
-    }
+    await Session.revokeAllForUser(currentUser.id);
+    await Token.revokeByUser(currentUser.id);
   }
 
   await User.update(currentUser.id, {
@@ -2633,11 +3332,16 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
     username: nextUsername,
     email: nextEmail,
     avatar: nextAvatar,
-    description: nextDescription
+    description: nextDescription,
+    ...phoneUpdate.updates
   });
 
   const updatedUser = await User.findById(currentUser.id);
-  await setSessionCookie(req, res, updatedUser);
+  if (newPassword || nextEmail !== currentUser.email || phoneUpdate.changed) {
+    await Session.revokeAllForUser(currentUser.id);
+    await Token.revokeByUser(currentUser.id);
+    await setSessionCookie(req, res, updatedUser);
+  }
 
   res.json({
     message_key: 'profile.updated',
@@ -2688,7 +3392,7 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    if (redirectUri && authCodeData.redirect_uri !== redirectUri) {
+    if (!redirectUri || authCodeData.redirect_uri !== redirectUri || !client.redirectUris.includes(redirectUri)) {
       return res.status(400).json({
         error: 'invalid_redirect_uri',
         error_key: 'auth.request.invalid_redirect_uri',
@@ -2721,43 +3425,41 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    await Token.deleteAuthCode(code);
+    if (!await Token.consumeAuthCode(code)) {
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'Authorization code has already been used' });
+    }
 
     const accessToken = await generateAccessToken(authCodeData.user_id, clientId, authCodeData.scopes);
     const newRefreshToken = authCodeData.scopes.includes('offline_access')
       ? await generateRefreshToken(authCodeData.user_id, clientId, authCodeData.scopes)
       : '';
 
-    const idToken = jwt.sign({
-      sub: user.id,
-      email: user.email,
-      name: user.name,
-      preferred_username: user.username,
-      username: user.username,
-      picture: user.avatar,
-      aud: clientId,
-      iss: getBaseUrl(req),
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor((Date.now() + ACCESS_TOKEN_TTL_MS) / 1000)
-    }, JWT_SECRET);
-
     const responseBody = {
       access_token: accessToken,
       token_type: 'Bearer',
       expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-      id_token: idToken,
       scope: authCodeData.scopes.join(' ')
     };
+
+    if (authCodeData.scopes.includes('openid')) {
+      responseBody.id_token = signingKeys.sign({
+        ...scopedUserClaims(user, authCodeData.scopes),
+        ...(authCodeData.nonce ? { nonce: authCodeData.nonce } : {}),
+        aud: clientId, iss: PUBLIC_BASE_URL, iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor((Date.now() + ACCESS_TOKEN_TTL_MS) / 1000)
+      });
+    }
 
     if (newRefreshToken) {
       responseBody.refresh_token = newRefreshToken;
     }
 
+    await UserAppUsage.record(user.id, client);
     return res.json(responseBody);
   }
 
   if (grantType === 'refresh_token') {
-    const decoded = validateToken(refreshToken);
+    const decoded = validateToken(refreshToken, 'refresh');
     if (!decoded || decoded.type !== 'refresh') {
       return res.status(400).json({
         error: 'invalid_grant',
@@ -2775,7 +3477,8 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
     }
 
     const refreshTokenData = await Token.findRefreshTokenById(decoded.jti);
-    if (!refreshTokenData || new Date(refreshTokenData.expires_at) < new Date()) {
+    if (!Token.matchesToken(refreshTokenData, refreshToken) || refreshTokenData.client_id !== clientId
+        || refreshTokenData.user_id !== decoded.sub || new Date(refreshTokenData.expires_at) <= new Date()) {
       return res.status(400).json({
         error: 'invalid_grant',
         error_key: 'oauth.refresh_token.expired',
@@ -2792,13 +3495,21 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    const refreshedScopes = Array.isArray(refreshTokenData.scopes) && refreshTokenData.scopes.length
-      ? refreshTokenData.scopes
-      : ['openid', 'profile', 'email'];
+    const originalScopes = Array.isArray(refreshTokenData.scopes) ? refreshTokenData.scopes : [];
+    const refreshedScopes = scopeParam ? parseRequestedScopes(scopeParam, []) : originalScopes;
+    if (findUnsupportedScopes(refreshedScopes, originalScopes).length || findUnsupportedScopes(refreshedScopes, client.scopes).length) {
+      return res.status(400).json({ error: 'invalid_scope', error_description: 'Refresh scopes may only narrow the original authorization' });
+    }
+    if (!await Token.consumeRefreshToken(decoded.jti)) {
+      return res.status(400).json({ error: 'invalid_grant', error_description: 'Refresh token has already been used' });
+    }
     const accessToken = await generateAccessToken(decoded.sub, clientId, refreshedScopes);
+    const replacementRefreshToken = await generateRefreshToken(decoded.sub, clientId, refreshedScopes);
 
+    await UserAppUsage.record(refreshUser.id, client);
     return res.json({
       access_token: accessToken,
+      refresh_token: replacementRefreshToken,
       token_type: 'Bearer',
       expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
       scope: refreshedScopes.join(' ')
@@ -2806,8 +3517,9 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
   }
 
   if (grantType === 'client_credentials') {
-    const requestedScopes = scopeParam ? parseRequestedScopes(scopeParam) : ['client'];
-    const unsupportedScopes = scopeParam ? findUnsupportedScopes(requestedScopes, client.scopes) : [];
+    const requestedScopes = parseRequestedScopes(scopeParam, []);
+    const unsupportedScopes = findUnsupportedScopes(requestedScopes, client.scopes);
+    unsupportedScopes.push(...requestedScopes.filter(scope => ['openid', 'profile', 'email', 'roles', 'offline_access'].includes(scope)));
 
     if (unsupportedScopes.length) {
       return res.status(400).json({
@@ -2817,8 +3529,7 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    const systemUser = await ensureSystemUser();
-    const accessToken = await generateAccessToken(systemUser.id, clientId, requestedScopes);
+    const accessToken = await generateAccessToken(null, clientId, requestedScopes);
 
     return res.json({
       access_token: accessToken,
@@ -2835,6 +3546,11 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
   });
 }));
 
+require('./services/qfli-integration')({
+  app, asyncHandler, authenticateClient, validateToken, getModels: () => ({ Token, Client, User }),
+  isClientActive, isUserBanned, scopedUserClaims,
+});
+
 app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -2846,7 +3562,7 @@ app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
   }
 
   const token = authHeader.substring(7);
-  const decoded = validateToken(token);
+  const decoded = validateToken(token, 'access');
   if (!decoded) {
     return res.status(401).json({
       error: 'invalid_token',
@@ -2856,12 +3572,18 @@ app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
   }
 
   const tokenData = await Token.findAccessTokenById(decoded.jti);
-  if (!tokenData || new Date(tokenData.expires_at) < new Date()) {
+  const tokenClient = tokenData && await Client.findById(tokenData.client_id);
+  if (!Token.matchesToken(tokenData, token) || !isClientActive(tokenClient)
+      || tokenData.client_id !== decoded.aud || tokenData.user_id !== decoded.sub || new Date(tokenData.expires_at) <= new Date()) {
     return res.status(401).json({
       error: 'invalid_token',
       error_key: 'auth.token.invalid_or_expired',
       error_description: '令牌无效或已过期'
     });
+  }
+
+  if (!tokenData.scopes.includes('openid')) {
+    return res.status(403).json({ error: 'insufficient_scope', error_description: 'UserInfo requires the openid scope' });
   }
 
   const user = await User.findById(decoded.sub);
@@ -2881,18 +3603,7 @@ app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
     });
   }
 
-  res.json({
-    sub: user.id,
-    name: user.name,
-    preferred_username: user.username,
-    username: user.username,
-    email: user.email,
-    picture: user.avatar,
-    email_verified: Boolean(user.email_verified),
-    role: normalizeText(user.role).toLowerCase() || 'user',
-    isAdmin: normalizeText(user.role).toLowerCase() === USER_ROLE_ADMIN,
-    updated_at: Math.floor(new Date(user.updated_at || Date.now()).getTime() / 1000)
-  });
+  res.json(scopedUserClaims(user, tokenData.scopes));
 }));
 
 app.post('/oauth2/introspect', asyncHandler(async (req, res) => {
@@ -2901,13 +3612,16 @@ app.post('/oauth2/introspect', asyncHandler(async (req, res) => {
     return;
   }
 
-  const decoded = validateToken(normalizeText(req.body.token));
+  const rawToken = normalizeText(req.body.token);
+  const decoded = validateToken(rawToken, 'access');
   if (!decoded) {
     return res.json({ active: false });
   }
 
   const tokenData = await Token.findAccessTokenById(decoded.jti);
-  if (!tokenData || tokenData.client_id !== client.id || new Date(tokenData.expires_at) < new Date()) {
+  const tokenUser = tokenData?.user_id ? await User.findById(tokenData.user_id) : null;
+  if (!Token.matchesToken(tokenData, rawToken) || tokenData.client_id !== client.id || decoded.aud !== client.id
+      || (tokenData.user_id && (!tokenUser || isUserBanned(tokenUser))) || new Date(tokenData.expires_at) <= new Date()) {
     return res.json({ active: false });
   }
 
@@ -2927,7 +3641,8 @@ app.post('/oauth2/revoke', asyncHandler(async (req, res) => {
     return;
   }
 
-  const decoded = validateToken(normalizeText(req.body.token));
+  const rawToken = normalizeText(req.body.token);
+  const decoded = validateToken(rawToken, 'access') || validateToken(rawToken, 'refresh');
 
   if (decoded && decoded.aud === client.id) {
     if (decoded.type === 'refresh') {
@@ -2941,15 +3656,15 @@ app.post('/oauth2/revoke', asyncHandler(async (req, res) => {
 }));
 
 app.get('/oauth2/consent', (req, res) => {
-  res.sendFile(path.join(__dirname, 'consent.html'));
+  res.redirect(`/oauth2/authorize?${new URLSearchParams(Object.entries(req.query).filter(([, value]) => typeof value === 'string')).toString()}`);
 });
 
 app.get('/oauth2/error', (req, res) => {
-  res.sendFile(path.join(__dirname, 'error.html'));
+  res.sendFile(pageFile('error'));
 });
 
 app.get(['/success', '/oauth2/success'], (req, res) => {
-  res.sendFile(path.join(__dirname, 'success.html'));
+  res.redirect('/profile');
 });
 
 app.get('/profile', asyncHandler(async (req, res) => {
@@ -2958,15 +3673,13 @@ app.get('/profile', asyncHandler(async (req, res) => {
     return res.redirect('/oauth2/authorize');
   }
 
-  res.sendFile(path.join(__dirname, 'profile.html'));
+  res.sendFile(pageFile('profile'));
 }));
 
 app.get('/oauth2/logout', asyncHandler(async (req, res) => {
-  const session = validateToken(String(req.cookies.session || ''));
-  if (session && session.sid) {
-    await Session.revoke(session.sid).catch(() => {});
-  }
-  res.clearCookie('session', COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : undefined);
+  await getAuthenticatedUser(req);
+  if (req.authSession) await Session.revoke(req.authSession.id);
+  res.clearCookie('session', sessionCookieOptions(null));
   const target = resolveLogoutRedirect(req.query.redirect);
   res.redirect(target || '/oauth2/authorize');
 }));
@@ -2975,7 +3688,7 @@ app.get('/api/account/sessions', asyncHandler(async (req, res) => {
   const user = await requireAuthenticatedUser(req, res);
   if (!user) return;
 
-  const currentSid = validateToken(String(req.cookies.session || ''))?.sid || '';
+  const currentSid = req.authSession?.token || '';
   const rows = await Session.findActiveByUserId(user.id);
   res.json(rows.map(row => ({
     id: row.id,
@@ -2991,8 +3704,7 @@ app.post('/api/account/sessions/revoke-others', asyncHandler(async (req, res) =>
   const user = await requireAuthenticatedUser(req, res);
   if (!user) return;
 
-  const currentSid = validateToken(String(req.cookies.session || ''))?.sid || '';
-  await Session.revokeAllForUser(user.id, currentSid || undefined);
+  await Session.revokeAllForUser(user.id, req.authSession.id);
   res.json({ message_key: 'sessions.revoked_others', message: '已退出其他所有设备' });
 }));
 
@@ -3027,116 +3739,191 @@ app.post('/api/users/:id/revoke-sessions', asyncHandler(async (req, res) => {
   }
 
   await Session.revokeAllForUser(target.id);
+  await Token.revokeByUser(target.id);
   await recordAdminLog({ admin, req, action: 'revoke_sessions', detail: target.username });
   res.json({ message_key: 'users.sessions_revoked', message: '已强制该用户退出所有设备' });
+}));
+
+function authenticatorError(status, key, description) {
+  return { status, body: { error: status === 404 ? 'not_found' : status === 403 ? 'forbidden' : 'invalid_request', error_key: key, error_description: description } };
+}
+
+async function authenticatorStatus(user, authenticators) {
+  return {
+    totpEnabled: Boolean(user.totp_enabled),
+    recoveryCodesRemaining: getRecoveryHashes(user).length,
+    authenticators: AuthenticatorModel.project(user, await authenticators.list(user.id))
+  };
+}
+
+async function mutateAuthenticators(req, res, work) {
+  const authenticated = await requireAuthenticatedUser(req, res);
+  if (!authenticated) return;
+  const result = await Authenticator.withUser(authenticated.id, async (user, authenticators, users, connection) => {
+    const session = await new SessionModel(connection).findById(req.authSession.id);
+    if (!user || isUserBanned(user) || !session || session.revoked_at || new Date(session.expires_at) <= new Date()) {
+      return authenticatorError(401, 'auth.mfa.expired', '登录已失效，请重新登录');
+    }
+    return work(user, authenticators, users, connection);
+  });
+  res.status(result.status || 200).json(result.body);
+}
+
+async function verifyAuthenticatorManagement(user, code, authenticators, users) {
+  const rateLimit = new RateLimitModel(authenticators.pool);
+  const limit = await rateLimit.consume(`totp:${user.id}`, 10, 5 * 60 * 1000);
+  if (!limit.allowed) return false;
+  const valid = await verifyTotpLocked(user, normalizeText(code), authenticators, users)
+    || await consumeRecoveryCode(user, code, users);
+  if (valid) await rateLimit.clear(`totp:${user.id}`);
+  return valid;
+}
+
+async function authenticatorSecurityChanged(user, authenticators, users, connection, sessionId) {
+  await authenticators.clearPending(user.id);
+  const updated = await users.update(user.id, { totpRevision: Number(user.totp_revision || 0) + 1 });
+  await new SessionModel(connection).revokeAllForUser(user.id, sessionId);
+  await new TokenModel(connection).revokeByUser(user.id);
+  return updated;
+}
+
+async function stageAuthenticator(req, user, authenticators, users, legacySetup = false) {
+  const name = legacySetup ? '' : normalizeText(req.body.name);
+  if (!legacySetup && (!name || name.length > 64)) {
+    return authenticatorError(400, 'auth.totp.name_required', '请输入验证器名称，最多 64 个字符');
+  }
+  if (legacySetup && user.totp_enabled) {
+    return authenticatorError(409, 'auth.totp.already_enabled', '验证器已绑定，请使用添加验证器');
+  }
+  if (!(await isSettingEnabled('totp_allowed', authenticators.pool))) {
+    return authenticatorError(403, 'auth.totp.disabled', '管理员已关闭验证器两步验证');
+  }
+  if (user.totp_enabled) {
+    if (!await verifyAuthenticatorManagement(user, req.body.code, authenticators, users)) {
+      return authenticatorError(400, 'auth.totp.invalid', '现有验证器动态码或恢复码不正确');
+    }
+    user = await users.findById(user.id);
+  } else if (Date.now() - new Date(req.authSession.created_at).getTime() > 5 * 60 * 1000) {
+    return authenticatorError(403, 'auth.totp.reauthentication_required', '绑定验证器前，请重新登录');
+  }
+  await authenticators.clearPending(user.id);
+  const secret = generateSecret();
+  const encrypted = totpCipher.encrypt(secret);
+  if (legacySetup) {
+    await users.stageTotpSecret(user.id, encrypted);
+    user = await users.findById(user.id);
+  } else if (!user.totp_enabled && user.totp_secret) {
+    user = await users.update(user.id, { totpSecret: null });
+  }
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const id = await authenticators.stage({ userId: user.id, name, secret: encrypted,
+    sessionId: req.authSession.id, securityState: pendingLoginSecurityState(user), expiresAt, legacySetup });
+  const otpauthUri = buildOtpauthUri({ secret, account: `${user.email || user.username}${name ? ` (${name})` : ''}` });
+  const qrDataUrl = await QRCode.toDataURL(otpauthUri, { margin: 1, width: 220 });
+  return { body: { id, secret, otpauthUri, qrDataUrl, expiresAt } };
+}
+
+async function confirmAuthenticator(req, user, authenticators, users, connection, legacySetup = false) {
+  if (!(await isSettingEnabled('totp_allowed', authenticators.pool))) return authenticatorError(403, 'auth.totp.disabled', '管理员已关闭验证器两步验证');
+  const pending = (await authenticators.list(user.id)).find(row => !row.activated_at
+    && (legacySetup ? row.legacy_setup : row.id === req.params.id));
+  if (!pending || pending.session_id !== req.authSession.id || new Date(pending.expires_at) <= new Date()
+      || pending.security_state !== pendingLoginSecurityState(user)) {
+    return authenticatorError(400, 'auth.totp.setup_expired', '绑定请求已失效，请重新添加');
+  }
+  if (pending.attempts >= 5) return authenticatorError(429, 'auth.totp.setup_locked', '验证失败次数过多，请重新添加');
+  let secret;
+  try { secret = totpCipher.decrypt(pending.secret); } catch { return authenticatorError(400, 'auth.totp.setup_expired', '绑定请求已失效'); }
+  const counter = matchingTotpCounter(secret, normalizeText(req.body.code));
+  if (counter === null) {
+    await authenticators.failedAttempt(pending.id);
+    return authenticatorError(400, 'auth.totp.invalid', '新验证器动态码不正确');
+  }
+  const recoveryCodes = user.totp_enabled ? null : generateRecoveryCodes();
+  if (pending.legacy_setup) {
+    if (user.totp_enabled || user.totp_secret !== pending.secret) return authenticatorError(409, 'auth.totp.setup_expired', '绑定请求已改变');
+    await users.consumeTotpCounter(user.id, counter);
+  } else {
+    await authenticators.activate(pending.id, counter);
+  }
+  user = await users.update(user.id, { totpEnabled: true,
+    ...(recoveryCodes ? { recoveryCodes: JSON.stringify(recoveryCodes.map(hashRecoveryCode)) } : {}) });
+  user = await authenticatorSecurityChanged(user, authenticators, users, connection, req.authSession.id);
+  return { body: { ...await authenticatorStatus(user, authenticators), ...(recoveryCodes ? { recoveryCodes } : {}), message_key: 'auth.totp.enabled' } };
+}
+
+app.post('/api/account/totp/authenticators/setup', asyncHandler(async (req, res) => {
+  await mutateAuthenticators(req, res, (user, authenticators, users) => stageAuthenticator(req, user, authenticators, users));
+}));
+
+app.post('/api/account/totp/authenticators/:id/confirm', asyncHandler(async (req, res) => {
+  await mutateAuthenticators(req, res, (user, authenticators, users, connection) => confirmAuthenticator(req, user, authenticators, users, connection));
+}));
+
+app.delete('/api/account/totp/authenticators/:id', asyncHandler(async (req, res) => {
+  await mutateAuthenticators(req, res, async (user, authenticators, users, connection) => {
+    const id = normalizeText(req.params.id);
+    const rows = await authenticators.list(user.id);
+    const legacy = id === 'legacy' && user.totp_enabled && user.totp_secret;
+    const device = rows.find(row => row.id === id);
+    if (!legacy && !device) return authenticatorError(404, 'auth.totp.not_found', '未找到验证器');
+    if (device && !device.activated_at) {
+      if (device.session_id !== req.authSession.id) return authenticatorError(404, 'auth.totp.not_found', '未找到绑定请求');
+      await authenticators.remove(user.id, device.id);
+      return { body: await authenticatorStatus(user, authenticators) };
+    }
+    if (!await verifyAuthenticatorManagement(user, req.body.code, authenticators, users)) return authenticatorError(400, 'auth.totp.invalid', '动态码或恢复码不正确');
+    if (legacy) user = await users.update(user.id, { totpSecret: null });
+    else await authenticators.remove(user.id, id);
+    const enabled = Boolean((user.totp_secret && user.totp_enabled) || (await authenticators.list(user.id)).some(row => row.activated_at));
+    user = await users.update(user.id, { totpEnabled: enabled, ...(!enabled ? { totpSecret: null, recoveryCodes: null } : {}) });
+    user = await authenticatorSecurityChanged(user, authenticators, users, connection, req.authSession.id);
+    return { body: await authenticatorStatus(user, authenticators) };
+  });
 }));
 
 app.get('/api/account/totp', asyncHandler(async (req, res) => {
   const user = await requireAuthenticatedUser(req, res);
   if (!user) return;
 
-  res.json({
-    totpEnabled: Boolean(user.totp_enabled),
-    recoveryCodesRemaining: getRecoveryHashes(user).length
-  });
+  const status = await Authenticator.withUser(user.id, (current, authenticators) => authenticatorStatus(current, authenticators));
+  res.json(status);
 }));
 
 app.post('/api/account/totp/recovery-codes', asyncHandler(async (req, res) => {
-  const user = await requireAuthenticatedUser(req, res);
-  if (!user) return;
-
-  if (!user.totp_enabled || !user.totp_secret) {
-    return res.status(400).json({
-      error: 'invalid_request',
-      error_key: 'auth.totp.setup_required',
-      error_description: '请先绑定验证器'
-    });
-  }
-  if (!verifyTotp(user.totp_secret, normalizeText(req.body.code))) {
-    return res.status(400).json({
-      error: 'invalid_request',
-      error_key: 'auth.totp.invalid',
-      error_description: '动态验证码不正确，无法重新生成'
-    });
-  }
-
-  const recoveryCodes = generateRecoveryCodes();
-  await User.update(user.id, { recoveryCodes: JSON.stringify(recoveryCodes.map(hashRecoveryCode)) });
-  res.json({ recoveryCodes, message: '已生成新的恢复码，旧恢复码全部失效（仅显示这一次）' });
-}));
-
-app.post('/api/account/totp/setup', asyncHandler(async (req, res) => {
-  const user = await requireAuthenticatedUser(req, res);
-  if (!user) return;
-
-  if (!(await isSettingEnabled('totp_allowed'))) {
-    return res.status(403).json({
-      error: 'forbidden',
-      error_key: 'auth.totp.disabled',
-      error_description: '管理员已关闭验证器两步验证'
-    });
-  }
-
-  const secret = generateSecret();
-  await User.update(user.id, { totpSecret: secret });
-  const otpauthUri = buildOtpauthUri({ secret, account: user.email || user.username });
-  const qrDataUrl = await QRCode.toDataURL(otpauthUri, { margin: 1, width: 220 });
-  res.json({ secret, otpauthUri, qrDataUrl });
-}));
-
-app.post('/api/account/totp/enable', asyncHandler(async (req, res) => {
-  const user = await requireAuthenticatedUser(req, res);
-  if (!user) return;
-
-  if (!(await isSettingEnabled('totp_allowed'))) {
-    return res.status(403).json({
-      error: 'forbidden',
-      error_key: 'auth.totp.disabled',
-      error_description: '管理员已关闭验证器两步验证'
-    });
-  }
-
-  if (!user.totp_secret) {
-    return res.status(400).json({
-      error: 'invalid_request',
-      error_key: 'auth.totp.setup_required',
-      error_description: '请先扫描二维码获取绑定信息'
-    });
-  }
-
-  const code = normalizeText(req.body.code);
-  if (!verifyTotp(user.totp_secret, code)) {
-    return res.status(400).json({
-      error: 'invalid_request',
-      error_key: 'auth.totp.invalid',
-      error_description: '动态验证码不正确，请确认验证器时间后重试'
-    });
-  }
-
-  const recoveryCodes = generateRecoveryCodes();
-  await User.update(user.id, { totpEnabled: true, recoveryCodes: JSON.stringify(recoveryCodes.map(hashRecoveryCode)) });
-  res.json({
-    totpEnabled: true,
-    recoveryCodes,
-    message_key: 'auth.totp.enabled',
-    message: '验证器绑定成功，下次登录需要输入动态码。请保存好恢复码，手机丢失时可用于登录（仅显示这一次）'
+  await mutateAuthenticators(req, res, async (user, authenticators, users, connection) => {
+    if (!user.totp_enabled) return authenticatorError(400, 'auth.totp.setup_required', '请先绑定验证器');
+    const rateLimit = new RateLimitModel(connection);
+    const limit = await rateLimit.consume(`totp:${user.id}`, 10, 5 * 60 * 1000);
+    if (!limit.allowed || !await verifyTotpLocked(user, normalizeText(req.body.code), authenticators, users)) {
+      return authenticatorError(400, 'auth.totp.invalid', '动态验证码不正确，无法重新生成');
+    }
+    await rateLimit.clear(`totp:${user.id}`);
+    const recoveryCodes = generateRecoveryCodes();
+    user = await users.update(user.id, { recoveryCodes: JSON.stringify(recoveryCodes.map(hashRecoveryCode)) });
+    await authenticatorSecurityChanged(user, authenticators, users, connection, req.authSession.id);
+    return { body: { recoveryCodes, message: '已生成新的恢复码，旧恢复码全部失效（仅显示这一次）' } };
   });
 }));
 
+app.post('/api/account/totp/setup', asyncHandler(async (req, res) => {
+  await mutateAuthenticators(req, res, (user, authenticators, users) => stageAuthenticator(req, user, authenticators, users, true));
+}));
+
+app.post('/api/account/totp/enable', asyncHandler(async (req, res) => {
+  await mutateAuthenticators(req, res, (user, authenticators, users, connection) => confirmAuthenticator(req, user, authenticators, users, connection, true));
+}));
+
 app.post('/api/account/totp/disable', asyncHandler(async (req, res) => {
-  const user = await requireAuthenticatedUser(req, res);
-  if (!user) return;
-
-  if (user.totp_secret && !verifyTotp(user.totp_secret, normalizeText(req.body.code))) {
-    return res.status(400).json({
-      error: 'invalid_request',
-      error_key: 'auth.totp.invalid',
-      error_description: '动态验证码不正确，无法解绑'
-    });
-  }
-
-  await User.update(user.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
-  res.json({ totpEnabled: false, message_key: 'auth.totp.disabled_ok', message: '验证器已解绑' });
+  await mutateAuthenticators(req, res, async (user, authenticators, users, connection) => {
+    if (user.totp_enabled && !await verifyAuthenticatorManagement(user, req.body.code, authenticators, users)) {
+      return authenticatorError(400, 'auth.totp.invalid', '动态码或恢复码不正确，无法解绑');
+    }
+    await authenticators.clear(user.id);
+    user = await users.update(user.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
+    user = await authenticatorSecurityChanged(user, authenticators, users, connection, req.authSession.id);
+    return { body: { ...await authenticatorStatus(user, authenticators), message_key: 'auth.totp.disabled_ok', message: '验证器已解绑' } };
+  });
 }));
 
 app.get('/api/account/identities', asyncHandler(async (req, res) => {
@@ -3145,6 +3932,21 @@ app.get('/api/account/identities', asyncHandler(async (req, res) => {
 
   const identities = await ExternalIdentity.findByUserId(user.id);
   res.json({ identities: ExternalIdentity.serializeMany(identities) });
+}));
+
+app.get('/api/account/applications', asyncHandler(async (req, res) => {
+  const user = await requireAuthenticatedUser(req, res);
+  if (!user) return;
+  const [usage, identities, clients, providers] = await Promise.all([
+    UserAppUsage.findByUserId(user.id), ExternalIdentity.findByUserId(user.id),
+    Client.findAll(), OidcProvider.findAll()
+  ]);
+  const clientMap = new Map(clients.map(row => [row.id, row]));
+  const providerMap = new Map(providers.map(row => [row.provider_key, row]));
+  res.json({
+    applications: usage.map(row => serializeAppUsage(row, clientMap.get(row.client_id))),
+    bindings: identities.map(row => serializeAccountBinding(row, providerMap.get(row.provider)))
+  });
 }));
 
 app.delete('/api/account/identities/:id', asyncHandler(async (req, res) => {
@@ -3265,6 +4067,9 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   const updates = { role: nextRole };
+  const phoneUpdate = await preparePhoneUpdate(req, res, target);
+  if (!phoneUpdate) return;
+  Object.assign(updates, phoneUpdate.updates);
   if (req.body.captchaRequired !== undefined) {
     updates.captchaRequired = Boolean(req.body.captchaRequired);
   }
@@ -3302,7 +4107,7 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
         error_description: '请输入有效的邮箱地址'
       });
     }
-    const emailConflict = await User.findByEmail(email);
+    const emailConflict = await User.findByUsername(email);
     if (emailConflict && emailConflict.id !== target.id) {
       return res.status(409).json({
         error: 'conflict',
@@ -3339,6 +4144,15 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   const updated = await User.update(userId, updates);
+  const securityChanged = (updates.banned !== undefined && updates.banned !== Boolean(target.banned))
+    || (updates.email !== undefined && updates.email !== normalizeEmail(target.email))
+    || (updates.emailVerified !== undefined && updates.emailVerified !== Boolean(target.email_verified))
+    || nextRole !== normalizeText(target.role).toLowerCase()
+    || phoneUpdate.changed;
+  if (securityChanged) {
+    await Session.revokeAllForUser(userId, target.id === admin.id ? req.authSession.id : null);
+    await Token.revokeByUser(userId);
+  }
   await recordAdminLog({ admin, req, action: 'update_user', detail: `${target.username} -> ${Object.keys(updates).join(',')}` });
   const identities = await ExternalIdentity.findByUserId(userId);
   res.json({ user: { ...serializeUser(updated), identities: ExternalIdentity.serializeMany(identities) } });
@@ -3503,7 +4317,7 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
       skipped.push({ row: index + 1, username, email, reason: '缺少用户名' });
       continue;
     }
-    if (password && password.length < await getPasswordMinLength()) {
+    if (password && await validatePasswordPolicy(password)) {
       skipped.push({ row: index + 1, username, email, reason: '密码长度不满足系统要求' });
       continue;
     }
@@ -3531,7 +4345,7 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
       skipped.push({ row: index + 1, username, email, reason: '用户名或邮箱已存在' });
       continue;
     }
-    if (await User.findByEmail(email)) {
+    if (await User.findByUsername(email)) {
       skipped.push({ row: index + 1, username, email, reason: '邮箱已被其他账户使用' });
       continue;
     }
@@ -3630,6 +4444,8 @@ app.put('/api/clients/:id', asyncHandler(async (req, res) => {
 
   const validated = validateClientPayload({
     ...req.body,
+    isActive: req.body.isActive === undefined ? isClientActive(existing) : req.body.isActive,
+    requirePkce: req.body.requirePkce === undefined ? existing.requirePkce : req.body.requirePkce,
     id: clientId
   }, {
     requireId: false,
@@ -3639,14 +4455,26 @@ app.put('/api/clients/:id', asyncHandler(async (req, res) => {
     return res.status(validated.status).json(validated.body);
   }
 
+  const pkceOnlyChange = existing.requirePkce !== validated.value.requirePkce
+    && existing.name === validated.value.name
+    && !validated.value.secret
+    && JSON.stringify(existing.redirectUris) === JSON.stringify(validated.value.redirectUris)
+    && JSON.stringify(existing.scopes) === JSON.stringify(validated.value.scopes)
+    && (existing.logo_url || '') === validated.value.logoUrl
+    && isClientActive(existing) === validated.value.isActive;
+
   const updated = await Client.update(clientId, {
     name: validated.value.name,
     secret: validated.value.secret || undefined,
     redirectUris: validated.value.redirectUris,
     scopes: validated.value.scopes,
     logoUrl: validated.value.logoUrl,
-    isActive: validated.value.isActive
+    isActive: validated.value.isActive,
+    requirePkce: validated.value.requirePkce
   });
+
+  await Token.revokeByClient(clientId, { preserveAuthCodes: pkceOnlyChange });
+  await recordAdminLog({ admin: user, req, action: 'update_client', detail: clientId });
 
   res.json({
     message_key: 'clients.updated',
@@ -3707,16 +4535,63 @@ app.put('/api/admin/smtp', asyncHandler(async (req, res) => {
     });
   }
 
-  applySmtpSettings({
-    host,
-    port,
-    user: req.body.user,
-    password: req.body.password,
-    from: req.body.from
-  });
+  if (req.body.clearPassword !== undefined && typeof req.body.clearPassword !== 'boolean') {
+    return res.status(400).json({ error: 'invalid_request', error_description: '清除密码参数无效' });
+  }
+  if (req.body.password !== undefined && (typeof req.body.password !== 'string' || req.body.password.length > 4096)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'SMTP 密码格式无效' });
+  }
+  const current = getSmtpSettings();
+  const smtp = {
+    host: host ?? current.host,
+    port: port ?? current.port,
+    user: req.body.user !== undefined ? normalizeText(req.body.user) : current.user,
+    from: req.body.from !== undefined ? normalizeText(req.body.from) : current.from,
+    password: req.body.clearPassword ? '' : req.body.password || process.env.SMTP_PASS || ''
+  };
+  if (smtp.host.length > 253 || smtp.user.length > 320 || smtp.from.length > 320) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'SMTP 配置内容过长' });
+  }
+  const next = { ...adminSettingsOverrides, smtp };
+  adminSettingsStore.save(next);
+  adminSettingsOverrides = next;
+
+  applySmtpSettings(smtp);
 
   await recordAdminLog({ admin, req, action: 'update_smtp_settings', detail: `host:${normalizeText(req.body.host) || 'unchanged'} port:${port ?? 'unchanged'}` });
-  res.json({ ...getSmtpSettings(), message_key: 'smtp.saved', message: '发件设置已保存（运行时生效，重启后以 .env 为准）' });
+  res.json({ ...getSmtpSettings(), message_key: 'smtp.saved', message: '发件设置已保存，重启后仍然生效' });
+}));
+
+app.get('/api/admin/turnstile', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+  res.json({ siteKey: turnstileSettings.siteKey, hasSecretKey: Boolean(turnstileSettings.secretKey) });
+}));
+
+app.put('/api/admin/turnstile', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+  if (req.body.clear !== undefined && typeof req.body.clear !== 'boolean') {
+    return res.status(400).json({ error: 'invalid_request', error_description: '清除配置参数无效' });
+  }
+  if (req.body.siteKey !== undefined && typeof req.body.siteKey !== 'string') {
+    return res.status(400).json({ error: 'invalid_request', error_description: '站点密钥格式无效' });
+  }
+  if (req.body.secretKey !== undefined && typeof req.body.secretKey !== 'string') {
+    return res.status(400).json({ error: 'invalid_request', error_description: '私钥格式无效' });
+  }
+  const siteKey = req.body.clear ? '' : req.body.siteKey === undefined ? turnstileSettings.siteKey : normalizeText(req.body.siteKey);
+  const secretKey = req.body.clear ? '' : normalizeText(req.body.secretKey) || turnstileSettings.secretKey;
+  if (Boolean(siteKey) !== Boolean(secretKey) || (siteKey && !/^[A-Za-z0-9_-]{1,256}$/.test(siteKey))
+      || (secretKey && !/^[A-Za-z0-9_-]{1,256}$/.test(secretKey))) {
+    return res.status(400).json({ error: 'invalid_request', error_description: '站点密钥和私钥必须同时设置，且只能包含字母、数字、下划线和连字符' });
+  }
+  const next = { ...adminSettingsOverrides, turnstile: { siteKey, secretKey } };
+  adminSettingsStore.save(next);
+  adminSettingsOverrides = next;
+  turnstileSettings = next.turnstile;
+  await recordAdminLog({ admin, req, action: 'update_turnstile_settings', detail: siteKey ? 'configured' : 'cleared' });
+  res.json({ siteKey, hasSecretKey: Boolean(secretKey), message: 'Turnstile 设置已保存，重启后仍然生效' });
 }));
 
 app.post('/api/admin/smtp/test', asyncHandler(async (req, res) => {
@@ -3757,7 +4632,12 @@ app.post('/api/users/:id/totp/reset', asyncHandler(async (req, res) => {
     });
   }
 
-  await User.update(target.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
+  await Authenticator.withUser(target.id, async (user, authenticators, users, connection) => {
+    if (!user) return;
+    await authenticators.clear(user.id);
+    user = await users.update(user.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
+    await authenticatorSecurityChanged(user, authenticators, users, connection, user.id === admin.id ? req.authSession.id : null);
+  });
   await recordAdminLog({ admin, req, action: 'reset_totp', detail: target.username });
   res.json({ message_key: 'users.totp.reset', message: '已重置该用户的验证器绑定' });
 }));
@@ -3774,7 +4654,8 @@ app.get('/api/admin/security', asyncHandler(async (req, res) => {
     totpAllowed: (await getSettingValue('totp_allowed')) === 'true',
     passwordRequireMixed: (await getSettingValue('password_require_mixed')) === 'true',
     anomalyDetection: (await getSettingValue('anomaly_detection')) === 'true',
-    passwordMinLength: await getSettingNumber('password_min_length', 6),
+    huaweiPhoneAutolink: (await getSettingValue('huawei_phone_autolink')) === 'true',
+    passwordMinLength: await getPasswordMinLength(),
     loginMaxAttempts: await getSettingNumber('login_max_attempts', 5),
     loginLockoutMinutes: await getSettingNumber('login_lockout_minutes', 15)
   });
@@ -3784,10 +4665,13 @@ function serializeAdminOidcProvider(config) {
   return {
     key: config.providerKey,
     providerName: config.providerName,
+    providerType: config.providerType || PROVIDER_TYPE_OIDC,
+    huaweiUnionScope: normalizeText(config.huaweiUnionScope),
     enabled: config.enabled !== false,
-    configured: isOidcEnabled(config),
+    configured: isOidcEnabled(config) || isHuaweiEnabled(config),
     clientId: config.clientId || '',
     clientSecretConfigured: Boolean(config.clientSecret),
+    credentialError: Boolean(config.credentialError),
     issuerUrl: config.issuerUrl || '',
     discoveryUrl: config.discoveryUrl || '',
     authorizeUrl: config.authorizeUrl || '',
@@ -3800,8 +4684,11 @@ function serializeAdminOidcProvider(config) {
     validateIdToken: Boolean(config.validateIdToken),
     requireEmailVerified: Boolean(config.requireEmailVerified),
     userinfoIdPath: config.userinfoIdPath,
+    userinfoSecondaryIdPath: config.userinfoSecondaryIdPath || '',
     userinfoEmailPath: config.userinfoEmailPath,
-    userinfoUsernamePath: config.userinfoUsernamePath
+    userinfoUsernamePath: config.userinfoUsernamePath,
+    userinfoMethod: config.userinfoMethod || OIDC_CONFIG.userinfoMethod,
+    userinfoTokenIn: config.userinfoTokenIn || OIDC_CONFIG.userinfoTokenIn
   };
 }
 
@@ -3813,6 +4700,58 @@ async function getAdminOidcConfigs() {
   const keys = Object.keys(OIDC_PROVIDERS);
   return (keys.length ? keys.map(getOidcProviderConfig).filter(Boolean) : (isOidcEnabled(OIDC_CONFIG) ? [OIDC_CONFIG] : []));
 }
+
+function serializeAccountBinding(row, provider) {
+  const identity = ExternalIdentity.serialize(row);
+  const profile = identity.profile;
+  const isHuawei = profile.provider === PROVIDER_TYPE_HUAWEI;
+  return {
+    id: identity.id, provider: row.provider,
+    providerName: normalizeText(profile.providerName) || provider?.provider_name || row.provider,
+    providerType: isHuawei ? PROVIDER_TYPE_HUAWEI : provider?.provider_type || row.provider,
+    clientId: normalizeText(profile.clientId) || provider?.client_id || '',
+    openId: isHuawei ? normalizeText(profile.openID) || row.provider_secondary_id || (!profile.unionID ? row.provider_user_id : '') : '',
+    unionId: isHuawei ? normalizeText(profile.unionID) : '',
+    huaweiUnionScope: isHuawei ? normalizeText(profile.huaweiUnionScope ?? provider?.huawei_union_scope) : '',
+    providerUserId: identity.providerUserId, providerSecondaryId: identity.providerSecondaryId,
+    configured: Boolean(provider), enabled: Boolean(provider?.enabled),
+    createdAt: identity.createdAt, updatedAt: identity.updatedAt
+  };
+}
+
+function serializeAppUsage(row, client) {
+  return {
+    clientId: row.client_id, name: client?.name || row.client_name,
+    configured: Boolean(client), enabled: Boolean(client && isClientActive(client)),
+    firstUsedAt: row.first_used_at, lastUsedAt: row.last_used_at
+  };
+}
+
+app.get('/api/admin/account-bindings', asyncHandler(async (req, res) => {
+  const admin = await requireAdminUser(req, res);
+  if (!admin) return;
+  const [identities, usage, providerRows, clientRows] = await Promise.all([
+    ExternalIdentity.findAll(), UserAppUsage.findAll(), OidcProvider.findAll(), Client.findAll()
+  ]);
+  const providers = new Map(providerRows.map(row => [row.provider_key, row]));
+  const clients = new Map(clientRows.map(row => [row.id, row]));
+  const accounts = new Map();
+  for (const userId of new Set([...identities, ...usage].map(row => row.user_id))) {
+    const user = await User.findById(userId);
+    if (!user) continue;
+    accounts.set(user.id, {
+      user: { id: user.id, username: user.username, name: user.name || '', email: user.email || '' },
+      bindings: [], applications: []
+    });
+  }
+  for (const row of identities) {
+    accounts.get(row.user_id)?.bindings.push(serializeAccountBinding(row, providers.get(row.provider)));
+  }
+  for (const row of usage) {
+    accounts.get(row.user_id)?.applications.push(serializeAppUsage(row, clients.get(row.client_id)));
+  }
+  res.json({ accounts: [...accounts.values()] });
+}));
 
 app.get('/api/admin/oidc', asyncHandler(async (req, res) => {
   const admin = await requireAdminUser(req, res);
@@ -3835,20 +4774,55 @@ app.post('/api/admin/oidc', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'invalid_request', error_description: 'Provider key 和名称格式无效' });
   }
   const current = await OidcProvider.findByKey(providerKey);
+  for (const key of ['enabled', 'pkceEnabled', 'validateIdToken', 'requireEmailVerified']) {
+    if (req.body[key] !== undefined && typeof req.body[key] !== 'boolean') {
+      return res.status(400).json({ error: 'invalid_request', error_description: `${key} must be a boolean` });
+    }
+  }
+  for (const key of ['issuerUrl', 'discoveryUrl', 'authorizeUrl', 'tokenUrl', 'userinfoUrl', 'jwksUrl']) {
+    if (req.body[key] && !isHttpUrl(req.body[key])) {
+      return res.status(400).json({ error: 'invalid_request', error_description: `${key} must be a valid HTTPS endpoint` });
+    }
+  }
+  if (req.body.frontendCallbackPath && !isSafeFrontendPath(req.body.frontendCallbackPath)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid frontend callback path' });
+  }
+  if (req.body.clockTolerance !== undefined && (!Number.isInteger(req.body.clockTolerance) || req.body.clockTolerance < 0 || req.body.clockTolerance > 120)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'Clock tolerance must be an integer from 0 to 120 seconds' });
+  }
+  const providerType = (normalizeText(req.body.providerType) || current?.provider_type || PROVIDER_TYPE_OIDC).toLowerCase();
+  if (!PROVIDER_TYPES.has(providerType)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: `providerType 必须是 ${[...PROVIDER_TYPES].join(' 或 ')}` });
+  }
+  const huaweiUnionScope = req.body.huaweiUnionScope === undefined
+    ? current?.huawei_union_scope || '' : normalizeText(req.body.huaweiUnionScope);
+  if (req.body.huaweiUnionScope !== undefined && (typeof req.body.huaweiUnionScope !== 'string' || !/^[a-zA-Z0-9._:-]{0,128}$/.test(huaweiUnionScope))) {
+    return res.status(400).json({ error: 'invalid_request', error_description: '华为主体分组最多 128 位，只能包含字母、数字、点、下划线、冒号和短横线' });
+  }
+  const userinfoMethod = (normalizeText(req.body.userinfoMethod) || current?.userinfo_method || OIDC_CONFIG.userinfoMethod).toUpperCase();
+  if (!USERINFO_METHODS.has(userinfoMethod)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'userinfoMethod 必须是 GET 或 POST' });
+  }
+  const userinfoTokenIn = (normalizeText(req.body.userinfoTokenIn) || current?.userinfo_token_in || OIDC_CONFIG.userinfoTokenIn).toLowerCase();
+  if (!USERINFO_TOKEN_IN.has(userinfoTokenIn)) {
+    return res.status(400).json({ error: 'invalid_request', error_description: 'userinfoTokenIn 必须是 header 或 body_form' });
+  }
   const clientSecret = normalizeText(req.body.clientSecret);
   if (!current && !clientSecret) {
     return res.status(400).json({ error: 'invalid_request', error_description: '新 Provider 必须填写 Client Secret' });
   }
   const saved = await OidcProvider.upsert({
-    providerKey, providerName, enabled: req.body.enabled !== false,
+    providerKey, providerName, providerType, huaweiUnionScope, enabled: req.body.enabled !== false,
     clientId: req.body.clientId, clientSecret: clientSecret ? encryptOidcSecret(clientSecret) : current.client_secret,
     issuerUrl: req.body.issuerUrl, discoveryUrl: req.body.discoveryUrl, authorizeUrl: req.body.authorizeUrl,
     tokenUrl: req.body.tokenUrl, userinfoUrl: req.body.userinfoUrl, jwksUrl: req.body.jwksUrl,
-    scopes: req.body.scopes, tokenAuthMethod: req.body.tokenAuthMethod, clockTolerance: req.body.clockTolerance,
-    allowedAlgorithms: req.body.allowedAlgorithms, pkceEnabled: req.body.pkceEnabled, validateIdToken: req.body.validateIdToken,
+    scopes: req.body.scopes, tokenAuthMethod: req.body.tokenAuthMethod, clockTolerance: req.body.clockTolerance ?? current?.clock_tolerance,
+    allowedAlgorithms: req.body.allowedAlgorithms ?? current?.allowed_algorithms, pkceEnabled: req.body.pkceEnabled, validateIdToken: req.body.validateIdToken,
     requireEmailVerified: req.body.requireEmailVerified, userinfoEmailPath: req.body.userinfoEmailPath,
-    emailVerifiedPath: req.body.emailVerifiedPath, userinfoIdPath: req.body.userinfoIdPath,
-    userinfoUsernamePath: req.body.userinfoUsernamePath, frontendCallbackPath: req.body.frontendCallbackPath
+    emailVerifiedPath: req.body.emailVerifiedPath ?? current?.email_verified_path, userinfoIdPath: req.body.userinfoIdPath,
+    userinfoSecondaryIdPath: req.body.userinfoSecondaryIdPath ?? current?.userinfo_secondary_id_path,
+    userinfoUsernamePath: req.body.userinfoUsernamePath, userinfoMethod, userinfoTokenIn,
+    frontendCallbackPath: req.body.frontendCallbackPath ?? current?.frontend_callback_path
   });
   await refreshOidcProvidersFromDatabase();
   await recordAdminLog({ admin, req, action: 'upsert_oidc_provider', detail: providerKey });
@@ -3874,29 +4848,34 @@ const SECURITY_TOGGLE_KEYS = {
   registrationEnabled: 'registration_enabled',
   totpAllowed: 'totp_allowed',
   passwordRequireMixed: 'password_require_mixed',
-  anomalyDetection: 'anomaly_detection'
+  anomalyDetection: 'anomaly_detection',
+  huaweiPhoneAutolink: 'huawei_phone_autolink'
 };
 
 app.put('/api/admin/security', asyncHandler(async (req, res) => {
   const admin = await requireAdminUser(req, res);
   if (!admin) return;
+  const changes = [];
 
   for (const [bodyKey, settingKey] of Object.entries(SECURITY_TOGGLE_KEYS)) {
     if (req.body[bodyKey] !== undefined) {
-      await saveSettingValue(settingKey, req.body[bodyKey] === true || req.body[bodyKey] === 'true' ? 'true' : 'false');
+      if (![true, false, 'true', 'false'].includes(req.body[bodyKey])) {
+        return res.status(400).json({ error: 'invalid_request', error_description: `${bodyKey} must be a boolean` });
+      }
+      changes.push([settingKey, req.body[bodyKey] === true || req.body[bodyKey] === 'true' ? 'true' : 'false']);
     }
   }
 
   if (req.body.passwordMinLength !== undefined) {
     const value = Number(req.body.passwordMinLength);
-    if (!Number.isInteger(value) || value < 4 || value > 64) {
+    if (!Number.isInteger(value) || value < 12 || value > 64) {
       return res.status(400).json({
         error: 'invalid_request',
         error_key: 'security.password_min_length.invalid',
-        error_description: '密码最小长度必须是 4-64 之间的整数'
+        error_description: '密码最小长度必须是 12-64 之间的整数'
       });
     }
-    await saveSettingValue('password_min_length', String(value));
+    changes.push(['password_min_length', String(value)]);
   }
 
   if (req.body.loginMaxAttempts !== undefined) {
@@ -3908,7 +4887,7 @@ app.put('/api/admin/security', asyncHandler(async (req, res) => {
         error_description: '登录失败次数上限必须是 1-100 之间的整数'
       });
     }
-    await saveSettingValue('login_max_attempts', String(value));
+    changes.push(['login_max_attempts', String(value)]);
   }
 
   if (req.body.loginLockoutMinutes !== undefined) {
@@ -3920,9 +4899,10 @@ app.put('/api/admin/security', asyncHandler(async (req, res) => {
         error_description: '锁定时长必须是 1-1440 之间的整数（分钟）'
       });
     }
-    await saveSettingValue('login_lockout_minutes', String(value));
+    changes.push(['login_lockout_minutes', String(value)]);
   }
 
+  await saveSettingValues(changes);
   await recordAdminLog({ admin, req, action: 'update_security_settings', detail: Object.keys(req.body).filter(key => req.body[key] !== undefined).join(',') });
   res.json({ message_key: 'security.saved', message: '安全设置已保存，立即生效' });
 }));
@@ -3952,7 +4932,7 @@ app.get('/api/tokens', asyncHandler(async (req, res) => {
   const tokenList = await Token.findAllAccessTokens();
   res.json(tokenList.map(tokenData => ({
     id: tokenData.id,
-    user: tokenData.user_name || tokenData.user_email || 'Unknown',
+    user: tokenData.user_id ? tokenData.user_name || tokenData.user_email || 'Unknown' : 'Application credentials',
     userEmail: tokenData.user_email || '',
     client: tokenData.client_name || tokenData.client_id || 'Unknown',
     clientId: tokenData.client_id || '',
@@ -3982,154 +4962,83 @@ app.delete('/api/tokens/:id', asyncHandler(async (req, res) => {
   res.status(204).send();
 }));
 
-app.get('/callback', (req, res) => {
-  const { code, state, error, error_description } = req.query;
 
-  if (error) {
-    return res.send(`
-      <h1>OAuth2 Error</h1>
-      <p><strong>Error:</strong> ${error}</p>
-      <p><strong>Description:</strong> ${error_description || 'N/A'}</p>
-      <a href="/oauth2/authorize">Back to Sign In</a>
-    `);
-  }
-
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>OAuth2 Callback</title>
-      <style>
-        body {
-          font-family: 'Inter', sans-serif;
-          background: #f8f9fb;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 100vh;
-          margin: 0;
-          padding: 24px;
-        }
-        .card {
-          background: white;
-          padding: 40px;
-          border-radius: 12px;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
-          text-align: center;
-          max-width: 420px;
-          width: 100%;
-        }
-        h1 {
-          color: #003d9b;
-          margin-bottom: 20px;
-        }
-        p {
-          color: #434654;
-          margin-bottom: 20px;
-        }
-        code {
-          background: #e1e2e4;
-          padding: 8px 16px;
-          border-radius: 8px;
-          display: block;
-          margin: 20px 0;
-          word-break: break-all;
-        }
-        .success {
-          color: #059669;
-          font-size: 48px;
-          line-height: 1;
-          margin-bottom: 20px;
-        }
-        .link {
-          display: inline-block;
-          margin-top: 8px;
-          color: #003d9b;
-          text-decoration: none;
-          font-weight: 600;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <div class="success">&#10003;</div>
-        <h1>Authorization Successful</h1>
-        <p>Your authorization code:</p>
-        <code>${code}</code>
-        <p>State: ${state || 'N/A'}</p>
-        <a class="link" href="/profile">Open profile</a>
-      </div>
-    </body>
-    </html>
-  `);
-});
 
 app.get('/', (req, res) => {
   res.redirect('/oauth2/authorize');
 });
 
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    error: 'server_error',
-    error_key: 'server.internal',
-    error_description: '服务器内部错误'
+  if (res.headersSent) return next(err);
+  if (err.code === 'PHONE_UPDATE_NOT_PERSISTED') {
+    console.error('Request failed:', err.code);
+    return res.status(500).json({
+      error: 'server_error', error_key: 'profile.phone.save_failed',
+      error_description: '手机号保存未生效，请重试或联系管理员'
+    });
+  }
+  const expectedStatus = [400, 413, 429, 502].includes(err.status) ? err.status : err.code === 'ER_DUP_ENTRY' ? 409 : 500;
+  if (expectedStatus === 500) console.error('Request failed:', err.code || err.name);
+  res.status(expectedStatus).json({
+    error: expectedStatus === 500 ? 'server_error' : err.code === 'ER_DUP_ENTRY' ? 'conflict' : 'invalid_request',
+    error_key: expectedStatus === 500 ? 'server.internal' : 'request.failed',
+    error_description: expectedStatus === 500 ? '服务器内部错误' : expectedStatus === 413 ? '请求内容过大' : expectedStatus === 409 ? '记录已存在' : expectedStatus === 400 ? '请求格式无效' : err.message
   });
 });
 
-async function bootstrap() {
-  pool = await initDatabase();
-
+async function bootstrap({ databasePool, port = PORT, host = process.env.HOST || '127.0.0.1' } = {}) {
+  if (databasePool && RUNTIME.nodeEnv !== 'test') throw new Error('Injected databases are only supported by isolated tests');
+  adminSettingsOverrides = adminSettingsStore.load();
+  turnstileSettings = adminSettingsOverrides.turnstile || { siteKey: RUNTIME.turnstileSiteKey, secretKey: RUNTIME.turnstileSecretKey };
+  if (adminSettingsOverrides.smtp) applySmtpSettings(adminSettingsOverrides.smtp);
+  signingKeys = loadSigningKeys();
+  pool = databasePool || await initDatabase();
   User = new UserModel(pool);
+  Authenticator = new AuthenticatorModel(pool);
   Client = new ClientModel(pool);
   Token = new TokenModel(pool);
+  UserAppUsage = new UserAppUsageModel(pool);
   EmailVerificationCode = new EmailVerificationCodeModel(pool);
   ExternalIdentity = new ExternalIdentityModel(pool);
   LoginLog = new LoginLogModel(pool);
   Session = new SessionModel(pool);
   OidcProvider = new OidcProviderModel(pool);
-  await migrateOidcProvidersToDatabase();
-
-  await ensureSystemUser();
-  await seedMemoryDemoData();
-  await Token.cleanExpiredTokens();
-
-  app.listen(PORT, () => {
-    console.log(`
-============================================================
-  VaultSSO OAuth2 Service
-  Server running on http://localhost:${PORT}
-
-  Pages:
-  - Sign In / Register: /oauth2/authorize
-  - Profile:            /profile
-  - Legacy Success URL: /oauth2/success -> /oauth2/authorize
-
-  Endpoints:
-  - Authorization: /oauth2/authorize
-  - Register:      /oauth2/register
-  - Profile API:   /api/profile
-  - Token:         /oauth2/token
-  - UserInfo:      /oauth2/userinfo
-
-  Database driver: ${process.env.DB_DRIVER || 'mysql'}
-  Run "npm run init-db" once if you use MySQL and need demo data.
-============================================================
-    `);
+  RateLimit = new RateLimitModel(pool);
+  Captcha = new CaptchaModel(pool);
+  await refreshOidcProvidersFromDatabase();
+  await getSettingValue('registration_enabled');
+  const server = await new Promise((resolve, reject) => {
+    const listener = app.listen(port, host, () => resolve(listener));
+    listener.once('error', reject);
   });
+  const timer = setInterval(() => {
+    Promise.all([Captcha.deleteExpired(), Session.deleteExpired(), RateLimit.deleteExpired(), Token.cleanExpiredTokens(), EmailVerificationCode.deleteExpired()])
+      .catch(error => console.error('Expired credential cleanup failed:', error.code || error.name));
+  }, 60 * 1000);
+  timer.unref();
+  return {
+    server,
+    async close() {
+      clearInterval(timer);
+      await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      if (databasePool) await databasePool.end();
+      else await closePool();
+    }
+  };
 }
 
-bootstrap().catch(async (error) => {
-  console.error('❌ Failed to start server:', error);
-  await closePool();
-  process.exit(1);
-});
-
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, async () => {
+if (require.main === module) {
+  if (RUNTIME.nodeEnv === 'test') throw new Error('The test environment must be started by the isolated test runner');
+  bootstrap().then(service => {
+    console.log('Authentication service listening at ' + PUBLIC_BASE_URL);
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      process.once(signal, () => service.close().then(() => { process.exitCode = 0; }).catch(() => { process.exitCode = 1; }));
+    }
+  }).catch(async error => {
+    console.error('Failed to start server:', error.message);
     await closePool();
-    process.exit(0);
+    process.exitCode = 1;
   });
 }
+
+module.exports = { bootstrap };

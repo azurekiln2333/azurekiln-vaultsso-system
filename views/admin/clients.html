@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN" data-admin-page="apps">
+<head>
+  <link rel="stylesheet" href="/assets/vaultsso-fonts.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="apps.page.title">VaultSSO | OAuth2 Applications</title>
+  <link rel="stylesheet" href="/css/vaultsso-utilities.css">
+  <link rel="stylesheet" href="/css/vaultsso-base.css">
+  <link rel="stylesheet" href="/css/vaultsso-admin.css">
+  <script src="/js/shared/admin-shell.js?v=20260928-js-1" defer></script>
+</head>
+<body class="vaultsso-page-surface min-h-screen text-ink">
+  <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
+    <section class="mb-8 rounded-xl bg-surface-container-low p-8">
+      <p class="mb-4 inline-flex items-center gap-2 rounded-lg bg-primary-soft px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary">
+        <span class="material-symbols-outlined text-base">admin_panel_settings</span>
+        <span data-i18n="apps.hero.eyebrow">Admin</span>
+      </p>
+      <h1 class="font-headline mb-3 text-4xl font-extrabold tracking-tight" data-i18n="apps.hero.title">OAuth2 Application Management</h1>
+      <p class="max-w-3xl text-base leading-8 text-muted" data-i18n="apps.hero.description">你可以在这里创建、编辑、删除并检索 OAuth2 客户端。</p>
+    </section>
+
+    <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.total">Total Clients</p>
+        <p class="text-3xl font-bold" id="statsTotal">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.active">Active Clients</p>
+        <p class="text-3xl font-bold" id="statsActive">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.redirects">Redirect URIs</p>
+        <p class="text-3xl font-bold" id="statsRedirects">0</p>
+      </article>
+      <article class="rounded-xl bg-white p-5 shadow-sm">
+        <p class="mb-2 text-sm text-muted" data-i18n="apps.stats.scopes">Unique Scopes</p>
+        <p class="text-3xl font-bold" id="statsScopes">0</p>
+      </article>
+    </section>
+
+    <div class="grid grid-cols-1 gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <section class="h-fit rounded-xl bg-white p-6 shadow-sm">
+        <div class="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 class="font-headline text-2xl font-bold" id="editorTitle" data-i18n="apps.editor.title_create">Create Client</h2>
+            <p class="mt-2 text-sm leading-6 text-muted" data-i18n="apps.editor.desc">This form writes directly to the database-backed client API.</p>
+          </div>
+          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" id="resetFormBtn" type="button" data-i18n="common.action.reset">Reset</button>
+        </div>
+
+        <div class="mb-5 hidden rounded-lg border px-4 py-3 text-sm" id="formStatus"></div>
+
+        <form class="space-y-4" id="clientForm">
+          <input id="formMode" type="hidden" value="create">
+          <input id="currentClientId" type="hidden" value="">
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.id">Client ID</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientId" data-i18n-placeholder="apps.editor.placeholder.id" placeholder="For example: emlog-prod" required type="text">
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.name">Name</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientName" data-i18n-placeholder="apps.editor.placeholder.name" placeholder="For example: emlog" required type="text">
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.secret">Client Secret</span>
+            <div class="flex gap-3">
+              <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientSecret" data-i18n-placeholder="apps.editor.placeholder.secret" placeholder="Leave empty on create to auto-generate; leave empty on edit to keep the current secret" type="text">
+              <button class="rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="generateSecretBtn" type="button" data-i18n-title="common.action.generate" title="Generate">
+                <span class="material-symbols-outlined text-lg">casino</span>
+              </button>
+            </div>
+            <span class="mt-2 block text-xs leading-5 text-muted" data-i18n="apps.editor.help_secret">The system generates a high-entropy, URL-safe secret following common OAuth practice. Leave this empty on create to generate one automatically.</span>
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.logo">Logo URL</span>
+            <input class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientLogo" data-i18n-placeholder="apps.editor.placeholder.logo" placeholder="https://example.com/logo.png" type="url">
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.redirects">Redirect URIs</span>
+            <textarea class="min-h-[112px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientRedirects" data-i18n-placeholder="apps.editor.placeholder.redirects" placeholder="One redirect URI per line" required></textarea>
+            <span class="mt-2 block text-xs leading-5 text-muted" data-i18n="apps.editor.help_redirects">Enter at least one full URL. Format validation runs before save.</span>
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.scopes">Scopes</span>
+            <textarea class="min-h-[96px] w-full resize-y rounded-lg border-line px-4 py-3 text-sm" id="clientScopes" data-i18n-placeholder="apps.editor.placeholder.scopes" placeholder="Separate scopes with commas or new lines, for example: openid, profile, email" required></textarea>
+            <span class="mt-2 block text-xs leading-5 text-muted" data-i18n="apps.editor.help_scopes">It is usually safest to include at least openid, profile, and email.</span>
+          </label>
+
+          <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <label class="flex items-center gap-3 text-sm font-bold text-primary">
+              <input class="h-4 w-4 rounded border-line text-primary focus:ring-primary" id="clientRequirePkce" type="checkbox" checked>
+              <span data-i18n="apps.editor.field.require_pkce">Require PKCE (S256)</span>
+            </label>
+            <p class="mt-2 text-xs leading-5 text-amber-900" data-i18n="apps.editor.help.require_pkce">Disabling PKCE reduces protection against authorization-code interception. Only disable it for clients that cannot support PKCE; any PKCE parameters sent must still form a valid S256 pair.</p>
+          </div>
+
+          <label class="block">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-widest text-muted" data-i18n="apps.editor.field.active">Active Status</span>
+            <select class="w-full rounded-lg border-line px-4 py-3 text-sm" id="clientActive">
+              <option value="true" data-i18n="apps.editor.active_yes">Active</option>
+              <option value="false" data-i18n="apps.editor.active_no">Inactive</option>
+            </select>
+          </label>
+
+          <div class="flex flex-wrap gap-3 pt-2">
+            <button class="primary-gradient rounded-lg px-5 py-3 text-sm font-bold text-white" id="saveBtn" type="submit" data-i18n="common.action.create">Create</button>
+            <button class="rounded-lg border border-line px-5 py-3 text-sm font-bold text-muted hover:text-primary" id="cancelBtn" type="button" data-i18n="common.action.cancel">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="space-y-6">
+        <div class="rounded-xl bg-white p-6 shadow-sm">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <label class="relative w-full lg:max-w-md">
+              <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
+              <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" data-i18n-placeholder="apps.search.placeholder" placeholder="Search by name, id, redirect URI, or scope..." type="search">
+            </label>
+            <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button">
+              <span class="material-symbols-outlined text-lg">refresh</span>
+              <span data-i18n="common.action.refresh">Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar" data-i18n="apps.status.loading">Loading applications from /api/clients...</div>
+        <div class="grid grid-cols-1 gap-5 xl:grid-cols-2" id="clientGrid"></div>
+      </section>
+    </div>
+  </div>
+
+  <template id="clientCardTemplate">
+    <article class="rounded-xl bg-white p-5 shadow-sm">
+      <div class="mb-5 flex items-start justify-between gap-4">
+        <div class="flex min-w-0 items-center gap-4">
+          <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary-soft text-primary">
+            <img class="hidden h-full w-full object-cover" data-role="logo-image" alt="">
+            <span class="material-symbols-outlined text-3xl" data-role="logo-fallback">apps</span>
+          </div>
+          <div class="min-w-0">
+            <h3 class="truncate font-headline text-xl font-bold" data-role="name"></h3>
+            <p class="break-all text-sm text-muted" data-role="id"></p>
+          </div>
+        </div>
+        <span class="rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-widest" data-role="badge"></span>
+      </div>
+
+      <div class="mb-5 space-y-3 text-sm text-muted">
+        <div class="flex items-start gap-2">
+          <span class="material-symbols-outlined mt-0.5 text-base">link</span>
+          <div>
+            <p class="break-all" data-role="redirect"></p>
+            <p class="mt-1 text-xs" data-role="redirect-count"></p>
+          </div>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="material-symbols-outlined mt-0.5 text-base">vpn_key</span>
+          <div class="flex flex-wrap gap-1" data-role="scopes"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-4 border-t border-line/60 pt-4">
+        <div class="text-xs text-muted">
+          <p data-role="created"></p>
+          <p class="mt-1" data-role="updated"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="rounded-lg border border-line px-3 py-2 text-xs font-bold text-muted hover:text-primary" data-action="edit" type="button" data-i18n="common.action.edit">Edit</button>
+          <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-action="delete" type="button" data-i18n="common.action.delete">Delete</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="/js/shared/i18n.js?v=20260928-js-1"></script>
+  <script src="/js/pages/admin/clients.js?v=20260928-js-1"></script>
+</body>
+</html>
