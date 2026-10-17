@@ -14,11 +14,11 @@
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
-    <section class="mb-6">
-      <a class="mb-4 inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-primary" href="/users.html"><span class="material-symbols-outlined text-lg">arrow_back</span>返回用户列表</a>
-      <h1 class="font-headline text-3xl font-extrabold tracking-tight">用户详情</h1>
-      <p class="mt-2 text-base text-muted">查看并编辑该账户的基本资料、角色和邮箱验证状态。</p>
-    </section>
+    <header class="mb-6">
+      <a class="mb-3 inline-flex items-center gap-1 text-sm font-bold text-muted hover:text-primary" href="/users.html"><span class="material-symbols-outlined text-lg">arrow_back</span>返回用户列表</a>
+      <h1 class="font-headline text-2xl font-extrabold tracking-tight">用户详情</h1>
+      <p class="mt-1 text-sm text-muted">查看并编辑该账户的基本资料、角色和邮箱验证状态。</p>
+    </header>
 
     <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700" id="statusBar">正在加载用户信息...</div>
 
@@ -26,7 +26,7 @@
       <section class="space-y-5 lg:col-span-2">
         <article class="rounded-xl bg-white p-6 shadow-sm">
           <div class="flex items-center gap-4">
-            <img class="h-20 w-20 rounded-2xl object-cover bg-primary-soft" id="detailAvatar" alt="avatar">
+            <img class="h-20 w-20 rounded-full object-cover bg-primary-soft" id="detailAvatar" alt="avatar">
             <div class="min-w-0">
               <p class="font-headline truncate text-2xl font-extrabold tracking-tight" id="detailName">...</p>
               <p class="mt-1 break-all text-sm text-muted" id="detailUsername"></p>
