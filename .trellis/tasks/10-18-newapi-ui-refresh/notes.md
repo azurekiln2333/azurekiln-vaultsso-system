@@ -47,36 +47,61 @@ npx tailwindcss -c tailwind.config.cjs -i styles/tailwind.css -o public/css/vaul
 - Circular avatars and pills: keep `9999px` (`var(--radius-full)`), exempt.
 - No numeric radius above 20px may remain in any stylesheet.
 
+## File ownership
+
+| Agent | Owned files |
+|---|---|
+| sso-lead | `public/css/vaultsso-base.css`, `public/css/vaultsso-utilities.css`, `tailwind.config.cjs` |
+| sso-shell | `public/js/shared/admin-shell.js`, `views/admin/index.html`, `public/css/vaultsso-admin.css` (shell part only) |
+| sso-admin | other `views/admin/*.html`, `public/js/pages/admin/*.js`, `public/css/vaultsso-admin-pages.css` |
+| sso-user | `views/auth`, `views/account`, `views/docs`, `public/css/vaultsso-authorize.css`, `vaultsso-error.css`, `vaultsso-docs.css` |
+
+## FROZEN — user's uncommitted work, must never be added or committed
+
+These files had uncommitted user changes before this task started. No agent may
+`git add`, `git commit`, `git checkout`, `git stash`, or `git reset` them.
+
+- `public/css/vaultsso-profile.css`
+- `views/account/profile.html`
+- `views/auth/mfa.html`
+- `public/js/pages/account/profile.js`
+- `public/js/pages/account/authenticators.js`
+- `public/js/pages/auth/mfa.js`
+- `public/js/shared/i18n.js`
+- `scripts/check-syntax.js`
+- `tests/browser-smoke.cjs`
+- `tests/password-mfa-browser.cjs`
+
+### Uncommitted radius edits left in `public/css/vaultsso-profile.css`
+
+sso-user tightened these values in the working tree only (not committed, held
+for the user to decide). Recorded here for the user's review:
+
+| Line | Selector | Before | After |
+|---|---|---|---|
+| 42 | `.profile-card` | `22px` | `var(--radius-lg)` = 16px |
+| 117 | `.hero` | `18px` | `var(--radius-lg)` = 16px |
+| 132 | `.avatar` (square avatar block) | `18px` | `var(--radius-md)` = 12px |
+| 204 | `.ghost-button` | `14px` | `var(--radius-sm)` = 8px |
+| 430 | `.modal-card` | `20px` | `var(--radius-lg)` = 16px |
+| 513 | `.profile-card` (in `max-width: 760px`) | `18px` | `var(--radius-lg)` = 16px |
+
+Pills at lines 71 / 97 / 110 / 175 (`999px`) are intentional and unchanged.
+
+## Review log
+
+| Commit | Verdict |
+|---|---|
+| `41ec285` (sso-user) docs page structural rewrite | Rejected — out of scope, reverted in `3b621c9` |
+| `c807e20` (sso-user) error page rewrite hid `#errorTitle` | Rejected — broke dynamic error code, fixed in `af57f3d` |
+| `ca5e271` (sso-shell) shell rebuild | Accepted pending `.hidden` scoping |
+| `68f531e`…`b0d92a5` (sso-admin) page content | Accepted |
+
 ## Agent status log
 
-| Agent | Owned files | Status |
-|---|---|---|
-| sso-lead | tokens, base + utilities css, review | tokens committed; reviewing |
-| sso-shell | `admin-shell.js`, `views/admin/index.html`, shell part of `vaultsso-admin.css` | notified |
-| sso-admin | other `views/admin/*.html`, `public/js/pages/admin/*.js` | notified | |
-| sso-user | `views/auth`, `views/account`, `views/docs` + matching css/js | notified |
-
-## sso-admin progress (page content area)
-
-Owned files: `views/admin/{clients,security,smtp,tokens,user,users,user-applications}.html`,
-`public/js/pages/admin/*.js`, plus the new page-content stylesheet
-`public/css/vaultsso-admin-pages.css` (owned by sso-admin; it only styles page
-content, never the shell in `vaultsso-admin.css`).
-
-Done:
-
-- `public/css/vaultsso-admin-pages.css` created: page radius overrides driven by
-  `--radius-lg/-sm/-xs/-full`, buttons/inputs 8px, chips 4px, panels capped at 16px.
-- All seven admin pages link the page stylesheet after `vaultsso-admin.css`.
-- Duplicate hero blocks removed on clients / tokens / smtp / security / users /
-  user detail; each page now has exactly one `<h1>` page header (no
-  "管理员控制台 / 管理中心" eyebrow repeated next to the shell brand).
-- Redundant "点击页面右上角保存设置" hints removed (the header already has the save button).
-- User detail badges switched from `rounded-full` to token `rounded`; avatar kept circular.
-- `node scripts/check-syntax.js`, `npm run check:e2e` and `node tests/browser-smoke.cjs` pass.
-
-Open / needs other owners:
-
-- `views/admin/clients.html` header currently has only the title block; a
-  right-aligned action area is unused until someone adds actions.
-- Functionality untouched: no API, form field, id or data-* selector changed.
+| Agent | Status |
+|---|---|
+| sso-lead | tokens committed; reviewing |
+| sso-shell | first shell round committed; asked to scope global `.hidden` |
+| sso-admin | asked to resolve top-bar/page `<h1>` duplicate-title conflict |
+| sso-user | docs + error reverted/fixed; profile.css frozen, uncommitted |
