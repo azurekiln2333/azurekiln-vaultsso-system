@@ -7,7 +7,7 @@
   <title>VaultSSO | Sign In</title>
   <link rel="stylesheet" href="/css/vaultsso-utilities.css">
   <link rel="stylesheet" href="/css/vaultsso-base.css">
-  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20260928-turnstile-1">
+  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261001-radius-1">
 </head>
 <body class="bg-mesh min-h-screen flex flex-col text-on-surface">
   <header class="page-header">
@@ -86,12 +86,12 @@
             <div class="field-group" data-captcha-group hidden>
               <div data-image-captcha>
                 <label class="field-label" data-i18n="auth.captcha.label">图形验证码</label>
-                <div class="flex items-stretch gap-2">
-                  <div class="field-shell flex-1">
+                <div class="field-inline-actions">
+                  <div class="field-shell">
                     <span class="material-symbols-outlined field-icon">image_search</span>
                     <input class="field-input" name="captcha_code" type="text" maxlength="4" autocomplete="off" data-i18n-placeholder="auth.captcha.placeholder" placeholder="Enter the 4 characters">
                   </div>
-                  <div class="flex w-[132px] shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden rounded-xl border border-line bg-white" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
+                  <div class="captcha-box" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
                     <span class="material-symbols-outlined text-muted">refresh</span>
                   </div>
                 </div>
@@ -174,12 +174,12 @@
             <div class="field-group" data-captcha-group hidden>
               <div data-image-captcha>
                 <label class="field-label" data-i18n="auth.captcha.label">图形验证码</label>
-                <div class="flex items-stretch gap-2">
-                  <div class="field-shell flex-1">
+                <div class="field-inline-actions">
+                  <div class="field-shell">
                     <span class="material-symbols-outlined field-icon">image_search</span>
                     <input class="field-input" name="captcha_code" type="text" maxlength="4" autocomplete="off" data-i18n-placeholder="auth.captcha.placeholder" placeholder="Enter the 4 characters">
                   </div>
-                  <div class="flex w-[132px] shrink-0 cursor-pointer select-none items-center justify-center overflow-hidden rounded-xl border border-line bg-white" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
+                  <div class="captcha-box" data-captcha-box data-i18n-title="auth.captcha.refresh" title="Refresh CAPTCHA">
                     <span class="material-symbols-outlined text-muted">refresh</span>
                   </div>
                 </div>
