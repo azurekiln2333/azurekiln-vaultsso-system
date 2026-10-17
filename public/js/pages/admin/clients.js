@@ -133,7 +133,7 @@ const i18n = window.VaultI18n;
       clientGrid.innerHTML = '';
       if (!clients.length) {
         const empty = document.createElement('div');
-        empty.className = 'rounded-xl bg-white p-10 text-center text-muted shadow-sm xl:col-span-2';
+        empty.className = 'admin-empty bg-white p-10 text-center text-muted shadow-sm xl:col-span-2';
         empty.innerHTML = `<p class="font-bold text-ink">${translate('apps.list.empty_title')}</p><p class="mt-2">${translate('apps.list.empty_desc')}</p>`;
         clientGrid.appendChild(empty);
         return;
