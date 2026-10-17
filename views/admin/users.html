@@ -14,18 +14,18 @@
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
-    <section class="mb-6">
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <h1 class="font-headline text-4xl font-extrabold tracking-tight">用户管理</h1>
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <span class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 font-bold text-muted"><span class="material-symbols-outlined text-lg text-primary">group</span>全部用户<span class="text-ink" id="statsTotal">0</span></span>
-          <span class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 font-bold text-muted"><span class="material-symbols-outlined text-lg text-primary">admin_panel_settings</span>管理员<span class="text-ink" id="statsAdmins">0</span></span>
-        </div>
-      </div>
-      <p class="max-w-3xl text-base leading-8 text-muted">查看所有账户、登录来源同步的资料、邮箱验证状态和权限。修改会立即写入当前数据库，点击列表中的用户可进入详情页编辑。</p>
-    </section>
+    <header class="mb-6">
+      <h1 class="font-headline text-2xl font-extrabold tracking-tight">用户管理</h1>
+      <p class="mt-1 max-w-3xl text-sm text-muted">查看所有账户、登录来源同步的资料、邮箱验证状态和权限。修改会立即写入当前数据库，点击列表中的用户可进入详情页编辑。</p>
+    </header>
 
     <section class="mb-6 rounded-xl bg-white p-5 shadow-sm">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <span class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-1.5 font-bold text-muted"><span class="material-symbols-outlined text-lg text-primary">group</span>全部用户<span class="text-ink" id="statsTotal">0</span></span>
+          <span class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-1.5 font-bold text-muted"><span class="material-symbols-outlined text-lg text-primary">admin_panel_settings</span>管理员<span class="text-ink" id="statsAdmins">0</span></span>
+        </div>
+      </div>
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <label class="relative w-full lg:max-w-lg">
           <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
