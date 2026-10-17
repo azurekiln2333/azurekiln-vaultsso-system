@@ -411,13 +411,18 @@ html[data-admin-embed] .admin-main {
   background: rgba(10, 16, 28, 0.4);
 }
 
-.hidden {
-  display: none !important;
+/*
+ * Scoped: only the shell's own two toggle targets. The global `.hidden`
+ * belongs to the Tailwind utilities, so it must not be overridden here.
+ */
+.admin-account-menu.hidden,
+.admin-overlay.hidden {
+  display: none;
 }
 
 @media (min-width: 1024px) {
   .admin-overlay {
-    display: none !important;
+    display: none;
   }
 }
 
