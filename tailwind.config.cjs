@@ -56,9 +56,14 @@ const theme = {
         label: ['Inter']
       },
       borderRadius: {
-        DEFAULT: '0.25rem',
-        lg: '0.5rem',
-        xl: '0.75rem',
+        DEFAULT: 'var(--radius-xs, 0.25rem)',
+        xs: 'var(--radius-xs, 0.25rem)',
+        sm: 'var(--radius-sm, 0.5rem)',
+        md: 'var(--radius-md, 0.75rem)',
+        lg: 'var(--radius-sm, 0.5rem)',
+        xl: 'var(--radius-md, 0.75rem)',
+        '2xl': 'var(--radius-lg, 1rem)',
+        '3xl': 'var(--radius-lg, 1rem)',
         full: '9999px'
       }
     }

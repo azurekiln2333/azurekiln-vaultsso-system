@@ -1,3 +1,18 @@
+/*
+ * Design tokens.
+ * Radius scale follows the new-api 0.5-step / MD3 convention:
+ * chips 4px, controls 8px, cards 12px, large panels 16px.
+ * Circular avatars and pills are exempt and keep 9999px.
+ */
+:root {
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  --radius-pill: 9999px;
+}
+
 body {
   font-family: 'Inter', sans-serif;
 }
@@ -34,6 +49,7 @@ h3 {
 .glass-card {
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(14px);
+  border-radius: var(--radius-lg);
   box-shadow: 0 20px 40px rgba(25, 28, 30, 0.05);
 }
 
