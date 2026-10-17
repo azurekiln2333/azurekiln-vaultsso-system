@@ -48,19 +48,22 @@ Only the four items below. Nothing outside this list may be added.
 
 ## Acceptance Criteria
 
-- [ ] Radius tokens are defined once and base/utilities styles reference them.
-- [ ] No radius above 20px remains in touched stylesheets; cards ≤ 16px,
+- [x] Radius tokens are defined once and base/utilities styles reference them.
+- [x] No radius above 20px remains in touched stylesheets; cards ≤ 16px,
       controls = 8px, chips 4–8px.
-- [ ] Admin shell uses left sidebar + top bar, with the account menu (avatar,
+- [x] Admin shell uses left sidebar + top bar, with the account menu (avatar,
       account links, logout) in the top-right dropdown.
-- [ ] Sidebar collapse/expand animates smoothly.
-- [ ] No administrator identity card in the sidebar, no admin session block at
+- [x] Sidebar collapse/expand animates smoothly.
+- [x] No administrator identity card in the sidebar, no admin session block at
       the sidebar bottom, no main-content console footer.
-- [ ] Each page title renders exactly once; no duplicated separators or info
+- [x] Each page title renders exactly once; no duplicated separators or info
       blocks.
-- [ ] All JS-referenced selectors, forms, API calls and i18n keys still resolve.
-- [ ] `node scripts/check-syntax.js` and the package test scripts pass.
-- [ ] Pre-existing uncommitted user work in the worktree is preserved.
+- [x] All JS-referenced selectors, forms, API calls and i18n keys still resolve.
+- [x] `node scripts/check-syntax.js` and the package test scripts pass.
+- [x] Pre-existing uncommitted user work in the worktree is preserved.
+
+See `validation.md` for the check log and `notes.md` for the token contract,
+file ownership, and the frozen user files.
 
 ## Background And Constraints
 
