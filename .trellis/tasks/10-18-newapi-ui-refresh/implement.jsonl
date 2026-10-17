@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "frontend spec index"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "component conventions"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "quality standards"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "file layout ownership"}
