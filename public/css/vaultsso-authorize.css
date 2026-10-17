@@ -71,7 +71,7 @@
   right: 0;
   width: 8rem;
   height: 8rem;
-  border-radius: 9999px;
+  border-radius: var(--radius-full, 9999px);
   background: rgba(0, 61, 155, 0.05);
   filter: blur(48px);
   transform: translate(50%, -50%);
