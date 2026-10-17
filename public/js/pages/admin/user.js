@@ -11,7 +11,7 @@ const statusBar = document.getElementById('statusBar');
     }
     function buildAvatarDataUri(name) {
       const initial = (name || 'U').trim().charAt(0).toUpperCase() || 'U';
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="16" fill="#0b57d0"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="32" font-family="Segoe UI, Arial, sans-serif" font-weight="700">${escapeHtml(initial)}</text></svg>`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="40" fill="#0b57d0"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="32" font-family="Segoe UI, Arial, sans-serif" font-weight="700">${escapeHtml(initial)}</text></svg>`;
       return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
     }
     function setAvatar(url, name) {
@@ -27,23 +27,23 @@ const statusBar = document.getElementById('statusBar');
       document.getElementById('usernameHint').textContent = user.username || '';
 
       const roleBadge = document.getElementById('roleBadge');
-      roleBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.role === 'admin' ? 'bg-primary-soft text-primary' : 'bg-surface-container-low text-muted'}`;
+      roleBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.role === 'admin' ? 'bg-primary-soft text-primary' : 'bg-surface-container-low text-muted'}`;
       roleBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.role === 'admin' ? 'admin_panel_settings' : 'person'}</span>${user.role === 'admin' ? '管理员' : '普通用户'}`;
       const verifiedBadge = document.getElementById('verifiedBadge');
-      verifiedBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.emailVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`;
+      verifiedBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.emailVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`;
       verifiedBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.emailVerified ? 'mark_email_read' : 'mark_email_unread'}</span>${user.emailVerified ? '邮箱已验证' : '邮箱未验证'}`;
       const bannedBadge = document.getElementById('bannedBadge');
-      bannedBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.banned ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
+      bannedBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.banned ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
       bannedBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.banned ? 'block' : 'how_to_reg'}</span>${user.banned ? '已封禁' : '正常'}`;
       document.getElementById('bannedInput').checked = Boolean(user.banned);
 
       const totpBadge = document.getElementById('totpBadge');
-      totpBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.totpEnabled ? 'bg-green-50 text-green-700' : 'bg-surface-container-low text-muted'}`;
+      totpBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.totpEnabled ? 'bg-green-50 text-green-700' : 'bg-surface-container-low text-muted'}`;
       totpBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.totpEnabled ? 'phonelink_lock' : 'phonelink_erase'}</span>${user.totpEnabled ? '已绑验证器' : '未绑验证器'}`;
       document.getElementById('totpResetBtn').classList.toggle('hidden', !user.totpEnabled);
 
       const captchaBadge = document.getElementById('captchaBadge');
-      captchaBadge.className = `inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${user.captchaRequired ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
+      captchaBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.captchaRequired ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
       captchaBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.captchaRequired ? 'verified_user' : 'shield'}</span>${user.captchaRequired ? '下次登录需验证码' : '无强制验证'}`;
       document.getElementById('captchaClearBtn').classList.toggle('hidden', !user.captchaRequired);
 
