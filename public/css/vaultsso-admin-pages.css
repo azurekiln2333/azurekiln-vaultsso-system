@@ -1,0 +1,67 @@
+/*
+ * 管理后台页面内容区样式（卡片、表格、筛选栏、表单）。
+ * 外壳（侧边栏 / 顶栏 / iframe）由 vaultsso-admin.css 负责，本文件只管页面内容。
+ * 圆角统一走 --radius-* token：面板最多 16px，按钮 / 输入框 8px，chip / tag 4~8px。
+ * 不修改任何 JS 选择器：这里只做视觉覆盖。
+ */
+
+:root {
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+/* --- 面板：卡片 / 统计块 / 表格容器 / 弹窗 --- */
+.admin-main .rounded-xl,
+.admin-main .rounded-2xl,
+.admin-main .rounded-3xl {
+  border-radius: var(--radius-lg);
+}
+
+/* --- 按钮 / 输入框 / 下拉 / 文本域：8px --- */
+.admin-main button,
+.admin-main input:not([type='checkbox']):not([type='radio']),
+.admin-main select,
+.admin-main textarea,
+.admin-main .rounded-lg {
+  border-radius: var(--radius-sm);
+}
+
+/* --- chip / tag / 小徽标：4px --- */
+.admin-main .rounded-full:not(img) {
+  border-radius: var(--radius-xs);
+}
+
+/* 头像类元素保持圆形 */
+.admin-main img.rounded-full,
+.admin-main .rounded-full.h-10.w-10,
+.admin-main [data-role='logo-image'],
+.admin-main [data-role='logo-fallback'] {
+  border-radius: 9999px;
+}
+
+/* --- 弹窗与卡片内边距更紧凑，贴近 new-api 的内容密度 --- */
+.admin-main .shadow-xl {
+  border-radius: var(--radius-lg);
+}
+
+/* --- 表格：去掉卡片内重复的分隔线，仅保留行分隔 --- */
+.admin-main table thead tr {
+  border-bottom: 1px solid rgba(18, 32, 51, 0.08);
+}
+
+.admin-main table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+/* --- 页面内的区块标题：与外壳顶栏不重复，字号收敛 --- */
+.admin-main section > h1.font-headline {
+  font-size: 1.75rem;
+  line-height: 1.25;
+}
+
+/* --- 空状态 --- */
+.admin-main .admin-empty {
+  border-radius: var(--radius-lg);
+}
