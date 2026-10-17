@@ -1,43 +1,66 @@
-.admin-sidebar {
+/*
+ * Admin shell layout (sidebar + top bar), owned by sso-shell.
+ * Page-content styling lives in vaultsso-admin-pages.css (owned by sso-admin).
+ * Radii reference the md3 tokens defined in vaultsso-base.css.
+ */
+
+:root {
+  --admin-sidebar-width: 256px;
+  --admin-sidebar-width-collapsed: 68px;
+  --admin-topbar-height: 56px;
+  --admin-motion: 200ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* ---------- Top bar ---------- */
+
+.admin-topbar {
   position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 256px;
+  inset: 0 0 auto 0;
   z-index: 40;
   display: flex;
-  flex-direction: column;
-  border-right: 1px solid rgba(18, 32, 51, 0.08);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: var(--admin-topbar-height);
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(18, 32, 51, 0.08);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(12px);
-  transition: width 0.2s ease, transform 0.2s ease;
 }
 
-.admin-sidebar-head {
+.admin-topbar-start {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 14px 6px;
+  min-width: 0;
+  gap: 12px;
 }
 
-.admin-collapse-btn {
+.admin-topbar-end {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.admin-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  border: 1px solid rgba(18, 32, 51, 0.12);
-  border-radius: 10px;
-  background: #ffffff;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: rgba(18, 32, 51, 0.6);
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.admin-collapse-btn:hover {
+.admin-icon-btn:hover {
   color: #0b57d0;
-  border-color: rgba(11, 87, 208, 0.4);
+  border-color: rgba(11, 87, 208, 0.28);
+  background: rgba(11, 87, 208, 0.06);
 }
 
 .admin-brand {
@@ -52,151 +75,225 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(135deg, #003d9b, #0b57d0);
   color: #ffffff;
   font-weight: 900;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .admin-brand-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.25;
+  line-height: 1.2;
   color: #0b57d0;
   font-weight: 800;
-  font-size: 17px;
+  font-size: 15px;
   white-space: nowrap;
 }
 
 .admin-brand-sub {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: rgba(18, 32, 51, 0.5);
 }
 
-.admin-sidebar-scroll {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 8px 14px 14px;
-}
-
-.admin-main {
-  min-height: 100vh;
-  /* Fill the whole area right of the sidebar; utility classes must not cap it. */
-  max-width: none !important;
-}
-
-@media (min-width: 1024px) {
-  /* !important wins over utility classes like mx-auto injected later by the Tailwind CDN. */
-  body:not(.admin-collapsed) .admin-main {
-    margin-left: 256px !important;
-  }
-
-  body.admin-collapsed .admin-main {
-    margin-left: 68px !important;
-  }
-}
-
-/* Collapsed state: icon rail */
-body.admin-collapsed .admin-sidebar {
-  width: 68px;
-}
-
-body.admin-collapsed .admin-nav-label,
-body.admin-collapsed .admin-nav-group,
-body.admin-collapsed .admin-language-switch {
-  display: none;
-}
-
-body.admin-collapsed .admin-sidebar-head {
-  flex-direction: column;
-  padding-inline: 10px;
-}
-
-body.admin-collapsed .admin-collapse-btn {
-  order: 2;
-}
-
-body.admin-collapsed .admin-brand {
-  order: 1;
-}
-
-body.admin-collapsed .admin-nav-item {
-  justify-content: center;
-  padding-inline: 0;
-}
-
-body.admin-collapsed .admin-sidebar-scroll,
-body.admin-collapsed .admin-sidebar-footer {
-  padding-inline: 10px;
-}
-
-/* Shell layout */
-html[data-admin-shell] body {
+/* The current page name appears exactly once, here in the top bar. */
+.admin-topbar-title {
+  min-width: 0;
   overflow: hidden;
+  padding-left: 14px;
+  border-left: 1px solid rgba(18, 32, 51, 0.12);
+  color: rgba(18, 32, 51, 0.55);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.admin-shell-iframe-wrap {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 256px;
-  transition: left 0.2s ease;
+/* ---------- Account dropdown ---------- */
+
+.admin-account {
+  position: relative;
 }
 
-body.admin-collapsed .admin-shell-iframe-wrap {
-  left: 68px;
+.admin-account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgba(18, 32, 51, 0.7);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.admin-shell-iframe {
-  display: block;
+.admin-account-trigger:hover,
+.admin-account-trigger[aria-expanded="true"] {
+  border-color: rgba(11, 87, 208, 0.28);
+  background: rgba(11, 87, 208, 0.06);
+  color: #0b57d0;
+}
+
+.admin-account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, #003d9b, #0b57d0);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-account-avatar img {
   width: 100%;
   height: 100%;
-  border: 0;
+  object-fit: cover;
 }
 
-@media (min-width: 1024px) {
-  html[data-admin-shell] .admin-shell-iframe-wrap {
-    top: 0;
-  }
+.admin-account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Embedded pages (inside the shell iframe) have no sidebar chrome at all */
-html[data-admin-embed] .admin-main {
-  margin-left: 0 !important;
+.admin-account-caret {
+  font-size: 18px;
+  transition: transform 0.15s ease;
+}
+
+.admin-account-trigger[aria-expanded="true"] .admin-account-caret {
+  transform: rotate(180deg);
+}
+
+.admin-account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid rgba(18, 32, 51, 0.1);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(10, 16, 28, 0.14);
+}
+
+.admin-account-meta {
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid rgba(18, 32, 51, 0.08);
+  margin-bottom: 6px;
+}
+
+.admin-account-meta-name {
+  overflow: hidden;
+  color: #122033;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-account-meta-email {
+  overflow: hidden;
+  margin-top: 2px;
+  color: rgba(18, 32, 51, 0.5);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-account-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  color: rgba(18, 32, 51, 0.7);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-account-item:hover {
+  background: rgba(11, 87, 208, 0.07);
+  color: #0b57d0;
+}
+
+.admin-account-item .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ---------- Sidebar ---------- */
+
+.admin-sidebar {
+  position: fixed;
+  top: var(--admin-topbar-height);
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: var(--admin-sidebar-width);
+  padding: 12px 8px;
+  overflow: hidden;
+  border-right: 1px solid rgba(18, 32, 51, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  transition: width var(--admin-motion), padding var(--admin-motion), transform var(--admin-motion);
+}
+
+.admin-sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 .admin-nav-group {
-  margin: 22px 8px 10px;
+  margin: 22px 10px 10px;
+  color: rgba(18, 32, 51, 0.45);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(18, 32, 51, 0.45);
+  white-space: nowrap;
+  transition: opacity var(--admin-motion), max-height var(--admin-motion), margin var(--admin-motion);
 }
 
-.admin-sidebar-head + .admin-sidebar-scroll .admin-nav-group:first-child {
-  margin-top: 12px;
+.admin-sidebar-scroll > .admin-nav-group:first-child {
+  margin-top: 4px;
 }
 
 .admin-nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
-  padding: 11px 12px;
-  border-radius: 10px;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: rgba(18, 32, 51, 0.65);
   font-size: 14px;
   font-weight: 600;
-  color: rgba(18, 32, 51, 0.65);
   text-decoration: none;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, padding var(--admin-motion);
 }
 
 .admin-nav-item:hover {
@@ -210,32 +307,102 @@ html[data-admin-embed] .admin-main {
 }
 
 .admin-nav-item .material-symbols-outlined {
+  flex: 0 0 auto;
   font-size: 20px;
 }
 
-.admin-sidebar-footer {
-  border-top: 1px solid rgba(18, 32, 51, 0.08);
-  padding: 12px 14px;
+.admin-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity var(--admin-motion);
 }
 
-.admin-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid rgba(18, 32, 51, 0.08);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  padding: 10px 16px;
+/* Collapsed icon rail: width shrinks and the copy fades instead of unmounting. */
+body.admin-collapsed .admin-sidebar {
+  width: var(--admin-sidebar-width-collapsed);
+  padding-inline: 8px;
+}
+
+body.admin-collapsed .admin-nav-label,
+body.admin-collapsed .admin-nav-group {
+  max-height: 0;
+  margin-block: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+body.admin-collapsed .admin-sidebar-scroll > .admin-nav-group:first-child {
+  margin-top: 0;
+}
+
+body.admin-collapsed .admin-nav-item {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* ---------- Page mode (standalone admin page) ---------- */
+
+.admin-main {
+  min-height: 100vh;
+  /* Fill the whole area right of the sidebar; utility classes must not cap it. */
+  max-width: none !important;
+  padding-top: calc(var(--admin-topbar-height) + 24px) !important;
 }
 
 @media (min-width: 1024px) {
-  .admin-topbar {
-    display: none;
+  /* !important wins over utility classes like mx-auto injected later by the Tailwind CDN. */
+  body:not(.admin-collapsed) .admin-main {
+    margin-left: var(--admin-sidebar-width) !important;
+  }
+
+  body.admin-collapsed .admin-main {
+    margin-left: var(--admin-sidebar-width-collapsed) !important;
   }
 }
+
+/* ---------- Shell mode (iframe host) ---------- */
+
+.admin-shell {
+  min-height: 100vh;
+}
+
+html[data-admin-shell] body {
+  overflow: hidden;
+}
+
+.admin-shell-body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-top: var(--admin-topbar-height);
+  margin-left: var(--admin-sidebar-width);
+  transition: margin-left var(--admin-motion);
+}
+
+body.admin-collapsed .admin-shell-body {
+  margin-left: var(--admin-sidebar-width-collapsed);
+}
+
+.admin-shell-iframe-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-shell-iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Embedded pages (inside the shell iframe) have no sidebar or top bar chrome. */
+html[data-admin-embed] .admin-main {
+  margin-left: 0 !important;
+  padding-top: 24px !important;
+}
+
+/* ---------- Mobile drawer ---------- */
 
 .admin-overlay {
   position: fixed;
@@ -244,16 +411,23 @@ html[data-admin-embed] .admin-main {
   background: rgba(10, 16, 28, 0.4);
 }
 
+.hidden {
+  display: none !important;
+}
+
 @media (min-width: 1024px) {
   .admin-overlay {
-    display: none;
+    display: none !important;
   }
 }
 
 @media (max-width: 1023.98px) {
+  .admin-topbar-title {
+    display: none;
+  }
+
   .admin-sidebar {
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
   }
 
   .admin-sidebar.open {
@@ -261,8 +435,29 @@ html[data-admin-embed] .admin-main {
     box-shadow: 0 18px 44px rgba(10, 16, 28, 0.22);
   }
 
-  .admin-shell-iframe-wrap {
-    left: 0 !important;
-    top: 56px;
+  .admin-main,
+  .admin-shell-body {
+    margin-left: 0 !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-account-name {
+    display: none;
+  }
+
+  .admin-brand-sub {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar,
+  .admin-nav-item,
+  .admin-nav-label,
+  .admin-nav-group,
+  .admin-shell-body,
+  .admin-account-caret {
+    transition: none;
   }
 }

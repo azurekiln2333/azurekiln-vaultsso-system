@@ -1,7 +1,7 @@
 (function () {
   const page = document.documentElement.getAttribute('data-admin-page') || '';
   const isShell = document.documentElement.hasAttribute('data-admin-shell');
-  // Embedded pages (inside the admin shell iframe) must not inject their own sidebar.
+  // Embedded pages (inside the admin shell iframe) must not inject their own chrome.
   const isEmbedded = window.self !== window.top || new URLSearchParams(window.location.search).has('embed');
 
   const NAV_ITEMS = [
@@ -12,14 +12,12 @@
     { id: 'security', href: '/security.html', icon: 'security', key: 'admin.nav.security', label: '安全设置' },
     { id: 'smtp', href: '/smtp.html', icon: 'outgoing_mail', key: 'admin.nav.smtp', label: '发件设置' }
   ];
-  const EXTRA_ITEMS = [
-    { id: 'docs', href: '/api-docs.html', icon: 'menu_book', key: 'admin.nav.docs', label: 'API 文档', group: 'resources' },
-    { id: 'profile', href: '/profile', icon: 'person', key: 'admin.nav.profile', label: '个人信息', group: 'footer' },
-    { id: 'logout', href: '/oauth2/logout', icon: 'logout', key: 'admin.nav.logout', label: '退出登录', group: 'footer' }
+  const RESOURCE_ITEMS = [
+    { id: 'docs', href: '/api-docs.html', icon: 'menu_book', key: 'admin.nav.docs', label: 'API 文档' }
   ];
 
-  function t(key, fallback) {
-    return window.VaultI18n ? window.VaultI18n.t(key) : fallback;
+  function t(key, variables) {
+    return window.VaultI18n ? window.VaultI18n.t(key, variables) : key;
   }
 
   function escapeHtml(value) {
@@ -32,56 +30,143 @@
   }
 
   function navItemHtml(item, activeId) {
-    return `<a class="admin-nav-item ${page === item.id || activeId === item.id ? 'active' : ''}" href="${item.href}" data-nav-id="${item.id}" title="${escapeHtml(t(item.key, item.label))}">
-      <span class="material-symbols-outlined">${item.icon}</span><span class="admin-nav-label">${escapeHtml(t(item.key, item.label))}</span>
+    return `<a class="admin-nav-item ${activeId === item.id ? 'active' : ''}" href="${item.href}" data-nav-id="${item.id}" title="${escapeHtml(t(item.key))}">
+      <span class="material-symbols-outlined">${item.icon}</span><span class="admin-nav-label">${escapeHtml(t(item.key))}</span>
     </a>`;
   }
 
   function buildSidebarContent(activeId) {
     const mainNav = NAV_ITEMS.map(item => navItemHtml(item, activeId)).join('');
-    const docsNav = EXTRA_ITEMS.filter(item => item.group === 'resources').map(item => navItemHtml(item, activeId)).join('');
-    const footerNav = EXTRA_ITEMS.filter(item => item.group === 'footer').map(item => navItemHtml(item, activeId)).join('');
+    const resourceNav = RESOURCE_ITEMS.map(item => navItemHtml(item, activeId)).join('');
 
     return `
-      <div class="admin-sidebar-head">
-        <button class="admin-collapse-btn" type="button" data-admin-collapse title="${escapeHtml(t('admin.nav.collapse', '收起侧边栏'))}" aria-label="${escapeHtml(t('admin.nav.collapse', '收起侧边栏'))}">
+      <div class="admin-sidebar-scroll">
+        <p class="admin-nav-group admin-nav-label">${escapeHtml(t('admin.nav.section_admin'))}</p>
+        ${mainNav}
+        <p class="admin-nav-group admin-nav-label">${escapeHtml(t('admin.nav.section_resources'))}</p>
+        ${resourceNav}
+      </div>`;
+  }
+
+  // Account dropdown lives in the top-right corner of the top bar.
+  function buildTopbarHtml(activeId) {
+    const routeLabel = NAV_ITEMS.concat(RESOURCE_ITEMS).find(item => item.id === activeId);
+    return `
+      <div class="admin-topbar-start">
+        <button class="admin-icon-btn admin-sidebar-toggle" type="button" data-admin-collapse title="${escapeHtml(t('admin.nav.collapse'))}" aria-label="${escapeHtml(t('admin.nav.collapse'))}" aria-controls="adminSidebar">
           <span class="material-symbols-outlined">menu_open</span>
         </button>
         <a class="admin-brand" href="/admin.html#/users">
           <span class="admin-brand-logo">V</span>
           <span class="admin-brand-text">
-            <span class="font-headline admin-nav-label">${escapeHtml(t('common.brand', 'VaultSSO'))}</span>
-            <span class="admin-brand-sub admin-nav-label">${escapeHtml(t('admin.nav.brand_subtitle', '管理中心'))}</span>
+            <span class="font-headline">${escapeHtml(t('common.brand'))}</span>
+            <span class="admin-brand-sub">${escapeHtml(t('admin.nav.brand_subtitle'))}</span>
           </span>
         </a>
+        <span class="admin-topbar-title" id="adminPageTitle">${escapeHtml(routeLabel ? t(routeLabel.key) : '')}</span>
       </div>
-      <div class="admin-sidebar-scroll">
-        <p class="admin-nav-group admin-nav-label">${escapeHtml(t('admin.nav.section_admin', '管理'))}</p>
-        ${mainNav}
-        <p class="admin-nav-group admin-nav-label">${escapeHtml(t('admin.nav.section_resources', '资源'))}</p>
-        ${docsNav}
-      </div>
-      <div class="admin-sidebar-footer">
-        ${footerNav}
+      <div class="admin-topbar-end">
+        <div class="admin-account" id="adminAccount">
+          <button class="admin-account-trigger" type="button" id="adminAccountBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="adminAccountMenu">
+            <span class="admin-account-avatar" id="adminAccountAvatar">V</span>
+            <span class="admin-account-name" id="adminAccountName">${escapeHtml(t('common.loading'))}</span>
+            <span class="material-symbols-outlined admin-account-caret">expand_more</span>
+          </button>
+          <div class="admin-account-menu hidden" id="adminAccountMenu" role="menu" aria-labelledby="adminAccountBtn">
+            <div class="admin-account-meta">
+              <p class="admin-account-meta-name" id="adminAccountMenuName">${escapeHtml(t('common.user_fallback'))}</p>
+              <p class="admin-account-meta-email" id="adminAccountMenuEmail"></p>
+            </div>
+            <a class="admin-account-item" role="menuitem" href="/profile">
+              <span class="material-symbols-outlined">person</span>${escapeHtml(t('common.action.profile'))}
+            </a>
+            <a class="admin-account-item" role="menuitem" href="/oauth2/logout">
+              <span class="material-symbols-outlined">logout</span>${escapeHtml(t('common.action.logout'))}
+            </a>
+          </div>
+        </div>
       </div>`;
   }
 
   function applyCollapsed(sidebar, collapsed) {
     document.body.classList.toggle('admin-collapsed', collapsed);
-    const btn = sidebar.querySelector('[data-admin-collapse] .material-symbols-outlined');
+    const btn = document.querySelector('[data-admin-collapse] .material-symbols-outlined');
     if (btn) btn.textContent = collapsed ? 'menu' : 'menu_open';
   }
 
-  function bindCollapseToggle(sidebar) {
-    const button = sidebar.querySelector('[data-admin-collapse]');
+  // Single source of truth for the collapsed rail state, shared by both toggle buttons.
+  let collapseState = null;
+
+  function setCollapsed(collapsed, persist) {
+    collapseState = collapsed;
+    if (persist) window.localStorage.setItem('admin_sidebar_collapsed', collapsed ? '1' : '0');
+    applyCollapsed(null, collapsed);
+  }
+
+  function bindCollapseToggle() {
+    const button = document.querySelector('[data-admin-collapse]');
     if (!button) return;
-    let collapsed = window.localStorage.getItem('admin_sidebar_collapsed') === '1';
-    applyCollapsed(sidebar, collapsed);
-    button.addEventListener('click', () => {
-      collapsed = !collapsed;
-      window.localStorage.setItem('admin_sidebar_collapsed', collapsed ? '1' : '0');
-      applyCollapsed(sidebar, collapsed);
+    collapseState = window.localStorage.getItem('admin_sidebar_collapsed') === '1';
+    applyCollapsed(null, collapseState);
+    button.addEventListener('click', () => setCollapsed(!collapseState, true));
+  }
+
+  function bindAccountMenu(root) {
+    const account = root.querySelector('#adminAccount');
+    if (!account) return;
+    const button = account.querySelector('#adminAccountBtn');
+    const menu = account.querySelector('#adminAccountMenu');
+    if (!button || !menu) return;
+
+    function close() {
+      menu.classList.add('hidden');
+      button.setAttribute('aria-expanded', 'false');
+    }
+    function open() {
+      menu.classList.remove('hidden');
+      button.setAttribute('aria-expanded', 'true');
+    }
+
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      if (menu.classList.contains('hidden')) open(); else close();
     });
+    document.addEventListener('click', event => {
+      if (!account.contains(event.target)) close();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') close();
+    });
+    menu.querySelectorAll('a').forEach(link => link.addEventListener('click', close));
+  }
+
+  function loadAccount() {
+    if (!window.fetch) return;
+    fetch('/api/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(response => (response.ok ? response.json() : null))
+      .then(payload => {
+        const user = payload && payload.user;
+        if (!user) return;
+        const displayName = user.name || user.username || t('common.user_fallback');
+        const initial = String(displayName || 'V').trim().charAt(0).toUpperCase() || 'V';
+        const nameEl = document.getElementById('adminAccountName');
+        const menuNameEl = document.getElementById('adminAccountMenuName');
+        const emailEl = document.getElementById('adminAccountMenuEmail');
+        const avatarEl = document.getElementById('adminAccountAvatar');
+        if (nameEl) nameEl.textContent = displayName;
+        if (menuNameEl) menuNameEl.textContent = displayName;
+        if (emailEl) emailEl.textContent = user.email || user.username || '';
+        if (avatarEl) {
+          if (user.avatar) {
+            avatarEl.innerHTML = `<img src="${escapeHtml(user.avatar)}" alt="">`;
+          } else {
+            avatarEl.textContent = initial;
+          }
+        }
+      })
+      .catch(() => {
+        // The menu keeps the fallback label when the session endpoint is unavailable.
+      });
   }
 
   function bindLanguageSwitch(container, onChange) {
@@ -92,36 +177,27 @@
     });
   }
 
-  // --- Shell mode: fixed sidebar + iframe switching without full page reloads ---
+  // --- Shell mode: top bar + sidebar + iframe switching without full page reloads ---
   function mountShell() {
-    const sidebar = document.createElement('aside');
-    sidebar.className = 'admin-sidebar';
-    sidebar.id = 'adminSidebar';
+    const app = document.createElement('div');
+    app.className = 'admin-shell';
+    app.innerHTML = `
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+      <div class="admin-shell-body">
+        <header class="admin-topbar" id="adminTopbar"></header>
+        <div class="admin-shell-iframe-wrap">
+          <iframe class="admin-shell-iframe" id="adminFrame" title="${escapeHtml(t('admin.nav.brand_subtitle'))}"></iframe>
+        </div>
+      </div>
+      <div class="admin-overlay hidden" id="adminOverlay"></div>`;
 
-    const overlay = document.createElement('div');
-    overlay.className = 'admin-overlay hidden';
-    overlay.id = 'adminOverlay';
+    document.body.append(app);
 
-    const frameWrap = document.createElement('div');
-    frameWrap.className = 'admin-shell-iframe-wrap';
-    frameWrap.innerHTML = '<iframe class="admin-shell-iframe" id="adminFrame" title="管理中心内容区"></iframe>';
-
-    const topbar = document.createElement('div');
-    topbar.className = 'admin-topbar';
-    topbar.innerHTML = `
-      <button class="rounded-lg border border-line bg-white px-3 py-2 text-muted" type="button" id="adminMenuBtn" aria-label="${escapeHtml(t('admin.nav.menu', '打开菜单'))}">
-        <span class="material-symbols-outlined text-lg">menu</span>
-      </button>
-      <div class="flex items-center gap-2">
-        <span class="flex h-8 w-8 items-center justify-center rounded-lg primary-gradient text-sm font-black text-white">V</span>
-        <span class="font-headline text-base font-extrabold tracking-tight text-primary">${escapeHtml(t('common.brand', 'VaultSSO'))}</span>
-      </div>`;
-
-    document.body.append(sidebar, overlay, frameWrap);
-    document.body.prepend(topbar);
-
-    const iframe = frameWrap.querySelector('#adminFrame');
-    const shellRoutes = NAV_ITEMS.concat(EXTRA_ITEMS.filter(item => item.group === 'resources'));
+    const sidebar = app.querySelector('#adminSidebar');
+    const topbar = app.querySelector('#adminTopbar');
+    const overlay = app.querySelector('#adminOverlay');
+    const iframe = app.querySelector('#adminFrame');
+    const shellRoutes = NAV_ITEMS.concat(RESOURCE_ITEMS);
     const shellRouteIds = new Set(shellRoutes.map(item => item.id));
 
     function routeForHash(hash) {
@@ -134,6 +210,11 @@
       sidebar.querySelectorAll('[data-nav-id]').forEach(link => {
         link.classList.toggle('active', link.dataset.navId === current);
       });
+      const titleEl = topbar.querySelector('#adminPageTitle');
+      if (titleEl) {
+        const route = routeForHash(window.location.hash);
+        titleEl.textContent = t(route.key);
+      }
     }
 
     function loadRoute(reload) {
@@ -146,13 +227,25 @@
       syncActive();
     }
 
-    sidebar.innerHTML = buildSidebarContent(routeForHash(window.location.hash).id);
-    bindCollapseToggle(sidebar);
+    function closeDrawer() {
+      sidebar.classList.remove('open');
+      overlay.classList.add('hidden');
+    }
+
+    function render() {
+      const activeId = routeForHash(window.location.hash).id;
+      sidebar.innerHTML = buildSidebarContent(activeId);
+      topbar.innerHTML = buildTopbarHtml(activeId);
+      bindCollapseToggle();
+      bindAccountMenu(topbar);
+    }
+
+    render();
+    loadAccount();
 
     sidebar.addEventListener('click', event => {
       const link = event.target.closest('a[data-nav-id]');
       if (!link) return;
-      // Footer links like profile/logout navigate the whole page; only shell routes are iframe-switched.
       if (!shellRouteIds.has(link.dataset.navId)) return;
       event.preventDefault();
       const targetHash = `#/${link.dataset.navId}`;
@@ -166,11 +259,9 @@
 
     window.addEventListener('hashchange', () => loadRoute(false));
 
-    function closeDrawer() {
-      sidebar.classList.remove('open');
-      overlay.classList.add('hidden');
-    }
-    topbar.querySelector('#adminMenuBtn').addEventListener('click', () => {
+    topbar.querySelector('.admin-sidebar-toggle').addEventListener('click', () => {
+      // Desktop collapse is handled by the [data-admin-collapse] binding; only the mobile drawer needs this.
+      if (!window.matchMedia('(max-width: 1023.98px)').matches) return;
       const isOpen = sidebar.classList.toggle('open');
       overlay.classList.toggle('hidden', !isOpen);
     });
@@ -187,10 +278,9 @@
       }
     });
 
-    bindLanguageSwitch(sidebar, () => {
-      sidebar.innerHTML = buildSidebarContent(routeForHash(window.location.hash).id);
-      bindCollapseToggle(sidebar);
-      window.VaultI18n.bindLanguageButtons(sidebar);
+    bindLanguageSwitch(topbar, () => {
+      render();
+      window.VaultI18n.bindLanguageButtons(topbar);
       syncActive();
       loadRoute(true);
     });
@@ -198,36 +288,29 @@
     loadRoute(true);
   }
 
-  // --- Page mode: inject the shared sidebar into a standalone admin page ---
-  function mountPageSidebar() {
+  // --- Page mode: inject the shared chrome into a standalone admin page ---
+  function mountPageChrome() {
     const sidebar = document.createElement('aside');
     sidebar.className = 'admin-sidebar';
     sidebar.id = 'adminSidebar';
     sidebar.innerHTML = buildSidebarContent(page);
 
+    const topbar = document.createElement('header');
+    topbar.className = 'admin-topbar';
+    topbar.id = 'adminTopbar';
+    topbar.innerHTML = buildTopbarHtml(page);
+
     const overlay = document.createElement('div');
     overlay.className = 'admin-overlay hidden';
     overlay.id = 'adminOverlay';
 
-    const topbar = document.createElement('div');
-    topbar.className = 'admin-topbar';
-    topbar.innerHTML = `
-      <button class="rounded-lg border border-line bg-white px-3 py-2 text-muted" type="button" id="adminMenuBtn" aria-label="${escapeHtml(t('admin.nav.menu', '打开菜单'))}">
-        <span class="material-symbols-outlined text-lg">menu</span>
-      </button>
-      <div class="flex items-center gap-2">
-        <span class="flex h-8 w-8 items-center justify-center rounded-lg primary-gradient text-sm font-black text-white">V</span>
-        <span class="font-headline text-base font-extrabold tracking-tight text-primary">${escapeHtml(t('common.brand', 'VaultSSO'))}</span>
-      </div>`;
+    document.body.prepend(overlay);
+    document.body.prepend(sidebar);
+    document.body.prepend(topbar);
 
-    document.body.prepend(sidebar, overlay);
-
-    const main = document.body.querySelector('.admin-main');
-    if (main) {
-      main.prepend(topbar);
-    }
-
-    bindCollapseToggle(sidebar);
+    bindCollapseToggle();
+    bindAccountMenu(topbar);
+    loadAccount();
 
     sidebar.addEventListener('click', event => {
       if (event.target.closest('[data-admin-collapse]')) event.stopPropagation();
@@ -237,18 +320,24 @@
       sidebar.classList.remove('open');
       overlay.classList.add('hidden');
     }
-    topbar.querySelector('#adminMenuBtn').addEventListener('click', () => {
+
+    topbar.querySelector('.admin-sidebar-toggle').addEventListener('click', () => {
+      // Desktop collapse is handled by the [data-admin-collapse] binding; only the mobile drawer needs this.
+      if (!window.matchMedia('(max-width: 1023.98px)').matches) return;
       const isOpen = sidebar.classList.toggle('open');
       overlay.classList.toggle('hidden', !isOpen);
     });
     overlay.addEventListener('click', closeDrawer);
 
-    bindLanguageSwitch(sidebar, () => {
+    bindLanguageSwitch(topbar, () => {
       const wasCollapsed = document.body.classList.contains('admin-collapsed');
       sidebar.innerHTML = buildSidebarContent(page);
-      bindCollapseToggle(sidebar);
-      window.VaultI18n.bindLanguageButtons(sidebar);
-      applyCollapsed(sidebar, wasCollapsed);
+      topbar.innerHTML = buildTopbarHtml(page);
+      bindCollapseToggle();
+      bindAccountMenu(topbar);
+      setCollapsed(wasCollapsed, false);
+      window.VaultI18n.bindLanguageButtons(topbar);
+      loadAccount();
     });
   }
 
@@ -257,6 +346,6 @@
   } else if (isEmbedded) {
     document.documentElement.setAttribute('data-admin-embed', '1');
   } else {
-    mountPageSidebar();
+    mountPageChrome();
   }
 })();
