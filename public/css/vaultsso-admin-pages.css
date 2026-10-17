@@ -46,3 +46,8 @@
 .admin-main table tbody tr:last-child {
   border-bottom: 0;
 }
+
+/* --- 页头：标题已由外壳顶栏展示，页面内只保留描述行 --- */
+.admin-main > header {
+  margin-bottom: 1.5rem;
+}
