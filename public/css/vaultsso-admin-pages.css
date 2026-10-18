@@ -608,6 +608,36 @@
   overflow-y: auto;
 }
 
+.admin-log-item {
+  padding: 8px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+}
+
+.admin-log-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.admin-provider-item {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+}
+
+.admin-provider-meta {
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 /* ---------- 弹窗内的代码示例与文件选择 ---------- */
 
 .admin-dialog-wide {

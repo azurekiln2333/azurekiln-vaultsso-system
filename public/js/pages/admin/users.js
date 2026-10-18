@@ -20,7 +20,7 @@ const tableBody = document.getElementById('userTableBody');
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function dateText(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN'); }
     function setStatus(kind, message) {
-      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm ${kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : kind === 'success' ? 'border-green-200 bg-green-50 text-green-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`;
+      statusBar.className = `admin-status admin-status-${kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info'} mb-4`;
       statusBar.textContent = message;
     }
     function updateStats() {
@@ -125,17 +125,17 @@ const tableBody = document.getElementById('userTableBody');
     importSubmitBtn.addEventListener('click', async () => {
       importSubmitBtn.disabled = true;
       importResult.hidden = false;
-      importResult.innerHTML = '<p class="text-sm text-muted">正在导入...</p>';
+      importResult.innerHTML = '<p class="admin-cell-sub">正在导入...</p>';
       try {
         const result = await request('/api/users/import', { method: 'POST', body: JSON.stringify({ content: importContent.value }) });
         const parts = [`<p class="mb-2 text-sm font-bold ${result.skippedCount ? 'text-amber-700' : 'text-green-700'}">成功导入 ${result.createdCount} 个用户，跳过 ${result.skippedCount} 条记录。</p>`];
         if (result.skippedCount) {
-          parts.push(`<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"><ul class="space-y-1">${result.skipped.map(item => `<li>第 ${item.row} 行 ${escapeHtml(item.username || item.email || '')}：${escapeHtml(item.reason)}</li>`).join('')}</ul></div>`);
+          parts.push(`<div class="admin-note admin-note-error"><ul class="space-y-1">${result.skipped.map(item => `<li>第 ${item.row} 行 ${escapeHtml(item.username || item.email || '')}：${escapeHtml(item.reason)}</li>`).join('')}</ul></div>`);
         }
         importResult.innerHTML = parts.join('');
         if (result.createdCount) { await loadUsers(); }
       } catch (error) {
-        importResult.innerHTML = `<p class="text-sm text-red-700">导入失败：${escapeHtml(error.message)}</p>`;
+        importResult.innerHTML = `<p class="admin-status admin-status-error">导入失败：${escapeHtml(error.message)}</p>`;
       } finally { importSubmitBtn.disabled = false; }
     });
     loadUsers();

@@ -13,16 +13,16 @@ const statusBar = document.getElementById('statusBar');
     let oidcEditingKey = '';
 
     const RESULT_LABELS = {
-      success: ['成功', 'bg-green-50 text-green-700'],
-      invalid_credentials: ['密码错误', 'bg-red-50 text-red-600'],
-      banned: ['已封禁', 'bg-red-50 text-red-600'],
-      password_not_set: ['未设密码', 'bg-amber-50 text-amber-700'],
-      locked: ['已锁定', 'bg-red-50 text-red-600'],
-      captcha_failed: ['验证码错误', 'bg-amber-50 text-amber-700'],
+      success: ['成功', 'napi-badge-success'],
+      invalid_credentials: ['密码错误', 'napi-badge-danger'],
+      banned: ['已封禁', 'napi-badge-danger'],
+      password_not_set: ['未设密码', 'napi-badge-warning'],
+      locked: ['已锁定', 'napi-badge-danger'],
+      captcha_failed: ['验证码错误', 'napi-badge-warning'],
       email_code_required: ['发送登录验证码', 'bg-blue-50 text-blue-700'],
-      email_code_invalid: ['验证码错误', 'bg-red-50 text-red-600'],
+      email_code_invalid: ['验证码错误', 'napi-badge-danger'],
       totp_required: ['等待动态码', 'bg-blue-50 text-blue-700'],
-      totp_invalid: ['动态码错误', 'bg-red-50 text-red-600'],
+      totp_invalid: ['动态码错误', 'napi-badge-danger'],
       anomaly_detected: ['行为异常', 'bg-purple-50 text-purple-700'],
       register: ['注册', 'bg-blue-50 text-blue-700'],
       admin_action: ['管理员操作', 'bg-purple-50 text-purple-700']
@@ -109,21 +109,21 @@ const statusBar = document.getElementById('statusBar');
       finally { saveBtn.disabled = false; }
     });
     async function loadLogs() {
-      loginLogs.innerHTML = '<p class="text-sm text-muted">正在加载...</p>';
+      loginLogs.innerHTML = '<p class="admin-cell-sub">正在加载...</p>';
       try {
         const logs = await request('/api/admin/security/logs?limit=50');
-        if (!logs.length) { loginLogs.innerHTML = '<p class="text-sm text-muted">暂无登录记录。</p>'; return; }
+        if (!logs.length) { loginLogs.innerHTML = '<p class="admin-cell-sub">暂无登录记录。</p>'; return; }
         loginLogs.innerHTML = logs.map(log => {
-          const [label, className] = RESULT_LABELS[log.result] || [log.result, 'bg-surface-container-low text-muted'];
+          const [label, className] = RESULT_LABELS[log.result] || [log.result, ''];
           const time = new Date(log.createdAt);
           const timeText = Number.isNaN(time.getTime()) ? '-' : time.toLocaleString('zh-CN');
-          return `<div class="rounded-lg border border-line/70 px-3 py-2">
+          return `<div class="admin-log-item">
             <div class="flex items-center justify-between gap-2">
-              <span class="truncate text-sm font-bold text-ink" title="${escapeHtml(log.username)}">${escapeHtml(log.username)}</span>
-              <span class="shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-bold ${className}">${label}</span>
+              <span class="admin-cell-strong truncate" title="${escapeHtml(log.username)}">${escapeHtml(log.username)}</span>
+              <span class="napi-badge shrink-0 ${className}">${label}</span>
             </div>
-            ${log.detail ? `<p class="mt-1 break-all text-[11px] text-muted">${escapeHtml(log.detail)}</p>` : ''}
-            <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted">
+            ${log.detail ? `<p class="admin-cell-sub mt-1">${escapeHtml(log.detail)}</p>` : ''}
+            <div class="admin-log-meta">
               <span class="truncate">${escapeHtml(log.ip || '未知 IP')}</span>
               <span class="shrink-0">${timeText}</span>
             </div>
@@ -143,12 +143,12 @@ const statusBar = document.getElementById('statusBar');
           : '尚未配置可用的第三方登录 Provider';
         oidcStatus.parentElement.className = `admin-note mb-4 ${readyCount ? 'admin-note-success' : 'admin-note-warning'}`;
         if (!providers.length) {
-          oidcProviders.innerHTML = '<p class="text-sm text-muted">暂无 Provider 配置。</p>';
+          oidcProviders.innerHTML = '<p class="admin-cell-sub">暂无 Provider 配置。</p>';
           return;
         }
         oidcProviders.innerHTML = providers.map(provider => {
           const isHuawei = provider.providerType === 'huawei_quicklogin';
-          const state = provider.credentialError ? ['密钥需重新填写', 'bg-amber-50 text-amber-700'] : provider.configured ? ['已启用', 'bg-green-50 text-green-700'] : ['未完成配置', 'bg-amber-50 text-amber-700'];
+          const state = provider.credentialError ? ['密钥需重新填写', 'napi-badge-warning'] : provider.configured ? ['已启用', 'napi-badge-success'] : ['未完成配置', 'bg-amber-50 text-amber-700'];
           const endpoint = provider.issuerUrl || provider.authorizeUrl || provider.tokenUrl || (isHuawei ? '华为官方默认地址' : '-');
           const rows = isHuawei
             ? `<span>Client ID：<b class="font-semibold text-ink">${escapeHtml(provider.clientId || '-')}</b></span>
@@ -161,16 +161,16 @@ const statusBar = document.getElementById('statusBar');
               <span>授权地址：<b class="break-all font-semibold text-ink">${escapeHtml(endpoint)}</b></span>
               <span>Scope：<b class="font-semibold text-ink">${escapeHtml((provider.scopes || []).join(' ') || '-')}</b></span>
               <span>主标识字段：<b class="font-semibold text-ink">${escapeHtml(provider.userinfoIdPath || 'sub')}</b></span>
-              <span>第二标识字段：<b class="font-semibold text-ink">${escapeHtml(provider.userinfoSecondaryIdPath || '-')}</b></span>
-              <span>UserInfo 请求：<b class="font-semibold text-ink">${escapeHtml(provider.userinfoMethod || 'GET')} / ${provider.userinfoTokenIn === 'body_form' ? '请求体' : 'Bearer 头'}</b></span>
-              <span>PKCE：<b class="font-semibold text-ink">${provider.pkceEnabled ? '开启' : '关闭'}</b></span>
-              <span>ID Token 验证：<b class="font-semibold text-ink">${provider.validateIdToken ? '开启' : '关闭'}</b></span>`;
-          return `<div class="rounded-lg border border-line/70 px-4 py-3">
+              <span>第二标识字段：<b class="admin-cell-strong">${escapeHtml(provider.userinfoSecondaryIdPath || '-')}</b></span>
+              <span>UserInfo 请求：<b class="admin-cell-strong">${escapeHtml(provider.userinfoMethod || 'GET')} / ${provider.userinfoTokenIn === 'body_form' ? '请求体' : 'Bearer 头'}</b></span>
+              <span>PKCE：<b class="admin-cell-strong">${provider.pkceEnabled ? '开启' : '关闭'}</b></span>
+              <span>ID Token 验证：<b class="admin-cell-strong">${provider.validateIdToken ? '开启' : '关闭'}</b></span>`;
+          return `<div class="admin-provider-item">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <div><span class="font-bold text-ink">${escapeHtml(provider.providerName || provider.key)}</span><span class="ml-2 text-xs text-muted">${escapeHtml(provider.key || '')}</span><span class="ml-2 rounded bg-surface-container-low px-2 py-0.5 text-[11px] font-bold text-muted">${isHuawei ? '华为一键登录' : 'OIDC'}</span></div>
-              <div class="flex items-center gap-2"><span class="rounded-lg px-2 py-1 text-xs font-bold ${state[1]}">${state[0]}</span><button class="oidc-edit rounded-lg border border-line px-2 py-1 text-xs font-bold text-muted" data-provider="${escapeHtml(provider.key)}" type="button">编辑</button><button class="oidc-delete rounded-lg border border-red-200 px-2 py-1 text-xs font-bold text-red-600" data-provider="${escapeHtml(provider.key)}" type="button">删除</button></div>
+              <div><span class="admin-cell-strong">${escapeHtml(provider.providerName || provider.key)}</span><span class="admin-cell-sub ml-2">${escapeHtml(provider.key || '')}</span><span class="napi-badge ml-2">${isHuawei ? '华为一键登录' : 'OIDC'}</span></div>
+              <div class="flex items-center gap-2"><span class="napi-badge ${state[1]}">${state[0]}</span><button class="oidc-edit napi-btn napi-btn-ghost napi-btn-sm" data-provider="${escapeHtml(provider.key)}" type="button">编辑</button><button class="oidc-delete napi-btn napi-btn-danger napi-btn-sm" data-provider="${escapeHtml(provider.key)}" type="button">删除</button></div>
             </div>
-            <div class="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 text-xs text-muted sm:grid-cols-2">
+            <div class="admin-provider-meta grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
               ${rows}
             </div>
           </div>`;
