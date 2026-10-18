@@ -842,7 +842,6 @@ body.profile-page {
 .profile-binding-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .profile-binding-actions a { display: inline-flex; align-items: center; justify-content: center; flex: 1; min-height: 34px; padding: 7px 9px; border-radius: 6px; background: #e7e8ea; color: #003d9b; font-size: 11px; font-weight: 700; text-align: center; text-decoration: none; }
 .profile-binding-actions > span { display: block; padding: 12px; border-radius: 8px; background: #f3f4f6; color: #737685; font-size: 11px; text-align: center; }
-.profile-footer { display: flex; justify-content: space-between; gap: 12px; width: min(100% - 56px, 1280px); margin: 0 auto; padding: 8px 0 28px; color: #737685; font-size: 10px; }
 .profile-page .modal-title { letter-spacing: 0; }
 
 @media (max-width: 1060px) {
@@ -852,7 +851,7 @@ body.profile-page {
 }
 
 @media (max-width: 760px) {
-  .profile-topbar-inner, .profile-shell, .profile-footer { width: min(100% - 30px, 1280px); }
+  .profile-topbar-inner, .profile-shell { width: min(100% - 30px, 1280px); }
   .profile-topbar-inner { grid-template-columns: 1fr auto; gap: 0 12px; padding: 12px 0; }
   .profile-navigation { grid-column: 1 / -1; grid-row: 2; gap: 18px; overflow-x: auto; padding-top: 8px; }
   .profile-navigation a { font-size: 12px; }
@@ -875,7 +874,6 @@ body.profile-page {
   .profile-lock { white-space: normal; max-width: 48%; }
   .profile-row-action { align-self: center; }
   .profile-applications { grid-template-columns: minmax(0, 1fr); }
-  .profile-footer { flex-wrap: wrap; }
 }
 
 @media (max-width: 400px) {
