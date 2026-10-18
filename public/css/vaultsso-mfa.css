@@ -344,13 +344,6 @@
   outline-offset: 4px;
 }
 
-.mfa-footer {
-  padding: 24px 32px;
-  color: #737685;
-  font-size: 12px;
-  text-align: center;
-}
-
 @media (max-width: 540px) {
   .mfa-header {
     padding: 16px 20px;
@@ -389,9 +382,6 @@
     gap: 8px;
   }
 
-  .mfa-footer {
-    padding: 20px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
