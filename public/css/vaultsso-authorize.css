@@ -1,23 +1,12 @@
 /* Sign-in / authorization page.
-   Visual rhythm follows the new-api settings layout: bordered panels instead
-   of floating shadows, a single panel heading, compact 32px control rows and
-   the shared radius tokens (panel --radius-lg, controls --radius-sm,
-   chips/labels --radius-xs). The original colour palette is unchanged. */
-
-:root {
-  --auth-line: #e5e9ef;
-  --auth-line-strong: #d8dee7;
-  --auth-soft: #f5f7f9;
-  --auth-muted: #61708a;
-  --auth-text: #191c1e;
-  --auth-primary: #003d9b;
-  --auth-accent: #0b57d0;
-  --auth-shadow: 0 1px 2px rgba(20, 44, 72, 0.06);
-}
+   Visual rhythm follows the new-api settings layout: bordered panels instead of
+   floating shadows, a single panel heading, compact 32px control rows.
+   All colour, radius and spacing values come from the shared tokens in
+   vaultsso-base.css; nothing is redefined locally. */
 
 .tab-button.active {
-  color: var(--auth-primary);
-  border-bottom-color: var(--auth-primary);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
   font-weight: 600;
 }
 
@@ -25,45 +14,45 @@
   width: 100%;
   max-width: 80rem;
   margin: 0 auto;
-  padding: 0.75rem 1.5rem;
+  padding: var(--space-3) var(--space-6);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .brand-title {
-  font-size: 1.125rem;
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.02em;
-  color: var(--auth-primary);
+  color: var(--accent);
 }
 
 .language-switch {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.1875rem;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--auth-line-strong);
-  background: #ffffff;
+  background: var(--surface-card);
 }
 
 .lang-button {
-  padding: 0.25rem 0.625rem;
-  border-radius: var(--radius-xs);
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--auth-muted);
-  background: transparent;
+  padding: 4px 10px;
   border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color var(--motion), color var(--motion);
 }
 
 .lang-button:hover {
-  background: var(--auth-soft);
-  color: var(--auth-text);
+  background: var(--surface-subtle);
+  color: var(--text-strong);
 }
 
 .page-main {
@@ -71,20 +60,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem 1.5rem 3rem;
+  padding: var(--space-6) var(--space-6) 48px;
 }
 
-/* new-api panel: bordered surface, no drop shadow, radius from tokens. */
+/* new-api panel: bordered surface, flat shadow, token radius. */
 .auth-card {
   position: relative;
   overflow: hidden;
   width: 100%;
   max-width: 25rem;
-  padding: 1.5rem;
-  border: 1px solid var(--auth-line);
+  padding: var(--space-6);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: #ffffff;
-  box-shadow: var(--auth-shadow);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-panel);
 }
 
 .card-orb {
@@ -93,8 +82,8 @@
   right: 0;
   width: 8rem;
   height: 8rem;
-  border-radius: var(--radius-full, 9999px);
-  background: rgba(0, 61, 155, 0.05);
+  border-radius: var(--radius-full);
+  background: var(--surface-selected);
   filter: blur(48px);
   transform: translate(50%, -50%);
   pointer-events: none;
@@ -107,92 +96,92 @@
 
 /* Panel heading: title left aligned and stated once. */
 .card-header {
-  margin: 0 0 1.25rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--auth-line);
+  margin: 0 0 var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line-soft);
   text-align: left;
 }
 
 .card-title {
-  margin: 0 0 0.375rem;
-  font-size: 1.125rem;
+  margin: 0 0 6px;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: var(--auth-text);
 }
 
 .card-description {
   margin: 0;
-  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.6;
-  color: var(--auth-muted);
 }
 
 .session-panel {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .session-card {
-  padding: 0.875rem 1rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--auth-line);
-  background: var(--auth-soft);
+  background: var(--surface-subtle);
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: background-color var(--motion), border-color var(--motion);
 }
 
 .session-card:hover {
-  background: #eef1f5;
-  border-color: var(--auth-line-strong);
+  background: var(--surface-muted);
 }
 
 .session-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.375rem;
+  gap: var(--space-3);
+  margin-bottom: 6px;
 }
 
 .session-title {
   display: block;
-  font-size: 0.875rem;
+  color: var(--text-strong);
+  font-size: 13px;
   font-weight: 600;
-  color: var(--auth-text);
 }
 
 .session-text {
   display: block;
-  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.6;
-  color: var(--auth-muted);
 }
 
 .logout-button {
   flex-shrink: 0;
-  min-height: 32px;
-  padding: 0.25rem 0.625rem;
+  min-height: var(--control-height);
+  padding: 0 10px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--auth-line-strong);
-  background: #ffffff;
-  color: var(--auth-muted);
-  font-size: 0.8125rem;
+  background: var(--surface-card);
+  color: var(--text-muted);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color var(--motion), color var(--motion);
 }
 
 .logout-button:hover {
-  background: var(--auth-soft);
-  color: var(--auth-accent);
+  background: var(--surface-hover);
+  color: var(--accent);
 }
 
 .oauth-panel {
-  margin-bottom: 1rem;
-  padding: 0.875rem 1rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--auth-line);
-  background: var(--auth-soft);
+  background: var(--surface-subtle);
 }
 
 /* The client name is already shown once in .card-title, so the eyebrow that
@@ -203,10 +192,10 @@
 
 .oauth-title {
   display: block;
-  margin-bottom: 0.375rem;
-  font-size: 0.9375rem;
+  margin-bottom: 6px;
+  color: var(--text-strong);
+  font-size: 14px;
   font-weight: 600;
-  color: var(--auth-text);
 }
 
 .oauth-title:empty {
@@ -215,51 +204,52 @@
 
 .oauth-text {
   margin: 0;
-  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.6;
-  color: var(--auth-muted);
 }
 
 .scope-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
-  margin-top: 0.75rem;
+  gap: 6px;
+  margin-top: var(--space-3);
 }
 
+/* Chip: 4px radius, quiet surface — matches .napi-badge. */
 .scope-chip {
   display: inline-flex;
   align-items: center;
-  padding: 0.125rem 0.4375rem;
-  border: 1px solid var(--auth-line);
+  padding: 2px 8px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-xs);
-  background: #ffffff;
-  color: var(--auth-primary);
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1.5;
+  background: var(--surface-card);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
 .redirect-panel {
-  margin-top: 0.75rem;
-  padding: 0.625rem 0.75rem;
+  margin-top: var(--space-3);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--auth-line);
-  background: #ffffff;
+  background: var(--surface-card);
 }
 
 .redirect-label {
   display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--auth-muted);
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .redirect-code {
-  font-size: 0.75rem;
+  color: var(--text-strong);
+  font-size: 12px;
   line-height: 1.6;
-  color: var(--auth-text);
   word-break: break-all;
 }
 
@@ -270,26 +260,26 @@
 
 .tabs-row {
   display: flex;
-  gap: 0.25rem;
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--auth-line);
+  gap: 4px;
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .tab-button {
   flex: 1;
-  padding: 0.5rem 0.25rem;
+  padding: 8px 4px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--auth-muted);
-  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 140ms ease, border-color 140ms ease;
+  transition: color var(--motion), border-color var(--motion);
 }
 
 .tab-button:hover {
-  color: var(--auth-text);
+  color: var(--text-strong);
 }
 
 .auth-card [hidden] {
@@ -307,15 +297,16 @@
   }
 }
 
+/* Status: semantic tokens, matching .napi-badge-* colour pairs. */
 .status-box {
   display: block;
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--radius-sm);
+  padding: 10px 12px;
   border: 1px solid transparent;
-  font-size: 0.8125rem;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
-  scroll-margin-block: 1rem;
+  scroll-margin-block: var(--space-4);
 }
 
 .status-box:not(.is-visible) {
@@ -335,51 +326,51 @@
 }
 
 .status-box.is-error {
-  border-color: #f3c9c9;
-  background: #fdf0f0;
-  color: #b3363b;
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .status-box.is-success {
-  border-color: #c6e5d5;
-  background: #edf6f0;
-  color: #227558;
+  border-color: var(--success-soft);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .status-box.is-info {
-  border-color: #cddff3;
-  background: #edf4fc;
-  color: #005ab7;
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
 }
 
 .auth-form {
   display: grid;
-  gap: 0.875rem;
+  gap: var(--space-3);
 }
 
 .field-group {
   display: grid;
-  gap: 0.375rem;
+  gap: 6px;
 }
 
 .field-label {
   display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--auth-muted);
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-/* 32px control baseline, matching the new-api input row. */
+/* 32px control baseline, matching .napi-input. */
 .field-shell {
   position: relative;
 }
 
 .field-icon {
   position: absolute;
-  left: 0.625rem;
   top: 50%;
+  left: 10px;
   transform: translateY(-50%);
-  color: var(--auth-muted);
+  color: var(--text-faint);
   font-size: 18px;
   pointer-events: none;
 }
@@ -389,26 +380,26 @@
   -webkit-appearance: none;
   display: block;
   width: 100%;
-  min-height: 32px;
-  padding: 0.375rem 0.625rem 0.375rem 2.125rem;
-  border: 1px solid var(--auth-line-strong);
+  min-height: var(--control-height);
+  padding: 6px 10px 6px 34px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background-color: #ffffff;
-  color: var(--auth-text);
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.4;
   box-shadow: none;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition: border-color var(--motion), box-shadow var(--motion);
 }
 
 .field-shell .field-input::placeholder {
-  color: #98a1ae;
+  color: var(--text-faint);
 }
 
 .field-shell .field-input:focus {
-  border-color: var(--auth-accent);
-  box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.12);
+  border-color: var(--accent-bright);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.14);
 }
 
 /* One control look for the image CAPTCHA field: the box that held the code
@@ -416,7 +407,7 @@
 .field-inline-actions {
   display: flex;
   align-items: stretch;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .field-inline-actions > .field-shell {
@@ -432,66 +423,66 @@
   overflow: hidden;
   cursor: pointer;
   user-select: none;
-  border: 1px solid var(--auth-line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: #ffffff;
+  background: var(--surface-card);
 }
 
 .captcha-box:hover {
-  border-color: var(--auth-accent);
+  border-color: var(--accent);
 }
 
-/* Button hierarchy: primary filled, secondary outlined, text link flat. */
+/* Button hierarchy: primary filled, secondary outlined, text flat. */
 .primary-submit {
   width: 100%;
   min-height: 36px;
-  padding: 0.5rem 1rem;
-  border: 0;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  color: #ffffff;
-  font-size: 0.875rem;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 140ms ease, transform 140ms ease;
+  transition: background-color var(--motion), border-color var(--motion);
 }
 
 .primary-submit:hover {
-  opacity: 0.92;
-}
-
-.primary-submit:active {
-  transform: scale(0.99);
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
 }
 
 .secondary-submit,
 .text-action-button {
   width: 100%;
-  min-height: 32px;
-  border: 1px solid var(--auth-line-strong);
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--auth-accent);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  background: var(--surface-card);
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+  transition: background-color var(--motion), border-color var(--motion), color var(--motion);
 }
 
 .secondary-submit {
-  padding: 0.375rem 0.75rem;
+  padding: 0 12px;
 }
 
 .text-action-button {
-  padding: 0.375rem 0.5rem;
+  padding: 0 8px;
   border-color: transparent;
   background: transparent;
+  color: var(--text-muted);
   text-align: left;
 }
 
 .secondary-submit:hover,
 .text-action-button:hover {
-  border-color: #cddff3;
-  background: #edf4fc;
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--accent);
 }
 
 .primary-submit:disabled,
@@ -506,10 +497,9 @@
 .oidc-divider {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  color: var(--auth-muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .oidc-divider::before,
@@ -517,44 +507,41 @@
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--auth-line);
+  background: var(--line-soft);
 }
 
 .oidc-submit {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 6px;
   width: 100%;
-  min-height: 32px;
-  padding: 0.375rem 0.75rem;
-  border: 1px solid var(--auth-line-strong);
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: var(--auth-text);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  background: var(--surface-card);
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 600;
   text-decoration: none;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: background-color var(--motion), border-color var(--motion);
 }
 
 .oidc-submit .material-symbols-outlined {
   font-size: 18px;
-  color: var(--auth-accent);
+  color: var(--accent);
 }
 
 .oidc-submit:hover {
-  border-color: #cddff3;
-  background: #edf4fc;
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--accent);
 }
 
 @media (min-width: 768px) {
   .page-header {
-    padding-left: 2rem;
-    padding-right: 2rem;
-  }
-
-  .auth-card {
-    padding: 2rem;
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
   }
 }
