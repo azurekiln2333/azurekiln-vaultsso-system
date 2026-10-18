@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 let checked = 0;
 function walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (['node_modules', '.git', '.agents', '.codex'].includes(entry.name)) continue;
+    if (['node_modules', '.git', '.agents', '.codex', '.artifacts', 'stitch_personalcenter', 'stitch_mfa(1)'].includes(entry.name)) continue;
     const file = path.join(directory, entry.name);
     if (entry.isDirectory()) walk(file);
     else if (/\.(?:js|cjs)$/.test(entry.name)) {
