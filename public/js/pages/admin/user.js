@@ -6,7 +6,7 @@ const statusBar = document.getElementById('statusBar');
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function dateText(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN'); }
     function setStatus(kind, message) {
-      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm ${kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : kind === 'success' ? 'border-green-200 bg-green-50 text-green-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`;
+      statusBar.className = `admin-status admin-status-${kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info'} mb-4`;
       statusBar.textContent = message;
     }
     function buildAvatarDataUri(name) {
@@ -27,23 +27,23 @@ const statusBar = document.getElementById('statusBar');
       document.getElementById('usernameHint').textContent = user.username || '';
 
       const roleBadge = document.getElementById('roleBadge');
-      roleBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.role === 'admin' ? 'bg-primary-soft text-primary' : 'bg-surface-container-low text-muted'}`;
+      roleBadge.className = `napi-badge ${user.role === 'admin' ? 'napi-badge-accent' : ''}`;
       roleBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.role === 'admin' ? 'admin_panel_settings' : 'person'}</span>${user.role === 'admin' ? '管理员' : '普通用户'}`;
       const verifiedBadge = document.getElementById('verifiedBadge');
-      verifiedBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.emailVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`;
+      verifiedBadge.className = `napi-badge ${user.emailVerified ? 'napi-badge-success' : 'napi-badge-warning'}`;
       verifiedBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.emailVerified ? 'mark_email_read' : 'mark_email_unread'}</span>${user.emailVerified ? '邮箱已验证' : '邮箱未验证'}`;
       const bannedBadge = document.getElementById('bannedBadge');
-      bannedBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.banned ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
+      bannedBadge.className = `napi-badge ${user.banned ? 'napi-badge-danger' : ''}`;
       bannedBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.banned ? 'block' : 'how_to_reg'}</span>${user.banned ? '已封禁' : '正常'}`;
       document.getElementById('bannedInput').checked = Boolean(user.banned);
 
       const totpBadge = document.getElementById('totpBadge');
-      totpBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.totpEnabled ? 'bg-green-50 text-green-700' : 'bg-surface-container-low text-muted'}`;
+      totpBadge.className = `napi-badge ${user.totpEnabled ? 'napi-badge-success' : ''}`;
       totpBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.totpEnabled ? 'phonelink_lock' : 'phonelink_erase'}</span>${user.totpEnabled ? '已绑验证器' : '未绑验证器'}`;
       document.getElementById('totpResetBtn').classList.toggle('hidden', !user.totpEnabled);
 
       const captchaBadge = document.getElementById('captchaBadge');
-      captchaBadge.className = `inline-flex items-center gap-1 rounded px-3 py-1 text-xs font-bold ${user.captchaRequired ? 'bg-red-50 text-red-600' : 'bg-surface-container-low text-muted'}`;
+      captchaBadge.className = `napi-badge ${user.captchaRequired ? 'napi-badge-danger' : ''}`;
       captchaBadge.innerHTML = `<span class="material-symbols-outlined text-sm">${user.captchaRequired ? 'verified_user' : 'shield'}</span>${user.captchaRequired ? '下次登录需验证码' : '无强制验证'}`;
       document.getElementById('captchaClearBtn').classList.toggle('hidden', !user.captchaRequired);
 
@@ -53,8 +53,8 @@ const statusBar = document.getElementById('statusBar');
       const identities = Array.isArray(user.identities) ? user.identities : [];
       const list = document.getElementById('identityList');
       list.innerHTML = identities.length
-        ? identities.map(identity => `<div class="flex items-center justify-between gap-3 rounded-lg border border-line/70 px-3 py-2"><span class="inline-flex items-center gap-2 text-sm font-bold text-ink"><span class="material-symbols-outlined text-base text-primary">key</span>${escapeHtml(identity.provider)}</span><span class="truncate text-xs text-muted" title="${escapeHtml(identity.providerUserId)}">${escapeHtml(identity.providerUsername || identity.providerUserId)}</span></div>`).join('')
-        : '<p class="text-sm text-muted">该账户未绑定第三方账号。</p>';
+        ? identities.map(identity => `<div class="admin-identity-row"><span class="admin-identity-name"><span class="material-symbols-outlined">key</span>${escapeHtml(identity.provider)}</span><span class="admin-cell-sub truncate" title="${escapeHtml(identity.providerUserId)}">${escapeHtml(identity.providerUsername || identity.providerUserId)}</span></div>`).join('')
+        : '<p class="admin-cell-sub">该账户未绑定第三方账号。</p>';
 
       document.getElementById('nameInput').value = user.name || '';
       document.getElementById('emailInput').value = user.email || '';
