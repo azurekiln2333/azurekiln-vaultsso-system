@@ -30,7 +30,7 @@ const statusBar = document.getElementById('statusBar');
 
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function setStatus(kind, message) {
-      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm ${kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : kind === 'success' ? 'border-green-200 bg-green-50 text-green-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`;
+      statusBar.className = `admin-status admin-status-${kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info'} mb-4`;
       statusBar.textContent = message;
     }
     async function request(url, options = {}) {
@@ -141,7 +141,7 @@ const statusBar = document.getElementById('statusBar');
         oidcStatus.textContent = readyCount
           ? `已配置 ${readyCount} 个可用登录 Provider`
           : '尚未配置可用的第三方登录 Provider';
-        oidcStatus.parentElement.className = `mb-4 rounded-lg border px-4 py-3 text-sm ${readyCount ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`;
+        oidcStatus.parentElement.className = `admin-note mb-4 ${readyCount ? 'admin-note-success' : 'admin-note-warning'}`;
         if (!providers.length) {
           oidcProviders.innerHTML = '<p class="text-sm text-muted">暂无 Provider 配置。</p>';
           return;
@@ -179,7 +179,7 @@ const statusBar = document.getElementById('statusBar');
         oidcProviders.querySelectorAll('.oidc-delete').forEach(button => button.addEventListener('click', () => deleteOidcProvider(button.dataset.provider)));
       } catch (error) {
         oidcStatus.textContent = error.message;
-        oidcStatus.parentElement.className = 'mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700';
+        oidcStatus.parentElement.className = 'admin-note admin-note-error mb-4';
         oidcProviders.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(error.message)}</p>`;
       }
     }
