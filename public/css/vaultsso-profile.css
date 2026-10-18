@@ -885,3 +885,143 @@ body.profile-page {
   .profile-lock { max-width: 100%; }
   .profile-panel-heading .profile-heading-action { margin-left: 50px; }
 }
+
+/* ==========================================================================
+ * new-api surface alignment
+ *
+ * The page keeps its grouped-panel structure; this layer only retunes the
+ * chrome to the shared baseline: flat bordered panels instead of floating
+ * shadows, a compact navigation rail, and setting-row rhythm inside panels.
+ * Colour/radius/spacing values come from vaultsso-base.css tokens.
+ * ========================================================================== */
+
+.profile-page {
+  background: var(--surface-page);
+}
+
+.profile-shell {
+  width: min(100% - 32px, 1180px);
+  margin: var(--space-5) auto var(--space-6);
+}
+
+/* Panel: flat, hairline bordered — replaces the 14px floating shadow. */
+.profile-hero,
+.profile-panel {
+  background: var(--surface-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-flat);
+}
+
+.profile-hero {
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+}
+
+.profile-dashboard {
+  gap: var(--space-4);
+}
+
+/* Panel headings: one title row with a hairline underline. */
+.profile-panel-heading {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.profile-panel-heading h2 {
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.profile-panel-heading p {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Setting rows inside panels. */
+.profile-detail-row,
+.profile-app-item,
+.profile-session-item,
+.profile-identity-item {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.profile-detail-row:hover,
+.profile-app-item:hover,
+.profile-session-item:hover,
+.profile-identity-item:hover {
+  border-color: var(--line);
+}
+
+/* Navigation rail: quiet tabs with a selected underline. */
+.profile-navigation {
+  gap: var(--space-5);
+}
+
+.profile-navigation a {
+  padding: 6px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: color var(--motion), border-color var(--motion);
+}
+
+.profile-navigation a:hover {
+  color: var(--accent);
+}
+
+.profile-navigation a.is-active,
+.profile-navigation a[aria-current='page'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Badges and chips stay at the 4px chip radius. */
+.profile-status-chip,
+.profile-phone-chip,
+.profile-current-chip,
+.profile-app-status,
+.profile-lock {
+  border-radius: var(--radius-xs);
+}
+
+/* Modals follow the shared dialog surface. */
+.profile-modal,
+.modal-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.modal-title {
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Inputs inherit the 32px control baseline of the shared .napi-input. */
+.profile-page input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.profile-page select,
+.profile-page textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.profile-page input:focus,
+.profile-page select:focus,
+.profile-page textarea:focus {
+  border-color: var(--accent-bright);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.14);
+}
