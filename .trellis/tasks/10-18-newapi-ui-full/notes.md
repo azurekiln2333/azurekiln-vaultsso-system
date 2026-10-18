@@ -75,7 +75,63 @@ this task directory, and keep radii on `--radius-*`.
 | sso-admin | other `views/admin/*.html`, `public/js/pages/admin/*.js`, `public/css/vaultsso-admin-pages.css` |
 | sso-user | `views/auth`, `views/account`, `views/docs`, their CSS/JS (incl. the ten formerly frozen files) |
 
-## Housekeeping to do before archive
+## Step 3 — admin content pages on the new-api baseline (owner: sso-admin) — DONE
+
+All seven admin content pages were rebuilt on the shared `.napi-*` components.
+The shell (`vaultsso-admin.css`, `admin-shell.js`, `views/admin/index.html`) was
+never touched; page-only layout lives in `public/css/vaultsso-admin-pages.css`.
+
+| Commit | Scope |
+|---|---|
+| `813ca40` | smtp page on panels + 3-column form grid |
+| `67a720a` | five pages switched to the shared small radius token |
+| `f38ce40` | users table: filter bar, `napi-table`, dialog |
+| `b18de01` | users rows: `napi-badge` + row action buttons |
+| `cc02ceb` | token audit: stat strip, filter bar, `napi-table` |
+| `9b2fbd6` | security settings: panel sections, toggle rows, subform |
+| `7db67f6` | clients: stat strip, sticky editor panel, card grid |
+| `92f6b2f` | clients badges/status vocabulary |
+| `35acc89` | user detail: panels, setting rows, identity list |
+| `e3ed7c7` | user applications: account panels + kv grid |
+| `3adb19c` | dynamic log/provider/import markup on `napi-*` |
+| `468f345` | smtp status classes |
+
+What changed, per the new-api reference:
+
+- Page header holds only a description line (the shell top bar owns the single
+  title) plus that page's primary action, if any.
+- Filter/search/refresh moved into a compact toolbar card; statistics became a
+  flat stat strip instead of four heavy shadow cards.
+- Tables use `.napi-table` (sticky head, hairline rows, hover) inside
+  `.admin-table-panel`; empty states use `.napi-empty`.
+- Settings pages group items into panels with `.admin-toggle-row` rows instead
+  of bordered mini-cards.
+- Buttons follow the three-level hierarchy (`napi-btn-primary` for the single
+  main action, `-secondary` for parallel actions, `-ghost` for inline, `-danger`
+  for destructive); badges use `napi-badge-*` semantic variants.
+
+Contracts preserved: no API call, form field, `id`, `data-*` or i18n key was
+renamed or removed; `statusBar` still receives a full `className` rewrite from
+JS, now pointing at `.admin-status*`.
+
+Verification (`node .trellis/tasks/10-18-newapi-ui-full/admin-audit.js`):
+
+```
+clients            {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":1} structure=ok
+security           {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":5} structure=ok
+smtp               {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":3} structure=ok
+tokens             {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":0} structure=ok
+user               {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":3} structure=ok
+users              {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":0} structure=ok
+user-applications  {"h1":0,"hr":0,"footer":0,"bigRadius":0,"panelBody":0} structure=ok
+
+ids referenced by admin js: 135
+ids missing from any admin page: none
+```
+
+Also green: `node scripts/check-syntax.js`, `node scripts/check-e2e.js`
+(202/202) and `node tests/browser-smoke.cjs`.
+
 
 - Remove stray `tests/tmp-r2-*.cjs` scratch scripts left by agent probing.
 
