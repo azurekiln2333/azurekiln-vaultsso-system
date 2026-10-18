@@ -13,12 +13,7 @@ const i18n = window.VaultI18n;
     }
 
     function setStatus(kind, message) {
-      const classes = {
-        error: 'border-red-200 bg-red-50 text-red-700',
-        success: 'border-green-200 bg-green-50 text-green-700',
-        info: 'border-blue-200 bg-blue-50 text-blue-700'
-      };
-      statusBar.className = `mb-6 rounded-lg border px-4 py-3 text-sm shadow-sm ${classes[kind] || classes.info}`;
+      statusBar.className = `admin-status admin-status-${kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info'} mb-4`;
       statusBar.textContent = message;
     }
 
@@ -44,7 +39,7 @@ const i18n = window.VaultI18n;
       }
       document.querySelectorAll('[data-revoke]').forEach(button => {
         button.textContent = translate('tokens.action.revoke');
-        button.className = 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100';
+        button.className = 'napi-btn napi-btn-danger napi-btn-sm';
       });
     }
 
@@ -84,6 +79,13 @@ const i18n = window.VaultI18n;
       ].join(' ').toLowerCase();
     }
 
+    function stateClassName(key) {
+      if (key === 'active') return 'napi-badge-success';
+      if (key === 'expiring') return 'napi-badge-warning';
+      if (key === 'expired') return 'napi-badge';
+      return 'napi-badge';
+    }
+
     function renderStats(tokens) {
       let active = 0;
       let expiring = 0;
@@ -105,7 +107,7 @@ const i18n = window.VaultI18n;
     function renderTokens(tokens) {
       tokenTableBody.innerHTML = '';
       if (!tokens.length) {
-        tokenTableBody.innerHTML = `<tr><td class="px-5 py-10 text-center text-muted" colspan="8">${escapeHtml(translate('tokens.table.empty'))}</td></tr>`;
+        tokenTableBody.innerHTML = `<tr><td colspan="8"><div class="napi-empty"><span class="material-symbols-outlined">vpn_key</span><p class="napi-empty-title">${escapeHtml(translate('tokens.table.empty'))}</p></div></td></tr>`;
         return;
       }
 
@@ -113,31 +115,37 @@ const i18n = window.VaultI18n;
         const state = resolveTokenState(token);
         const scopes = Array.isArray(token.scopes) ? token.scopes : [];
         const row = document.createElement('tr');
-        row.className = 'border-b border-line/50 align-top';
+        row.className = 'align-top';
         row.innerHTML = `
-          <td class="px-5 py-4">
-            <div class="font-semibold text-ink">${escapeHtml(token.client || translate('common.unknown'))}</div>
-            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.clientId || translate('tokens.value.no_client'))}</div>
-          </td>
-          <td class="px-5 py-4">
-            <div class="font-semibold text-ink">${escapeHtml(token.user || translate('common.unknown'))}</div>
-            <div class="mt-1 break-all text-xs text-muted">${escapeHtml(token.userEmail || translate('tokens.value.no_email'))}</div>
-          </td>
-          <td class="px-5 py-4">
-            <div class="flex flex-wrap gap-1">
-              ${scopes.length
-                ? scopes.map(scope => `<span class="rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary">${escapeHtml(scope)}</span>`).join('')
-                : `<span class="text-xs text-muted">${escapeHtml(translate('tokens.value.no_scopes'))}</span>`}
+          <td>
+            <div class="admin-cell-stack">
+              <span class="admin-cell-strong">${escapeHtml(token.client || translate('common.unknown'))}</span>
+              <span class="admin-cell-sub">${escapeHtml(token.clientId || translate('tokens.value.no_client'))}</span>
             </div>
           </td>
-          <td class="px-5 py-4 text-muted">${formatDate(token.createdAt)}</td>
-          <td class="px-5 py-4 text-muted">${formatDate(token.expiresAt)}</td>
-          <td class="px-5 py-4">
-            <span class="rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-widest ${state.className}">${escapeHtml(translate(`tokens.state.${state.key}`))}</span>
+          <td>
+            <div class="admin-cell-stack">
+              <span class="admin-cell-strong">${escapeHtml(token.user || translate('common.unknown'))}</span>
+              <span class="admin-cell-sub">${escapeHtml(token.userEmail || translate('tokens.value.no_email'))}</span>
+            </div>
           </td>
-          <td class="px-5 py-4"><code class="break-all text-xs text-muted">${escapeHtml(token.id || '')}</code></td>
-          <td class="px-5 py-4 text-right">
-            <button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100" data-revoke="${escapeHtml(token.id || '')}" type="button">${escapeHtml(translate('tokens.action.revoke'))}</button>
+          <td>
+            <div class="flex flex-wrap gap-1">
+              ${scopes.length
+                ? scopes.map(scope => `<span class="napi-badge napi-badge-accent">${escapeHtml(scope)}</span>`).join('')
+                : `<span class="admin-cell-sub">${escapeHtml(translate('tokens.value.no_scopes'))}</span>`}
+            </div>
+          </td>
+          <td class="admin-cell-sub">${formatDate(token.createdAt)}</td>
+          <td class="admin-cell-sub">${formatDate(token.expiresAt)}</td>
+          <td>
+            <span class="napi-badge ${stateClassName(state.key)}">${escapeHtml(translate(`tokens.state.${state.key}`))}</span>
+          </td>
+          <td><code class="admin-cell-sub">${escapeHtml(token.id || '')}</code></td>
+          <td>
+            <div class="admin-row-actions">
+              <button class="napi-btn napi-btn-danger napi-btn-sm" data-revoke="${escapeHtml(token.id || '')}" type="button">${escapeHtml(translate('tokens.action.revoke'))}</button>
+            </div>
           </td>
         `;
         tokenTableBody.appendChild(row);
@@ -203,7 +211,7 @@ const i18n = window.VaultI18n;
         clearPendingRevoke();
         pendingRevokeTokenId = tokenId;
         button.textContent = translate('tokens.action.confirm_revoke');
-        button.className = 'rounded-lg border border-red-300 bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700';
+        button.className = 'napi-btn napi-btn-danger napi-btn-sm';
         setStatus('info', translate('tokens.action.confirm_hint'));
         pendingRevokeTimer = setTimeout(clearPendingRevoke, 5000);
         return;

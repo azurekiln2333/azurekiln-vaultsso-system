@@ -13,63 +13,63 @@
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
-    <header class="mb-6">
-      <p class="max-w-3xl text-sm text-muted" data-i18n="tokens.hero.description">查看已签发的访问令牌、检查过期状态、按条件筛选，并吊销仍在生效的令牌。</p>
-    </header>
+    <div class="napi-page-header">
+      <p class="napi-page-desc admin-page-desc" data-i18n="tokens.hero.description">查看已签发的访问令牌、检查过期状态、按条件筛选，并吊销仍在生效的令牌。</p>
+    </div>
 
-    <section class="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-      <article class="rounded-lg bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.total">令牌总数</p>
-        <p class="text-3xl font-bold" id="statsTotal">0</p>
+    <section class="admin-stat-grid mb-4">
+      <article class="admin-stat">
+        <p class="admin-stat-label" data-i18n="tokens.stats.total">令牌总数</p>
+        <p class="admin-stat-value" id="statsTotal">0</p>
       </article>
-      <article class="rounded-lg bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.active">生效中</p>
-        <p class="text-3xl font-bold" id="statsActive">0</p>
+      <article class="admin-stat">
+        <p class="admin-stat-label" data-i18n="tokens.stats.active">生效中</p>
+        <p class="admin-stat-value" id="statsActive">0</p>
       </article>
-      <article class="rounded-lg bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.expiring">24 小时内过期</p>
-        <p class="text-3xl font-bold" id="statsExpiring">0</p>
+      <article class="admin-stat">
+        <p class="admin-stat-label" data-i18n="tokens.stats.expiring">24 小时内过期</p>
+        <p class="admin-stat-value" id="statsExpiring">0</p>
       </article>
-      <article class="rounded-lg bg-white p-5 shadow-sm">
-        <p class="mb-2 text-sm text-muted" data-i18n="tokens.stats.expired">已过期</p>
-        <p class="text-3xl font-bold" id="statsExpired">0</p>
+      <article class="admin-stat">
+        <p class="admin-stat-label" data-i18n="tokens.stats.expired">已过期</p>
+        <p class="admin-stat-value" id="statsExpired">0</p>
       </article>
     </section>
 
-    <div class="mb-6 rounded-lg bg-white p-6 shadow-sm">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <label class="relative w-full lg:max-w-md">
-          <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted">search</span>
-          <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="searchInput" data-i18n-placeholder="tokens.search.placeholder" placeholder="搜索用户、客户端、scope 或令牌 ID" type="search">
+    <div class="admin-toolbar-card mb-4">
+      <div class="admin-toolbar-row">
+        <label class="admin-search">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input class="napi-input" id="searchInput" data-i18n-placeholder="tokens.search.placeholder" placeholder="搜索用户、客户端、scope 或令牌 ID" type="search">
         </label>
-        <button class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary" id="refreshBtn" type="button">
-          <span class="material-symbols-outlined text-lg">refresh</span>
+        <button class="napi-btn napi-btn-secondary napi-btn-sm" id="refreshBtn" type="button">
+          <span class="material-symbols-outlined">refresh</span>
           <span data-i18n="common.action.refresh">刷新</span>
         </button>
       </div>
     </div>
 
-    <div class="mb-6 rounded-lg border bg-white px-4 py-3 text-sm text-muted shadow-sm" id="statusBar" data-i18n="tokens.status.loading">正在从 /api/tokens 加载令牌...</div>
+    <div class="admin-status admin-status-info mb-4" id="statusBar" data-i18n="tokens.status.loading">正在从 /api/tokens 加载令牌...</div>
 
-    <div class="overflow-hidden rounded-lg bg-white shadow-sm">
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead class="bg-surface-container-low">
-            <tr class="border-b border-line/70">
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.client">客户端</th>
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.user">用户</th>
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.scopes">Scopes</th>
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.created">创建时间</th>
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.expires">过期时间</th>
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.status">状态</th>
-              <th class="px-5 py-4 text-left font-bold text-muted" data-i18n="tokens.table.token_id">令牌 ID</th>
-              <th class="px-5 py-4 text-right font-bold text-muted" data-i18n="tokens.table.action">操作</th>
+    <section class="admin-table-panel">
+      <div class="napi-table-scroll">
+        <table class="napi-table">
+          <thead>
+            <tr>
+              <th data-i18n="tokens.table.client">客户端</th>
+              <th data-i18n="tokens.table.user">用户</th>
+              <th data-i18n="tokens.table.scopes">Scopes</th>
+              <th data-i18n="tokens.table.created">创建时间</th>
+              <th data-i18n="tokens.table.expires">过期时间</th>
+              <th data-i18n="tokens.table.status">状态</th>
+              <th data-i18n="tokens.table.token_id">令牌 ID</th>
+              <th class="text-right" data-i18n="tokens.table.action">操作</th>
             </tr>
           </thead>
           <tbody id="tokenTableBody"></tbody>
         </table>
       </div>
-    </div>
+    </section>
   </div>
 
   <script src="/js/shared/i18n.js?v=20260928-js-1"></script>
