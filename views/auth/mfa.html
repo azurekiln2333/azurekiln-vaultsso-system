@@ -4,31 +4,60 @@
   <link rel="stylesheet" href="/assets/vaultsso-fonts.css">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title data-i18n="auth.mfa.title">完成登录验证</title>
+  <title data-i18n="auth.mfa.title">二步验证</title>
   <link rel="stylesheet" href="/css/vaultsso-base.css">
-  <style>
-    body { font-family: system-ui, sans-serif; background: #f8f9fb; color: #152033; margin: 0; }
-    main { box-sizing: border-box; max-width: 464px; margin: 12vh auto; padding: 32px; background: white; border-radius: 8px; }
-    h1 { font-size: 24px; } p { line-height: 1.7; } label, input, button { display: block; }
-    input { box-sizing: border-box; width: 100%; padding: 12px; margin: 10px 0 20px; font: inherit; border: 1px solid #d8deee; border-radius: 8px; }
-    button { width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #003d9b; color: white; font: inherit; cursor: pointer; }
-    button:disabled { opacity: .6; cursor: wait; } #status { color: #ba1a1a; overflow-wrap: anywhere; } a { color: #003d9b; }
-    @media (max-width: 500px) { main { margin: 32px 16px; padding: 24px; } }
-  </style>
+  <link rel="stylesheet" href="/css/vaultsso-mfa.css?v=20260930-mfa-1">
 </head>
-<body>
-  <main>
-    <h1 data-i18n="auth.mfa.title">完成登录验证</h1>
-    <p id="instructions" data-i18n="common.loading">加载中...</p>
-    <form id="mfaForm">
-      <label id="codeLabel" for="code" data-i18n="auth.login_code.label">邮箱验证码</label>
-      <input id="code" name="code" autocomplete="one-time-code" maxlength="32" required disabled>
-      <button id="submit" type="submit" data-i18n="auth.mfa.submit" disabled>验证并登录</button>
-      <p id="status" role="alert" aria-live="polite"></p>
-    </form>
-    <a id="backLogin" href="/oauth2/authorize" data-i18n="common.action.back_signin">返回登录页</a>
+<body class="mfa-page">
+  <header class="mfa-header">
+    <span class="mfa-brand">VaultSSO</span>
+    <details id="languageMenu" class="mfa-language">
+      <summary data-i18n-title="auth.mfa.language" title="选择语言" aria-label="选择语言">
+        <span class="material-symbols-outlined" aria-hidden="true">language</span>
+      </summary>
+      <div class="mfa-language-options">
+        <button type="button" data-language-switch="zh" lang="zh-CN">简体中文</button>
+        <button type="button" data-language-switch="zh-TW" lang="zh-TW">繁體中文</button>
+        <button type="button" data-language-switch="en" lang="en">English</button>
+      </div>
+    </details>
+  </header>
+  <main class="mfa-main">
+    <section class="mfa-card" aria-labelledby="mfaTitle">
+      <div class="mfa-intro">
+        <div class="mfa-lock" aria-hidden="true">
+          <span class="material-symbols-outlined">enhanced_encryption</span>
+        </div>
+        <h1 id="mfaTitle" data-i18n="auth.mfa.title">二步验证</h1>
+        <p id="instructions" data-i18n="common.loading">加载中...</p>
+      </div>
+      <form id="mfaForm">
+        <label id="codeLabel" class="mfa-code-label" for="code" data-i18n="auth.login_code.label">邮箱验证码</label>
+        <div id="codeEntry" class="mfa-code-entry">
+          <div class="mfa-code-slots" aria-hidden="true">
+            <span class="mfa-code-slot" data-code-slot></span>
+            <span class="mfa-code-slot" data-code-slot></span>
+            <span class="mfa-code-slot" data-code-slot></span>
+            <span class="mfa-code-slot" data-code-slot></span>
+            <span class="mfa-code-slot" data-code-slot></span>
+            <span class="mfa-code-slot" data-code-slot></span>
+          </div>
+          <input id="code" name="verificationcode" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="6" aria-describedby="instructions" required disabled>
+        </div>
+        <button id="submit" class="mfa-submit vault-gradient" type="submit" data-i18n="auth.mfa.submit" disabled>验证并登录</button>
+        <p id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <div class="mfa-actions">
+          <a id="backLogin" href="/oauth2/authorize">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+            <span data-i18n="common.action.back_signin">返回登录页</span>
+          </a>
+          <button id="recoveryToggle" type="button" data-i18n="auth.mfa.use_recovery" aria-pressed="false" disabled hidden>使用恢复码</button>
+        </div>
+      </form>
+    </section>
   </main>
-  <script src="/js/shared/i18n.js?v=20260928-js-1" defer></script>
-  <script src="/js/pages/auth/mfa.js?v=20260928-js-1" defer></script>
+  <footer class="mfa-footer" data-i18n="auth.mfa.footer">VaultSSO 账户安全</footer>
+  <script src="/js/shared/i18n.js?v=20260930-mfa-1" defer></script>
+  <script src="/js/pages/auth/mfa.js?v=20261001-mfa-2" defer></script>
 </body>
 </html>
