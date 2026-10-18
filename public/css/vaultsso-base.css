@@ -3,6 +3,7 @@
  * Radius scale follows the new-api 0.5-step / MD3 convention:
  * chips 4px, controls 8px, cards 12px, large panels 16px.
  * Circular avatars and pills are exempt and keep 9999px.
+ * Colors are unchanged from the original VaultSSO palette.
  */
 :root {
   --radius-xs: 4px;
@@ -11,6 +12,55 @@
   --radius-lg: 16px;
   --radius-full: 9999px;
   --radius-pill: 9999px;
+
+  /* Surfaces */
+  --surface-page: #f8f9fb;
+  --surface-card: #ffffff;
+  --surface-subtle: #f3f4f6;
+  --surface-muted: #e7e8ea;
+  --surface-hover: rgba(11, 87, 208, 0.06);
+  --surface-selected: rgba(11, 87, 208, 0.1);
+
+  /* Lines */
+  --line: #d8deee;
+  --line-soft: rgba(18, 32, 51, 0.08);
+
+  /* Text */
+  --text-strong: #152033;
+  --text-body: #434654;
+  --text-muted: #61708a;
+  --text-faint: rgba(18, 32, 51, 0.45);
+
+  /* Accent (original VaultSSO blue) */
+  --accent: #003d9b;
+  --accent-strong: #0052cc;
+  --accent-bright: #0b57d0;
+  --accent-soft: #eaf2ff;
+  --accent-contrast: #ffffff;
+
+  /* Semantic */
+  --success: #227558;
+  --success-soft: #d8f5e6;
+  --danger: #b3363b;
+  --danger-soft: #ffe6e6;
+  --warning: #9a6a00;
+  --warning-soft: #fff3df;
+
+  /* Depth: new-api uses flat, low-contrast elevation */
+  --shadow-flat: 0 1px 2px rgba(18, 32, 51, 0.05);
+  --shadow-panel: 0 1px 3px rgba(18, 32, 51, 0.06);
+  --shadow-pop: 0 12px 28px rgba(18, 32, 51, 0.12);
+
+  /* Rhythm */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --control-height: 32px;
+  --control-height-sm: 28px;
+  --motion: 160ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 body {
@@ -66,4 +116,461 @@ h3 {
   color: #ffffff;
   background: linear-gradient(135deg, #003d9b 0%, #0052cc 100%);
   box-shadow: 0 12px 24px rgba(11, 87, 208, 0.16);
+}
+
+/* ==========================================================================
+ * new-api component baseline
+ *
+ * Flat 1px-bordered panels, 32px control rhythm, hairline table rules and a
+ * three-level button hierarchy (solid / outlined / text). Colors stay on the
+ * existing VaultSSO palette through the tokens above.
+ * ========================================================================== */
+
+/* ---------- Cards and panels ---------- */
+
+.napi-panel,
+.napi-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-panel);
+}
+
+.napi-card {
+  border-radius: var(--radius-md);
+}
+
+.napi-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.napi-panel-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.napi-panel-desc {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.napi-panel-body {
+  padding: var(--space-5);
+}
+
+/* ---------- Buttons: three-level hierarchy ---------- */
+
+.napi-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-body);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--motion), border-color var(--motion), color var(--motion);
+}
+
+.napi-btn:disabled,
+.napi-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.napi-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* Primary: the single most important action on a surface */
+.napi-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.napi-btn-primary:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+/* Secondary: parallel or alternate actions */
+.napi-btn-secondary {
+  border-color: var(--line);
+  background: var(--surface-card);
+  color: var(--text-body);
+}
+
+.napi-btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+/* Ghost: tertiary and inline actions */
+.napi-btn-ghost {
+  color: var(--text-muted);
+}
+
+.napi-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.napi-btn-danger {
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.napi-btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.napi-btn-sm {
+  min-height: var(--control-height-sm);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ---------- Inputs ---------- */
+
+.napi-input,
+.napi-select,
+.napi-textarea {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  transition: border-color var(--motion), box-shadow var(--motion);
+}
+
+.napi-textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.napi-input::placeholder,
+.napi-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.napi-input:focus,
+.napi-select:focus,
+.napi-textarea:focus {
+  border-color: var(--accent-bright);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.14);
+}
+
+.napi-input:disabled,
+.napi-select:disabled,
+.napi-textarea:disabled {
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.napi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.napi-label {
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.napi-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.napi-error-text {
+  color: var(--danger);
+  font-size: 11px;
+}
+
+/* ---------- Badges and chips ---------- */
+
+.napi-badge,
+.napi-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.napi-badge {
+  border-color: var(--line);
+  background: var(--surface-subtle);
+  color: var(--text-body);
+}
+
+.napi-badge-accent {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.napi-badge-success {
+  border-color: transparent;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.napi-badge-warning {
+  border-color: transparent;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.napi-badge-danger {
+  border-color: transparent;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.napi-badge .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* ---------- Tables: hairline rhythm ---------- */
+
+.napi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.napi-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.napi-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-body);
+  vertical-align: middle;
+}
+
+.napi-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.napi-table tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.napi-table-scroll {
+  overflow-x: auto;
+}
+
+/* ---------- Filter bar ---------- */
+
+.napi-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+
+/* ---------- Empty state ---------- */
+
+.napi-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.napi-empty .material-symbols-outlined {
+  font-size: 28px;
+  color: var(--text-faint);
+}
+
+.napi-empty-title {
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ---------- Dialog ---------- */
+
+.napi-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(10, 16, 28, 0.42);
+}
+
+.napi-dialog {
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-pop);
+}
+
+.napi-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.napi-dialog-body {
+  padding: var(--space-5);
+}
+
+.napi-dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+/* ---------- Setting rows ---------- */
+
+.napi-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.napi-setting-row:last-child {
+  border-bottom: 0;
+}
+
+.napi-setting-label {
+  min-width: 0;
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.napi-setting-value {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Section heading (one title per surface) ---------- */
+
+.napi-section-title {
+  margin: 0 0 2px;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.napi-section-desc {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.napi-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.napi-page-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.napi-page-desc {
+  margin: 4px 0 0;
+  max-width: 760px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
