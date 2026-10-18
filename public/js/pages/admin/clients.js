@@ -18,12 +18,7 @@ const i18n = window.VaultI18n;
     }
 
     function setStatus(element, kind, message) {
-      const classes = {
-        error: 'border-red-200 bg-red-50 text-red-700',
-        success: 'border-green-200 bg-green-50 text-green-700',
-        info: 'border-blue-200 bg-blue-50 text-blue-700'
-      };
-      element.className = `rounded-lg border px-4 py-3 text-sm shadow-sm ${classes[kind] || classes.info}`;
+      element.className = `admin-status admin-status-${kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info'} mb-4`;
       element.textContent = message;
       element.classList.toggle('hidden', !message);
     }
@@ -52,7 +47,7 @@ const i18n = window.VaultI18n;
       }
       document.querySelectorAll('[data-action="delete"]').forEach(button => {
         button.textContent = translate('common.action.delete');
-        button.className = 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100';
+        button.className = 'napi-btn napi-btn-danger napi-btn-sm';
       });
     }
 
@@ -133,8 +128,8 @@ const i18n = window.VaultI18n;
       clientGrid.innerHTML = '';
       if (!clients.length) {
         const empty = document.createElement('div');
-        empty.className = 'admin-empty bg-white p-10 text-center text-muted shadow-sm xl:col-span-2';
-        empty.innerHTML = `<p class="font-bold text-ink">${translate('apps.list.empty_title')}</p><p class="mt-2">${translate('apps.list.empty_desc')}</p>`;
+        empty.className = 'admin-empty napi-empty';
+        empty.innerHTML = `<span class="material-symbols-outlined">apps</span><p class="napi-empty-title">${translate('apps.list.empty_title')}</p><p>${translate('apps.list.empty_desc')}</p>`;
         clientGrid.appendChild(empty);
         return;
       }
@@ -156,9 +151,7 @@ const i18n = window.VaultI18n;
         fragment.querySelector('[data-role="updated"]').textContent = translate('apps.card.updated', { value: formatDate(client.updatedAt) });
 
         badge.textContent = translate(client.isActive !== false ? 'apps.card.active' : 'apps.card.inactive');
-        badge.className = client.isActive !== false
-          ? 'rounded-lg bg-green-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-green-700'
-          : 'rounded-lg bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-600';
+        badge.className = client.isActive !== false ? 'napi-badge napi-badge-success' : 'napi-badge';
 
         if (client.logoUrl) {
           logoImage.src = client.logoUrl;
@@ -174,14 +167,14 @@ const i18n = window.VaultI18n;
 
         if (!(client.scopes || []).length) {
           const chip = document.createElement('span');
-          chip.className = 'rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600';
+          chip.className = 'napi-badge';
           chip.textContent = translate('apps.card.no_scopes');
           scopeList.appendChild(chip);
         }
 
         (client.scopes || []).forEach(scope => {
           const chip = document.createElement('span');
-          chip.className = 'rounded-lg bg-primary-soft px-2 py-1 text-[11px] font-bold text-primary';
+          chip.className = 'napi-badge napi-badge-accent';
           chip.textContent = scope;
           scopeList.appendChild(chip);
         });
@@ -262,7 +255,7 @@ const i18n = window.VaultI18n;
         clearPendingDelete();
         pendingDeleteClientId = client.id;
         button.textContent = translate('common.action.confirm_delete');
-        button.className = 'rounded-lg border border-red-300 bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700';
+        button.className = 'napi-btn napi-btn-danger napi-btn-sm';
         setStatus(statusBar, 'info', translate('apps.status.delete_hint', { name: client.name || client.id }));
         pendingDeleteTimer = setTimeout(clearPendingDelete, 5000);
         return;

@@ -255,6 +255,11 @@
   background: var(--surface-card);
 }
 
+.admin-empty.napi-empty {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+}
+
 /* ---------- 页头（仅保留描述时）---------- */
 
 .admin-main > header {
