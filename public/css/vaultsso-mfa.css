@@ -400,3 +400,150 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+ * new-api surface alignment
+ *
+ * Keeps the six-slot code entry and every existing hook (.mfa-code-slot,
+ * data-code-slot, #code) untouched; only the chrome is retuned to the shared
+ * baseline: flat bordered panel, compact spacing, 32px control rhythm and a
+ * three-level button hierarchy. Values come from vaultsso-base.css tokens.
+ * ========================================================================== */
+
+.mfa-page {
+  background: var(--surface-page);
+}
+
+.mfa-header {
+  padding: var(--space-3) var(--space-5);
+}
+
+.mfa-brand {
+  color: var(--accent);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.mfa-main {
+  padding: var(--space-5) var(--space-4);
+}
+
+/* Panel: hairline border + flat shadow instead of a 40px drop shadow. */
+.mfa-card {
+  max-width: 26rem;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-panel);
+}
+
+.mfa-intro {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+}
+
+/* Icon block becomes a quiet square header mark. */
+.mfa-lock {
+  width: 40px;
+  height: 40px;
+  margin: 0 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--accent);
+}
+
+.mfa-lock .material-symbols-outlined {
+  font-size: 22px;
+}
+
+/* Code slots keep 8px radius; they read as inputs, not cards. */
+.mfa-code-slot {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--text-strong);
+  font-size: 20px;
+}
+
+/* Button hierarchy: primary filled 32px+, secondary outlined. */
+.mfa-submit {
+  min-height: var(--control-height);
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: background-color var(--motion), border-color var(--motion);
+}
+
+.mfa-submit:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.mfa-submit:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.mfa-secondary,
+.mfa-link-button {
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mfa-secondary:hover,
+.mfa-link-button:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+/* Language menu follows the shared control surface. */
+.mfa-language summary {
+  border-radius: var(--radius-sm);
+}
+
+.mfa-language-options {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-pop);
+}
+
+.mfa-language-options button {
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mfa-language-options button:hover,
+.mfa-language-options button.active {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+/* Status messages use the shared semantic pairs. */
+.mfa-status.is-error {
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.mfa-status.is-success {
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success);
+}
