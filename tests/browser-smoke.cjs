@@ -83,10 +83,23 @@ async function main() {
     await page.locator('#loginForm input[name=captcha_code]').fill(f.captchaAnswers.at(-1));
     await page.locator('#loginForm button[type=submit]').click();
     await page.waitForURL('**/profile');
+    await page.locator('#avatarEditBtn').click();
+    assert.equal(await page.locator('#profileModal').isVisible(), true);
+    await page.locator('#profileModal [data-close-modal]').first().click();
+    await page.locator('.profile-language-menu summary').click();
+    await page.locator('[data-language-switch="en"]').click();
+    assert.equal(await page.locator('.profile-navigation a').first().innerText(), 'Profile');
+    await page.locator('.profile-language-menu summary').click();
+    await page.locator('[data-language-switch="zh"]').click();
     assert.deepEqual(errors, []);
     const artifacts = path.resolve(__dirname, '..', '.artifacts');
     fs.mkdirSync(artifacts, { recursive: true });
     await page.screenshot({ path: path.join(artifacts, 'security-profile.png'), fullPage: true });
+    for (const width of [320, 390, 768]) {
+      await page.setViewportSize({ width, height: 844 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Profile fits the ${width}px viewport`);
+      if (width === 390) await page.screenshot({ path: path.join(artifacts, 'security-profile-mobile.png'), fullPage: true });
+    }
     console.log('Browser checks passed: login, CAPTCHA, profile, admin pages and local CSP-compatible scripts');
   } finally {
     if (browser) await browser.close();

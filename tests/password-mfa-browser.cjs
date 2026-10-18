@@ -6,6 +6,7 @@ const path = require('node:path');
 const net = require('node:net');
 const { chromium } = require('playwright-core');
 const { createFixture } = require('./support/fixture');
+const { totpCode } = require('./support/totp-code');
 
 async function main() {
   const reservation = net.createServer();
@@ -22,7 +23,7 @@ async function main() {
     fs.mkdirSync(artifacts, { recursive: true });
     for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
       f.reset();
-      const context = await browser.newContext({ viewport, locale: 'zh-CN' });
+      const context = await browser.newContext({ viewport, locale: 'zh-CN', permissions: ['clipboard-read', 'clipboard-write'] });
       await context.route('**/*', route => new URL(route.request().url()).origin === f.baseUrl ? route.continue() : route.abort());
       const page = await context.newPage();
       const errors = [];
@@ -80,13 +81,23 @@ async function main() {
       assert.equal(await page.locator('input[name="password"]').count(), 0);
       assert.ok(!(await page.content()).includes(user.clearPassword));
       assert.ok((await page.locator('#instructions').innerText()).includes('@'));
+      assert.equal(await page.locator('#code').getAttribute('autocomplete'), 'one-time-code');
+      assert.equal(await page.locator('#code').getAttribute('name'), 'email_code');
+      assert.equal(await page.locator('#code').getAttribute('inputmode'), 'numeric');
+      assert.equal(await page.locator('[data-code-slot]').count(), 6);
+      assert.equal(await page.locator('#recoveryToggle').isVisible(), false);
       assert.equal((await context.request.get(`${f.baseUrl}/api/profile`)).status(), 401);
-      await page.locator('#code').fill('wrong');
+      const emailCode = f.lastCode(user.email);
+      const incorrectEmailCode = String((Number(emailCode) + 1) % 1000000).padStart(6, '0');
+      await page.locator('#code').fill(incorrectEmailCode);
       await page.locator('#submit').click();
       await page.waitForFunction(() => document.getElementById('status').textContent.includes('验证码不正确'));
       const status = await page.locator('#status').boundingBox();
       assert.ok(status.y >= 0 && status.y + status.height <= viewport.height);
-      await page.locator('#code').fill(f.lastCode(user.email));
+      await page.evaluate(value => navigator.clipboard.writeText(value), emailCode);
+      await page.locator('#code').press('Control+V');
+      assert.equal(await page.locator('#code').inputValue(), emailCode);
+      assert.equal((await page.locator('[data-code-slot]').allTextContents()).join(''), emailCode);
       await page.screenshot({ path: path.join(artifacts, `login-email-page-${viewport.width}.png`) });
       await page.locator('#submit').click();
       await page.waitForURL('**/profile');
@@ -148,16 +159,94 @@ async function main() {
       await page.waitForURL('**/oauth2/mfa');
       await page.waitForFunction(() => !document.getElementById('code').disabled);
       assert.ok((await page.locator('#instructions').innerText()).includes('验证器'));
+      assert.equal(await page.locator('#code').getAttribute('name'), 'totp_code',
+        'Firefox password managers need an explicit TOTP name when one-time-code is absent from the DOM property');
       assert.equal((await context.request.get(`${f.baseUrl}/api/profile`)).status(), 401);
+
+      await page.screenshot({ path: path.join(artifacts, `login-totp-empty-${viewport.width}.png`) });
+      await page.locator('#code').pressSequentially('123456');
+      await page.locator('#code').press('Backspace');
+      await page.locator('#code').press('ArrowLeft');
+      await page.locator('#code').press('Backspace');
+      assert.equal(await page.locator('#code').inputValue(), '1235');
+      assert.equal((await page.locator('[data-code-slot]').allTextContents()).join(''), '1235');
+      await page.locator('#code').fill('123456');
+      const thirdSlot = await page.locator('[data-code-slot]').nth(2).boundingBox();
+      await page.mouse.click(thirdSlot.x + thirdSlot.width / 2, thirdSlot.y + thirdSlot.height / 2);
+      await page.keyboard.type('9');
+      assert.equal(await page.locator('#code').inputValue(), '129456');
+
+      await page.evaluate(() => window.VaultI18n.setLanguage('en'));
+      assert.equal(await page.locator('#code').inputValue(), '129456');
+      assert.equal(await page.locator('#codeLabel').innerText(), 'Authenticator code');
+      await page.screenshot({ path: path.join(artifacts, `login-totp-english-${viewport.width}.png`) });
+      if (viewport.width === 390) {
+        await page.setViewportSize({ width: 320, height: 740 });
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await page.screenshot({ path: path.join(artifacts, 'login-totp-narrow-320.png') });
+        await page.setViewportSize(viewport);
+      }
+      await page.evaluate(() => window.VaultI18n.setLanguage('zh-TW'));
+      assert.equal(await page.locator('#codeLabel').innerText(), '驗證器動態碼');
+      await page.evaluate(() => window.VaultI18n.setLanguage('zh'));
+
+      // Password managers write the whole value and notify either input or change.
+      for (const eventType of ['input', 'change']) {
+        const code = totpCode('JBSWY3DPEHPK3PXP');
+        await page.evaluate(({ code, eventType }) => {
+          const input = document.getElementById('code');
+          input.value = code;
+          input.dispatchEvent(new Event(eventType, { bubbles: true }));
+        }, { code, eventType });
+        assert.equal((await page.locator('[data-code-slot]').allTextContents()).join(''), code);
+      }
+      await page.screenshot({ path: path.join(artifacts, `login-totp-autofill-${viewport.width}.png`) });
+      assert.equal((await context.request.get(`${f.baseUrl}/api/profile`)).status(), 401, 'Filling a code must not automatically sign in');
+      await page.locator('#submit').click();
+      await page.waitForURL('**/profile');
+
+      await context.clearCookies();
+      await credentials();
+      await page.locator('#loginForm .submit').click();
+      await page.waitForURL('**/oauth2/mfa');
+      await page.waitForFunction(() => !document.getElementById('code').disabled);
+      await page.locator('#recoveryToggle').click();
+      assert.equal(await page.locator('#code').getAttribute('inputmode'), 'text');
+      assert.equal(await page.locator('#code').getAttribute('maxlength'), '32');
+      assert.equal(await page.locator('#code').getAttribute('name'), 'recovery_code');
+      assert.equal(await page.locator('#code').getAttribute('autocomplete'), 'off');
       await page.locator('#code').fill(recovery);
+      await page.evaluate(() => window.VaultI18n.setLanguage('en'));
+      assert.equal(await page.locator('#code').inputValue(), recovery);
+      await page.evaluate(() => window.VaultI18n.setLanguage('zh'));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({ path: path.join(artifacts, `login-totp-page-${viewport.width}.png`) });
       await page.locator('#submit').click();
       await page.waitForURL('**/profile');
+
+      await context.clearCookies();
+      await credentials();
+      await page.locator('#loginForm .submit').click();
+      await page.waitForURL('**/oauth2/mfa');
+      await page.waitForFunction(() => !document.getElementById('code').disabled);
+      await page.locator('#recoveryToggle').click();
+      await page.locator('#code').fill('incorrect-recovery');
+      await page.locator('#recoveryToggle').click();
+      assert.equal(await page.locator('#code').inputValue(), '');
+      assert.equal(await page.locator('#code').getAttribute('autocomplete'), 'one-time-code');
+      assert.equal(await page.locator('#code').getAttribute('name'), 'totp_code');
+      assert.equal(await page.locator('#code').getAttribute('inputmode'), 'numeric');
+      await context.clearCookies();
+      await page.locator('#code').fill('123456');
+      await page.locator('#submit').click();
+      await page.waitForFunction(() => document.getElementById('status').textContent.includes('已过期'));
+      assert.equal(await page.locator('#code').isDisabled(), true);
+      assert.equal(await page.locator('#submit').isDisabled(), true);
+      assert.equal(await page.locator('#recoveryToggle').isDisabled(), true);
       assert.deepEqual(errors, []);
       await context.close();
     }
-    console.log('Password verification browser checks passed: on-demand CAPTCHA, separate email/TOTP pages, OAuth nonce/state/PKCE, desktop/mobile');
+    console.log('Password verification browser checks passed: CAPTCHA, email paste, TOTP autofill/editing, recovery, expiry, i18n, OAuth nonce/state/PKCE, desktop/mobile');
   } finally {
     if (browser) await browser.close();
     await f.close();
