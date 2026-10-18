@@ -55,8 +55,9 @@
     chip.className = enabled
       ? 'rounded-full px-3 py-1.5 text-xs font-bold bg-green-50 text-green-700'
       : 'rounded-full px-3 py-1.5 text-xs font-bold bg-surface-container-low text-muted';
-    element('totpActionBtn').textContent = i18n.t('profile.totp.add');
+    element('totpActionLabel').textContent = i18n.t('profile.totp.add');
     element('totpActionBtn').disabled = !state || mutationBusy;
+    element('totpStatusChip').className = enabled ? 'profile-status-chip is-on' : 'profile-status-chip';
     element('totpRecoveryInfo').hidden = !enabled;
     if (!state) return;
     element('totpRecoveryRemaining').textContent = String(state.recoveryCodesRemaining || 0);
@@ -66,12 +67,12 @@
         ? new Date(device.lastUsedAt).toLocaleString(i18n.getLanguage() === 'en' ? 'en-US' : i18n.getLanguage() === 'zh-TW' ? 'zh-TW' : 'zh-CN')
         : i18n.t('profile.totp.never_used');
       const label = i18n.t('profile.totp.remove_named', { name: deviceName(device) });
-      return `<div class="totp-device" data-authenticator-id="${escapeHtml(device.id)}">
+      return `<div class="totp-device" data-authenticator-id="${escapeHtml(device.id)}"><span class="totp-device-icon material-symbols-outlined" aria-hidden="true">smartphone</span>
         <div class="totp-device-copy"><p class="text-sm font-bold">${escapeHtml(deviceName(device))}</p>
           <p class="totp-device-meta">${escapeHtml(i18n.t('profile.totp.last_used'))}: ${escapeHtml(lastUsed)}</p></div>
         <button class="totp-device-remove" type="button" data-remove-authenticator="${escapeHtml(device.id)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
       </div>`;
-    }).join('');
+    }).join('') || `<p class="profile-list-status">${escapeHtml(i18n.t('profile.totp.status_off'))}</p>`;
     list.querySelectorAll('[data-remove-authenticator]').forEach(button => {
       button.disabled = mutationBusy;
       button.addEventListener('click', () => openManagement('remove', state.authenticators.find(device => device.id === button.dataset.removeAuthenticator)));
