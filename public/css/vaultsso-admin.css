@@ -101,14 +101,33 @@
   color: rgba(18, 32, 51, 0.5);
 }
 
-/* The current page name appears exactly once, here in the top bar. */
-.admin-topbar-title {
+/* The current page name appears exactly once, as the breadcrumb tail in the top bar. */
+.admin-breadcrumb {
+  display: flex;
+  align-items: center;
   min-width: 0;
-  overflow: hidden;
+  gap: 8px;
   padding-left: 14px;
   border-left: 1px solid rgba(18, 32, 51, 0.12);
-  color: rgba(18, 32, 51, 0.55);
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.admin-breadcrumb-section {
+  flex: 0 0 auto;
+  color: rgba(18, 32, 51, 0.42);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.admin-breadcrumb-sep {
+  flex: 0 0 auto;
+  color: rgba(18, 32, 51, 0.28);
+}
+
+.admin-breadcrumb-current {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(18, 32, 51, 0.7);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -427,7 +446,7 @@ html[data-admin-embed] .admin-main {
 }
 
 @media (max-width: 1023.98px) {
-  .admin-topbar-title {
+  .admin-breadcrumb {
     display: none;
   }
 

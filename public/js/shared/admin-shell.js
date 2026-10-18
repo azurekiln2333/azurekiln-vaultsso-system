@@ -30,7 +30,7 @@
   }
 
   function navItemHtml(item, activeId) {
-    return `<a class="admin-nav-item ${activeId === item.id ? 'active' : ''}" href="${item.href}" data-nav-id="${item.id}" title="${escapeHtml(t(item.key))}">
+    return `<a class="admin-nav-item ${activeId === item.id ? 'active' : ''}" href="${item.href}" data-nav-id="${item.id}" title="${escapeHtml(t(item.key))}" aria-current="${activeId === item.id ? 'page' : 'false'}">
       <span class="material-symbols-outlined">${item.icon}</span><span class="admin-nav-label">${escapeHtml(t(item.key))}</span>
     </a>`;
   }
@@ -50,7 +50,9 @@
 
   // Account dropdown lives in the top-right corner of the top bar.
   function buildTopbarHtml(activeId) {
+    const isResource = RESOURCE_ITEMS.some(item => item.id === activeId);
     const routeLabel = NAV_ITEMS.concat(RESOURCE_ITEMS).find(item => item.id === activeId);
+    const sectionLabel = isResource ? t('admin.nav.section_resources') : t('admin.nav.section_admin');
     return `
       <div class="admin-topbar-start">
         <button class="admin-icon-btn admin-sidebar-toggle" type="button" data-admin-collapse title="${escapeHtml(t('admin.nav.collapse'))}" aria-label="${escapeHtml(t('admin.nav.collapse'))}" aria-controls="adminSidebar">
@@ -63,7 +65,11 @@
             <span class="admin-brand-sub">${escapeHtml(t('admin.nav.brand_subtitle'))}</span>
           </span>
         </a>
-        <span class="admin-topbar-title" id="adminPageTitle">${escapeHtml(routeLabel ? t(routeLabel.key) : '')}</span>
+        <nav class="admin-breadcrumb" id="adminBreadcrumb" aria-label="${escapeHtml(t('admin.nav.brand_subtitle'))}">
+          <span class="admin-breadcrumb-section" id="adminBreadcrumbSection">${escapeHtml(sectionLabel)}</span>
+          <span class="admin-breadcrumb-sep" aria-hidden="true">/</span>
+          <span class="admin-breadcrumb-current" id="adminPageTitle">${escapeHtml(routeLabel ? t(routeLabel.key) : '')}</span>
+        </nav>
       </div>
       <div class="admin-topbar-end">
         <div class="admin-account" id="adminAccount">
@@ -208,12 +214,17 @@
     function syncActive() {
       const current = routeForHash(window.location.hash).id;
       sidebar.querySelectorAll('[data-nav-id]').forEach(link => {
-        link.classList.toggle('active', link.dataset.navId === current);
+        const isActive = link.dataset.navId === current;
+        link.classList.toggle('active', isActive);
+        link.setAttribute('aria-current', isActive ? 'page' : 'false');
       });
+      const route = routeForHash(window.location.hash);
       const titleEl = topbar.querySelector('#adminPageTitle');
-      if (titleEl) {
-        const route = routeForHash(window.location.hash);
-        titleEl.textContent = t(route.key);
+      if (titleEl) titleEl.textContent = t(route.key);
+      const sectionEl = topbar.querySelector('#adminBreadcrumbSection');
+      if (sectionEl) {
+        const isResource = RESOURCE_ITEMS.some(item => item.id === route.id);
+        sectionEl.textContent = t(isResource ? 'admin.nav.section_resources' : 'admin.nav.section_admin');
       }
     }
 
