@@ -1,14 +1,14 @@
 :root {
-  --ink: #122033;
-  --muted: #66758f;
-  --line: rgba(18, 32, 51, 0.1);
-  --surface: rgba(255, 255, 255, 0.92);
-  --surface-strong: rgba(255, 255, 255, 0.97);
-  --primary: #0b57d0;
-  --primary-dark: #003d9b;
-  --success: #1f7a4d;
-  --danger: #c62828;
-  --shadow: 0 22px 52px rgba(12, 34, 72, 0.14);
+  --profile-ink: #122033;
+  --profile-muted: #66758f;
+  --profile-line: rgba(18, 32, 51, 0.1);
+  --profile-surface: rgba(255, 255, 255, 0.92);
+  --profile-surface-strong: rgba(255, 255, 255, 0.97);
+  --profile-primary: #0b57d0;
+  --profile-primary-dark: #003d9b;
+  --profile-success: #1f7a4d;
+  --profile-danger: #c62828;
+  --profile-shadow: 0 22px 52px rgba(12, 34, 72, 0.14);
 }
 
 * {
@@ -18,7 +18,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  color: var(--ink);
+  color: var(--profile-ink);
   background:
     radial-gradient(circle at top left, rgba(11, 87, 208, 0.16), transparent 24%),
     radial-gradient(circle at bottom right, rgba(0, 61, 155, 0.1), transparent 26%),
@@ -35,10 +35,10 @@ body {
 }
 
 .profile-card {
-  background: var(--surface);
+  background: var(--profile-surface);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.72);
-  box-shadow: var(--shadow);
+  box-shadow: var(--profile-shadow);
   border-radius: var(--radius-lg);
   padding: 22px;
   display: grid;
@@ -70,8 +70,8 @@ body {
   padding: 10px 14px;
   border-radius: 999px;
   background: white;
-  border: 1px solid var(--line);
-  color: var(--primary-dark);
+  border: 1px solid var(--profile-line);
+  color: var(--profile-primary-dark);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -86,7 +86,7 @@ body {
   align-items: center;
   justify-content: center;
   color: white;
-  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  background: linear-gradient(135deg, var(--profile-primary-dark), var(--profile-primary));
   font-size: 13px;
 }
 
@@ -96,14 +96,14 @@ body {
   padding: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.84);
-  border: 1px solid var(--line);
+  border: 1px solid var(--profile-line);
 }
 
 .language-switch button {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--profile-muted);
   font-size: 13px;
   font-weight: 800;
   padding: 8px 11px;
@@ -115,8 +115,8 @@ body {
   align-items: flex-start;
   padding: 18px;
   border-radius: var(--radius-lg);
-  background: var(--surface-strong);
-  border: 1px solid var(--line);
+  background: var(--profile-surface-strong);
+  border: 1px solid var(--profile-line);
 }
 
 .hero-main {
@@ -131,7 +131,7 @@ body {
   height: 88px;
   border-radius: var(--radius-md);
   object-fit: cover;
-  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  background: linear-gradient(135deg, var(--profile-primary-dark), var(--profile-primary));
   box-shadow: 0 14px 28px rgba(11, 87, 208, 0.14);
   flex: none;
 }
@@ -152,7 +152,7 @@ body {
 .info-helper,
 .field small {
   margin: 0;
-  color: var(--muted);
+  color: var(--profile-muted);
   line-height: 1.7;
   font-size: 14px;
 }
@@ -175,7 +175,7 @@ body {
   border-radius: 999px;
   background: rgba(11, 87, 208, 0.08);
   border: 1px solid rgba(11, 87, 208, 0.1);
-  color: var(--primary-dark);
+  color: var(--profile-primary-dark);
   font-size: 12px;
   font-weight: 700;
 }
@@ -183,7 +183,7 @@ body {
 .chip.muted {
   background: rgba(18, 32, 51, 0.05);
   border-color: rgba(18, 32, 51, 0.08);
-  color: var(--muted);
+  color: var(--profile-muted);
 }
 
 .hero-actions {
@@ -200,7 +200,7 @@ body {
   align-items: center;
   justify-content: center;
   appearance: none;
-  border: 1px solid var(--line);
+  border: 1px solid var(--profile-line);
   border-radius: var(--radius-sm);
   padding: 11px 14px;
   font-size: 14px;
@@ -213,14 +213,14 @@ body {
 .action-link,
 .ghost-button,
 .text-button {
-  color: var(--ink);
+  color: var(--profile-ink);
   background: white;
 }
 
 .submit {
   color: white;
   border-color: transparent;
-  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  background: linear-gradient(135deg, var(--profile-primary-dark), var(--profile-primary));
   box-shadow: 0 14px 28px rgba(11, 87, 208, 0.18);
 }
 
@@ -259,13 +259,13 @@ body {
 }
 
 .status.success {
-  color: var(--success);
+  color: var(--profile-success);
   background: rgba(31, 122, 77, 0.08);
   border-color: rgba(31, 122, 77, 0.12);
 }
 
 .status.error {
-  color: var(--danger);
+  color: var(--profile-danger);
   background: rgba(198, 40, 40, 0.08);
   border-color: rgba(198, 40, 40, 0.12);
 }
@@ -275,7 +275,7 @@ body {
   border-radius: 16px;
   background: rgba(11, 87, 208, 0.07);
   border: 1px solid rgba(11, 87, 208, 0.1);
-  color: var(--primary-dark);
+  color: var(--profile-primary-dark);
   font-weight: 700;
 }
 
@@ -295,7 +295,7 @@ body {
   padding: 16px 18px;
   border-radius: 16px;
   background: white;
-  border: 1px solid var(--line);
+  border: 1px solid var(--profile-line);
 }
 
 .info-copy {
@@ -304,7 +304,7 @@ body {
 
 .info-label {
   margin: 0 0 6px;
-  color: var(--muted);
+  color: var(--profile-muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -363,7 +363,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--profile-line);
 }
 
 .totp-device-copy {
@@ -373,7 +373,7 @@ body {
 
 .totp-device-meta {
   margin-top: 4px;
-  color: var(--muted);
+  color: var(--profile-muted);
   font-size: 12px;
 }
 
@@ -384,9 +384,9 @@ body {
   flex: 0 0 40px;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--profile-line);
   border-radius: 8px;
-  color: var(--danger);
+  color: var(--profile-danger);
   background: white;
 }
 
@@ -406,7 +406,7 @@ body {
 .totp-enrollment code {
   font-size: 13px;
   padding: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--profile-line);
   border-radius: 4px;
   overflow-wrap: anywhere;
 }
@@ -418,7 +418,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-.totp-modal-feedback { color: var(--danger); }
+.totp-modal-feedback { color: var(--profile-danger); }
 .totp-warning { color: #925200; }
 
 #totpEnrollModal .modal-title,
@@ -444,7 +444,7 @@ body {
 
 .modal-desc {
   margin: 6px 0 0;
-  color: var(--muted);
+  color: var(--profile-muted);
   font-size: 14px;
   line-height: 1.7;
 }
@@ -453,7 +453,7 @@ body {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--profile-muted);
   font-size: 24px;
   line-height: 1;
   cursor: pointer;
@@ -472,7 +472,7 @@ body {
 
 .field label {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--profile-muted);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -485,7 +485,7 @@ body {
   border-radius: 14px;
   border: 1px solid rgba(18, 32, 51, 0.1);
   background: #f8fbff;
-  color: var(--ink);
+  color: var(--profile-ink);
   font-size: 15px;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
