@@ -14,64 +14,85 @@
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <div class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
-    <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <p class="max-w-3xl text-sm text-muted">配置用于发送验证码邮件的 SMTP 服务。设置保存后立即生效，重启后仍然保留。443 / 465 端口自动使用隐式 TLS，其余端口使用 STARTTLS。</p>
-      <button class="inline-flex shrink-0 items-center gap-2 self-start rounded-lg bg-primary px-5 py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50" form="smtpForm" id="saveBtn" type="submit"><span class="material-symbols-outlined text-lg">save</span>保存设置</button>
-    </header>
+    <div class="napi-page-header">
+      <p class="napi-page-desc admin-page-desc">配置用于发送验证码邮件的 SMTP 服务。设置保存后立即生效，重启后仍然保留。443 / 465 端口自动使用隐式 TLS，其余端口使用 STARTTLS。</p>
+      <button class="napi-btn napi-btn-primary" form="smtpForm" id="saveBtn" type="submit"><span class="material-symbols-outlined">save</span>保存设置</button>
+    </div>
 
-    <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700" id="statusBar">正在加载发件设置...</div>
+    <div class="admin-status admin-status-info mb-4" id="statusBar">正在加载发件设置...</div>
 
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <section class="lg:col-span-2">
-        <article class="rounded-xl bg-white p-6 shadow-sm">
-          <p class="mb-5 inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">settings</span>SMTP 配置</p>
-          <form class="space-y-5" id="smtpForm">
-            <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
-              <label class="block sm:col-span-2">
-                <span class="mb-1 block text-sm font-bold text-muted">SMTP 主机</span>
-                <input class="w-full rounded-lg border-line text-sm" id="hostInput" placeholder="mail.smtp2go.com" type="text">
-              </label>
-              <label class="block">
-                <span class="mb-1 block text-sm font-bold text-muted">端口</span>
-                <input class="w-full rounded-lg border-line text-sm" id="portInput" placeholder="443" type="number" min="1" max="65535">
-              </label>
-              <label class="block">
-                <span class="mb-1 block text-sm font-bold text-muted">用户名</span>
-                <input class="w-full rounded-lg border-line text-sm" id="userInput" autocomplete="off" type="text">
-              </label>
-              <label class="block sm:col-span-2">
-                <span class="mb-1 block text-sm font-bold text-muted">发件地址（MAIL_FROM）</span>
-                <input class="w-full rounded-lg border-line text-sm" id="fromInput" placeholder="VaultSSO <no-reply@yourdomain.com>" type="text">
-              </label>
-              <label class="block sm:col-span-3">
-                <span class="mb-1 block text-sm font-bold text-muted">SMTP 密码</span>
-                <input class="w-full rounded-lg border-line text-sm" id="passwordInput" autocomplete="new-password" placeholder="留空表示不修改已保存的密码" type="password">
-                <span class="mt-1 block text-xs text-muted" id="passwordHint"></span>
-                <span class="mt-3 flex items-center gap-2 text-sm text-muted"><input class="h-4 w-4 accent-primary" id="clearPassword" type="checkbox">清除已保存的密码</span>
-              </label>
+        <article class="napi-panel">
+          <div class="napi-panel-head">
+            <div>
+              <h2 class="napi-panel-title">SMTP 配置</h2>
+              <p class="napi-panel-desc">服务器地址与身份凭据，保存后立即用于发送验证码邮件。</p>
             </div>
-          </form>
+            <span class="material-symbols-outlined admin-panel-icon">settings</span>
+          </div>
+          <div class="napi-panel-body">
+            <form id="smtpForm">
+              <div class="admin-form-grid">
+                <label class="napi-field admin-span-2">
+                  <span class="napi-label">SMTP 主机</span>
+                  <input class="napi-input" id="hostInput" placeholder="mail.smtp2go.com" type="text">
+                </label>
+                <label class="napi-field">
+                  <span class="napi-label">端口</span>
+                  <input class="napi-input" id="portInput" placeholder="443" type="number" min="1" max="65535">
+                </label>
+                <label class="napi-field">
+                  <span class="napi-label">用户名</span>
+                  <input class="napi-input" id="userInput" autocomplete="off" type="text">
+                </label>
+                <label class="napi-field admin-span-2">
+                  <span class="napi-label">发件地址（MAIL_FROM）</span>
+                  <input class="napi-input" id="fromInput" placeholder="VaultSSO <no-reply@yourdomain.com>" type="text">
+                </label>
+                <label class="napi-field admin-span-3">
+                  <span class="napi-label">SMTP 密码</span>
+                  <input class="napi-input" id="passwordInput" autocomplete="new-password" placeholder="留空表示不修改已保存的密码" type="password">
+                  <span class="napi-hint" id="passwordHint"></span>
+                </label>
+              </div>
+              <label class="admin-check-row">
+                <input class="admin-checkbox" id="clearPassword" type="checkbox">
+                <span>清除已保存的密码</span>
+              </label>
+            </form>
+          </div>
         </article>
       </section>
 
-      <section>
-        <article class="rounded-xl bg-white p-6 shadow-sm">
-          <p class="mb-4 inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">send</span>发送测试邮件</p>
-          <p class="mb-4 text-xs leading-5 text-muted">保存设置后，向任意邮箱发送一封测试邮件，确认 SMTP 配置可用。</p>
-          <label class="block">
-            <span class="mb-1 block text-sm font-bold text-muted">收件邮箱</span>
-            <input class="w-full rounded-lg border-line text-sm" id="testToInput" placeholder="you@example.com" type="email">
-          </label>
-          <button class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-3 text-sm font-bold text-muted hover:text-primary disabled:opacity-50" id="testBtn" type="button"><span class="material-symbols-outlined text-lg">forward_to_inbox</span>发送测试邮件</button>
+      <section class="space-y-5">
+        <article class="napi-panel">
+          <div class="napi-panel-head">
+            <div>
+              <h2 class="napi-panel-title">发送测试邮件</h2>
+              <p class="napi-panel-desc">保存后向任意邮箱发信，确认配置可用。</p>
+            </div>
+            <span class="material-symbols-outlined admin-panel-icon">send</span>
+          </div>
+          <div class="napi-panel-body">
+            <label class="napi-field">
+              <span class="napi-label">收件邮箱</span>
+              <input class="napi-input" id="testToInput" placeholder="you@example.com" type="email">
+            </label>
+            <button class="napi-btn napi-btn-secondary admin-btn-block mt-3" id="testBtn" type="button"><span class="material-symbols-outlined">forward_to_inbox</span>发送测试邮件</button>
+          </div>
         </article>
 
-        <article class="mt-6 rounded-xl bg-white p-6 shadow-sm">
-          <p class="mb-3 inline-flex items-center gap-2 text-sm font-bold text-muted"><span class="material-symbols-outlined text-lg">info</span>当前状态</p>
-          <ul class="space-y-2 text-sm text-muted">
-            <li id="stateHost" class="flex items-center gap-2"><span class="material-symbols-outlined text-base">dns</span>-</li>
-            <li id="stateUser" class="flex items-center gap-2"><span class="material-symbols-outlined text-base">badge</span>-</li>
-            <li id="statePassword" class="flex items-center gap-2"><span class="material-symbols-outlined text-base">key</span>-</li>
-          </ul>
+        <article class="napi-panel">
+          <div class="napi-panel-head">
+            <h2 class="napi-panel-title">当前状态</h2>
+            <span class="material-symbols-outlined admin-panel-icon">info</span>
+          </div>
+          <div class="napi-panel-body admin-state-list">
+            <div class="napi-setting-row"><span class="napi-setting-label">主机</span><span class="napi-setting-value" id="stateHost">-</span></div>
+            <div class="napi-setting-row"><span class="napi-setting-label">用户名</span><span class="napi-setting-value" id="stateUser">-</span></div>
+            <div class="napi-setting-row"><span class="napi-setting-label">密码</span><span class="napi-setting-value" id="statePassword">-</span></div>
+          </div>
         </article>
       </section>
     </div>
