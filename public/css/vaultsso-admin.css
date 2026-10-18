@@ -482,8 +482,11 @@ html[data-admin-embed] .admin-main {
 .admin-overlay {
   position: fixed;
   inset: 0;
-  z-index: 35;
+  /* Below the sidebar (z-index 30) so the open drawer stays clickable. */
+  z-index: 25;
   background: rgba(10, 16, 28, 0.4);
+  opacity: 1;
+  transition: opacity var(--admin-motion);
 }
 
 /*
@@ -504,6 +507,49 @@ html[data-admin-embed] .admin-main {
 @media (max-width: 1023.98px) {
   .admin-breadcrumb {
     display: none;
+  }
+
+  /*
+   * Below the drawer breakpoint the sidebar is always the full navigation list,
+   * so the collapsed icon-rail rules must not leak into the mobile drawer.
+   */
+  body.admin-collapsed .admin-sidebar {
+    width: var(--admin-sidebar-width);
+    padding-inline: 8px;
+    overflow: hidden;
+  }
+
+  body.admin-collapsed .admin-sidebar-scroll {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  body.admin-collapsed .admin-nav-group {
+    max-height: none;
+    margin: 20px 10px 8px;
+    opacity: 1;
+  }
+
+  body.admin-collapsed .admin-sidebar-scroll > .admin-nav-group:first-child {
+    margin-top: 4px;
+  }
+
+  body.admin-collapsed .admin-nav-item {
+    justify-content: flex-start;
+    padding-inline: 10px;
+  }
+
+  body.admin-collapsed .admin-nav-item .admin-nav-label {
+    position: static;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    color: inherit;
+    overflow: hidden;
+    opacity: 1;
   }
 
   .admin-sidebar {
