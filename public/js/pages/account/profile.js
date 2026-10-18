@@ -5,6 +5,7 @@ const i18n = window.VaultI18n;
     let applicationsRequestVersion = 0;
     let applicationsLoading = false;
     let applicationsError = '';
+    let statusTimer = null;
 
     function buildAvatarDataUri(name) {
       const safeName = (name || 'U').trim();
@@ -47,11 +48,14 @@ const i18n = window.VaultI18n;
     }
 
     function setAvatar(url, name) {
-      const avatar = document.getElementById('avatarPreview');
-      avatar.onerror = function () {
-        avatar.src = buildAvatarDataUri(name);
-      };
-      avatar.src = url || buildAvatarDataUri(name);
+      ['avatarPreview', 'navAvatarPreview'].forEach(id => {
+        const avatar = document.getElementById(id);
+        avatar.onerror = function () {
+          avatar.onerror = null;
+          avatar.src = buildAvatarDataUri(name);
+        };
+        avatar.src = url || buildAvatarDataUri(name);
+      });
     }
 
     function toggleAdminLinks(isAdmin) {
@@ -60,6 +64,7 @@ const i18n = window.VaultI18n;
 
     function setStatus(kind, message) {
       const element = document.getElementById('statusMessage');
+      window.clearTimeout(statusTimer);
       if (!kind || !message) {
         element.className = 'status';
         element.textContent = '';
@@ -68,6 +73,12 @@ const i18n = window.VaultI18n;
 
       element.className = `status show ${kind}`;
       element.textContent = message;
+      if (kind === 'success') {
+        statusTimer = window.setTimeout(() => {
+          element.className = 'status';
+          element.textContent = '';
+        }, 6000);
+      }
     }
 
     function closeModal(modalId) {
@@ -105,7 +116,8 @@ const i18n = window.VaultI18n;
       toggleAdminLinks(Boolean(user.isAdmin));
 
       document.getElementById('profileName').textContent = user.name || user.username;
-      document.getElementById('profileMeta').textContent = `${user.username} · ${user.email}`;
+      document.getElementById('profileMeta').textContent = user.email || user.username;
+      document.getElementById('profileHeroDescription').textContent = user.description || '';
       setAvatar(user.avatar, user.name || user.username);
 
       document.getElementById('emailVerifiedBadge').textContent = user.emailVerified
@@ -142,9 +154,9 @@ const i18n = window.VaultI18n;
       const masked = user.phoneMasked || '';
       if (!masked) {
         value.textContent = i18n.t('profile.phone.unbound');
-        value.className = 'text-lg font-bold text-muted break-words';
+        value.className = 'is-empty';
         chip.textContent = '';
-        chip.className = 'rounded-full px-3 py-1.5 text-xs font-bold shrink-0 hidden';
+        chip.className = 'profile-phone-chip hidden';
         countryHint.textContent = '';
         countryHint.classList.add('hidden');
         bindHint.classList.remove('hidden');
@@ -152,11 +164,11 @@ const i18n = window.VaultI18n;
       }
 
       value.textContent = masked;
-      value.className = 'text-lg font-bold text-ink break-words';
+      value.className = '';
       chip.textContent = user.phoneVerified ? i18n.t('profile.phone.verified') : i18n.t('profile.phone.unverified');
       chip.className = user.phoneVerified
-        ? 'rounded-full px-3 py-1.5 text-xs font-bold shrink-0 bg-green-50 text-green-700'
-        : 'rounded-full px-3 py-1.5 text-xs font-bold shrink-0 bg-surface-container-low text-muted';
+        ? 'profile-phone-chip is-verified'
+        : 'profile-phone-chip';
 
       if (user.phoneCountryCode) {
         countryHint.textContent = `${i18n.t('profile.phone.country_code')}: +${user.phoneCountryCode}`;
@@ -191,20 +203,20 @@ const i18n = window.VaultI18n;
         const scope = identity.huaweiUnionScope || profile.huaweiUnionScope;
         if (clientId) details.push(`App ID: ${clientId}`);
         if (scope) details.push(`${i18n.t('profile.apps.subject')}: ${scope}`);
-        return `<div class="flex flex-col gap-3 border-b border-line py-4 sm:flex-row sm:items-start sm:justify-between"><div class="min-w-0"><p class="font-bold text-ink">${escapeHtml(identity.providerName || profile.providerName || identity.provider)}</p><p class="mt-1 break-all text-xs text-muted">${escapeHtml(identity.provider)}</p><p class="mt-1 break-all font-mono text-xs text-muted">${escapeHtml(details.join(' · '))}</p></div><button class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 shrink-0" data-unbind-id="${escapeHtml(identity.id)}" type="button">${escapeHtml(i18n.t('profile.apps.unbind'))}</button></div>`;
+        return `<div class="profile-identity-item"><div class="profile-identity-top"><div><strong>${escapeHtml(identity.providerName || profile.providerName || identity.provider)}</strong><p>${escapeHtml(identity.provider)}</p></div><button data-unbind-id="${escapeHtml(identity.id)}" type="button">${escapeHtml(i18n.t('profile.apps.unbind'))}</button></div><div class="profile-identity-details">${details.map(detail => escapeHtml(detail)).join('<br>')}</div></div>`;
       }).join('');
       list.querySelectorAll('[data-unbind-id]').forEach(button => button.addEventListener('click', () => unbindIdentity(button.dataset.unbindId)));
     }
 
     function renderApplications() {
       const status = document.getElementById('applicationsStatus');
-      status.className = applicationsError ? 'mt-3 text-sm text-red-600' : 'mt-3 text-sm text-muted';
+      status.className = applicationsError ? 'profile-list-status profile-list-error' : 'profile-list-status';
       status.textContent = applicationsLoading ? i18n.t('common.loading') : applicationsError || (currentApplications.length ? '' : i18n.t('profile.apps.empty'));
-      document.getElementById('applicationsList').innerHTML = currentApplications.map(app => `<div class="border-b border-line py-4" data-client-id="${escapeHtml(app.clientId)}">
-        <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="break-all text-sm font-bold">${escapeHtml(app.name || app.clientId)}</h3><span class="text-xs text-muted">${escapeHtml(i18n.t(!app.configured ? 'profile.apps.removed' : app.enabled ? 'profile.apps.enabled' : 'profile.apps.disabled'))}</span></div>
-        <p class="mt-1 break-all font-mono text-xs text-muted">${escapeHtml(app.clientId)}</p>
-        <dl class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><div><dt class="text-xs text-muted">${escapeHtml(i18n.t('profile.apps.first'))}</dt><dd class="mt-1 text-sm">${escapeHtml(formatDate(app.firstUsedAt))}</dd></div><div><dt class="text-xs text-muted">${escapeHtml(i18n.t('profile.apps.last'))}</dt><dd class="mt-1 text-sm">${escapeHtml(formatDate(app.lastUsedAt))}</dd></div></dl>
-      </div>`).join('');
+      document.getElementById('applicationsCount').textContent = String(currentApplications.length);
+      document.getElementById('applicationsList').innerHTML = currentApplications.map(app => `<article class="profile-app-item" data-client-id="${escapeHtml(app.clientId)}">
+        <div class="profile-app-head"><span class="profile-app-icon" aria-hidden="true">${escapeHtml((app.name || app.clientId || '?').slice(0, 2).toUpperCase())}</span><div><h3>${escapeHtml(app.name || app.clientId)}</h3><p>${escapeHtml(app.clientId)}</p></div><span class="profile-app-status${app.configured && app.enabled ? '' : ' is-off'}">${escapeHtml(i18n.t(!app.configured ? 'profile.apps.removed' : app.enabled ? 'profile.apps.enabled' : 'profile.apps.disabled'))}</span></div>
+        <dl class="profile-app-dates"><div><dt>${escapeHtml(i18n.t('profile.apps.first'))}</dt><dd>${escapeHtml(formatDate(app.firstUsedAt))}</dd></div><div><dt>${escapeHtml(i18n.t('profile.apps.last'))}</dt><dd>${escapeHtml(formatDate(app.lastUsedAt))}</dd></div></dl>
+      </article>`).join('');
     }
 
     async function loadApplications() {
@@ -248,19 +260,16 @@ const i18n = window.VaultI18n;
     function renderSessions(sessions) {
       const list = document.getElementById('sessionList');
       if (!sessions.length) {
-        list.innerHTML = '<p class="text-sm text-muted">当前没有活跃会话。</p>';
+        list.innerHTML = '<p class="profile-list-status">当前没有活跃会话。</p>';
         return;
       }
       list.innerHTML = sessions.map(session => {
         const time = new Date(session.createdAt);
         const timeText = Number.isNaN(time.getTime()) ? '-' : time.toLocaleString(i18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US');
         const device = escapeHtml((session.userAgent || '').split(')')[0] ? (session.userAgent || '').split(')')[0] + ')' : '未知设备');
-        return `<div class="flex flex-col gap-2 rounded-2xl border border-line/70 bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div class="min-w-0">
-            <p class="text-sm font-bold text-ink">${device} ${session.current ? `<span class="ml-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">${escapeHtml(i18n.t('profile.sessions.current'))}</span>` : ''}</p>
-            <p class="mt-1 text-xs text-muted">${escapeHtml(session.ip || '-')} · ${timeText}</p>
-          </div>
-          ${session.current ? '' : `<button class="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-revoke-session="${escapeHtml(session.id)}" type="button">${escapeHtml(i18n.t('profile.sessions.revoke'))}</button>`}
+        return `<div class="profile-session-item"><span class="profile-session-icon material-symbols-outlined" aria-hidden="true">${/mobile|android|iphone/i.test(session.userAgent || '') ? 'smartphone' : 'desktop_windows'}</span>
+          <div class="profile-session-copy"><strong>${device}${session.current ? `<span class="profile-current-chip">${escapeHtml(i18n.t('profile.sessions.current'))}</span>` : ''}</strong><p>${escapeHtml(session.ip || '-')} · ${escapeHtml(timeText)}</p></div>
+          ${session.current ? '' : `<button data-revoke-session="${escapeHtml(session.id)}" type="button">${escapeHtml(i18n.t('profile.sessions.revoke'))}</button>`}
         </div>`;
       }).join('');
       list.querySelectorAll('[data-revoke-session]').forEach(button => button.addEventListener('click', async () => {
@@ -420,6 +429,10 @@ const i18n = window.VaultI18n;
     }
 
     document.getElementById('editProfileBtn').addEventListener('click', function () {
+      openModal('profileModal');
+    });
+
+    document.getElementById('avatarEditBtn').addEventListener('click', function () {
       openModal('profileModal');
     });
 
@@ -587,6 +600,15 @@ const i18n = window.VaultI18n;
     });
 
     i18n.bindLanguageButtons(document);
+    document.querySelectorAll('.profile-navigation a').forEach(link => {
+      link.addEventListener('click', () => {
+        document.querySelectorAll('.profile-navigation a').forEach(item => item.removeAttribute('aria-current'));
+        link.setAttribute('aria-current', 'location');
+      });
+    });
+    document.querySelectorAll('.profile-language-options button').forEach(button => {
+      button.addEventListener('click', () => { document.querySelector('.profile-language-menu').open = false; });
+    });
     renderDocument();
     loadProfile();
     const identityResult = new URLSearchParams(window.location.search);

@@ -7,180 +7,159 @@
   <title>VaultSSO | 个人信息</title>
   <link rel="stylesheet" href="/css/vaultsso-utilities.css">
   <link rel="stylesheet" href="/css/vaultsso-base.css">
-  <link rel="stylesheet" href="/css/vaultsso-profile.css?v=20260928-totp-1">
+  <link rel="stylesheet" href="/css/vaultsso-profile.css?v=20260929-personal-1">
 </head>
-<body class="vaultsso-page-surface min-h-screen text-ink">
-  <div class="max-w-5xl mx-auto px-6 py-6 lg:px-8">
-    <section class="glass-card rounded-3xl border border-white/80 p-6 md:p-8">
-      <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between mb-6">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 rounded-2xl primary-gradient text-white flex items-center justify-center text-xl font-black">V</div>
-          <div>
-            <p class="font-headline text-2xl font-extrabold tracking-tight text-primary" data-i18n="common.brand">VaultSSO</p>
-            <p class="text-sm text-muted" data-i18n="profile.hero.description">当前页面以资料展示为主。显示名称、头像、邮箱和密码都通过弹窗修改，用户名为只读。</p>
+<body class="profile-page">
+  <header class="profile-topbar">
+    <div class="profile-topbar-inner">
+      <a class="profile-brand" href="/profile" aria-label="VaultSSO">VaultSSO</a>
+      <nav class="profile-navigation" aria-label="个人信息导航">
+        <a href="#basicProfile" data-i18n="profile.nav.profile" aria-current="location">资料</a>
+        <a href="#securityPanel" data-i18n="profile.nav.security">安全</a>
+        <a href="#sessionsPanel" data-i18n="profile.nav.sessions">会话</a>
+      </nav>
+      <div class="profile-topbar-tools">
+        <details class="profile-language-menu">
+          <summary aria-label="Language" title="Language"><span class="material-symbols-outlined" aria-hidden="true">language</span></summary>
+          <div class="profile-language-options">
+            <button type="button" data-language-switch="zh">简体中文</button>
+            <button type="button" data-language-switch="zh-TW">繁體中文</button>
+            <button type="button" data-language-switch="en">English</button>
+          </div>
+        </details>
+        <a class="profile-nav-avatar" href="#basicProfile" aria-label="Profile"><img id="navAvatarPreview" alt=""></a>
+      </div>
+    </div>
+  </header>
+
+  <div class="profile-shell">
+    <div class="status" id="statusMessage" role="status" aria-live="polite"></div>
+    <div class="profile-loading" id="loadingState" data-i18n="profile.loading">正在加载个人信息...</div>
+
+    <main class="profile-dashboard hidden" id="profileContent">
+      <section class="profile-hero" aria-labelledby="profileName">
+        <div class="profile-hero-main">
+          <button class="profile-avatar-button" id="avatarEditBtn" type="button" data-i18n-title="profile.button.edit_profile" title="修改资料">
+            <img class="profile-avatar" id="avatarPreview" alt="">
+            <span class="profile-avatar-edit material-symbols-outlined" aria-hidden="true">photo_camera</span>
+          </button>
+          <div class="profile-hero-copy">
+            <div class="profile-identity-line">
+              <h1 id="profileName">...</h1>
+              <span class="chip" id="emailVerifiedBadge"></span>
+              <span class="profile-account-tag">VaultSSO</span>
+            </div>
+            <p class="profile-hero-email"><span class="material-symbols-outlined" aria-hidden="true">mail</span><span id="profileMeta"></span></p>
+            <p class="profile-hero-description" id="profileHeroDescription"></p>
           </div>
         </div>
+        <div class="profile-hero-actions">
+          <a class="profile-action profile-action-admin" href="/admin.html" id="adminCenterLink" style="display:none;"><span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span><span data-i18n="profile.sidebar.admin_center">管理中心</span></a>
+          <a class="profile-action profile-action-logout" href="/oauth2/logout"><span class="material-symbols-outlined" aria-hidden="true">logout</span><span data-i18n="common.action.logout">退出登录</span></a>
+        </div>
+        <dl class="profile-stats">
+          <div><dt data-i18n="profile.field.user_id">用户 ID</dt><dd id="userIdValue"></dd></div>
+          <div><dt data-i18n="profile.field.created_at">创建时间</dt><dd id="createdAtValue"></dd></div>
+          <div><dt data-i18n="profile.field.updated_at">最近更新时间</dt><dd id="updatedAtValue"></dd></div>
+          <div><dt data-i18n="profile.field.credits">积分</dt><dd id="creditsValue">0</dd></div>
+          <div><dt data-i18n="profile.field.last_login_ip">最后登录 IP</dt><dd id="lastLoginIpValue">-</dd></div>
+        </dl>
+      </section>
 
-      </div>
-
-      <div class="hidden rounded-2xl border px-4 py-3 text-sm mb-5" id="statusMessage"></div>
-      <div class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-700 font-semibold mb-5" id="loadingState" data-i18n="profile.loading">正在加载个人信息...</div>
-
-      <div id="profileContent" class="hidden space-y-5">
-        <section class="glass-card rounded-3xl border border-white/80 p-6">
-          <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div class="flex items-start gap-5 min-w-0">
-              <img class="w-24 h-24 rounded-3xl object-cover bg-primary shadow-[0_18px_36px_rgba(11,87,208,0.16)] shrink-0" id="avatarPreview" alt="avatar">
-              <div class="min-w-0">
-                <p class="font-headline text-3xl font-extrabold tracking-tight text-ink" id="profileName">...</p>
-                <p class="text-sm text-muted mt-2 break-all" id="profileMeta"></p>
-                <div class="flex flex-wrap gap-2 mt-4">
-                  <span class="rounded-full bg-primary-soft px-3 py-1.5 text-xs font-bold text-primary" id="emailVerifiedBadge"></span>
-                </div>
+      <div class="profile-columns">
+        <div class="profile-main-column">
+          <section class="profile-panel" id="basicProfile" aria-labelledby="basicProfileTitle">
+            <div class="profile-panel-heading">
+              <span class="profile-heading-icon material-symbols-outlined" aria-hidden="true">badge</span>
+              <div><h2 id="basicProfileTitle" data-i18n="profile.section.basic_title">基本资料</h2><p data-i18n="profile.section.overview_desc">这些信息来自当前登录会话，保存资料后会自动刷新。</p></div>
+            </div>
+            <div class="profile-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><span data-i18n="profile.hero.description">当前页面以资料展示为主。显示名称、头像、邮箱和密码都通过弹窗修改，用户名为只读。</span></div>
+            <div class="profile-detail-list">
+              <div class="profile-detail-row">
+                <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.username">用户名</span><strong id="usernameValue"></strong></div>
+                <span class="profile-lock"><span class="material-symbols-outlined" aria-hidden="true">lock</span><span data-i18n="profile.field.username_hint">用户名已锁定，不允许修改。</span></span>
+              </div>
+              <div class="profile-detail-row">
+                <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.display_name">显示名称</span><strong id="displayNameValue"></strong></div>
+                <button class="profile-row-action" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+              </div>
+              <div class="profile-detail-row">
+                <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.description">个人简介</span><span class="profile-detail-description" id="descriptionValue">-</span></div>
+                <button class="profile-row-action" id="editBioBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
+              </div>
+              <div class="profile-detail-row">
+                <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.email">邮箱</span><strong id="emailValue"></strong></div>
+                <button class="profile-row-action" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">修改邮箱</button>
+              </div>
+              <div class="profile-detail-row">
+                <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.phone">手机号</span><div class="profile-phone-line"><strong id="phoneValue"></strong><span id="phoneVerifiedChip"></span></div><small id="phoneCountryHint"></small><small class="hidden" id="phoneBindHint" data-i18n="profile.phone.bind_hint">使用华为账号一键登录后，手机号会自动绑定到当前账号。</small></div>
+                <button class="profile-row-action" id="editPhoneBtn" type="button"><span data-i18n="profile.phone.edit">修改手机号</span></button>
+              </div>
+              <div class="profile-detail-row">
+                <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.login_password">登录密码</span><strong id="passwordValue" data-i18n="profile.value.password_masked">已隐藏</strong></div>
+                <button class="profile-row-action" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">修改密码</button>
               </div>
             </div>
-
-            <div class="flex flex-wrap gap-3">
-            <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/admin.html" id="adminCenterLink" style="display:none;"><span class="material-symbols-outlined text-base">admin_panel_settings</span><span data-i18n="profile.sidebar.admin_center">管理中心</span></a>
-              <a class="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-muted hover:text-primary transition-colors" href="/oauth2/logout" data-i18n="common.action.logout">退出登录</a>
-            </div>
-          </div>
-        </section>
-
-        <section class="grid grid-cols-1 gap-4">
-          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div class="min-w-0">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.display_name">显示名称</p>
-              <p class="text-lg font-bold text-ink break-words" id="displayNameValue"></p>
-            </div>
-            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editProfileBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
-          </article>
-
-          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div class="min-w-0">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.description">个人简介</p>
-              <p class="text-sm text-ink break-words whitespace-pre-wrap" id="descriptionValue">-</p>
-            </div>
-            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editBioBtn" type="button" data-i18n="profile.button.edit_profile">修改资料</button>
-          </article>
-
-          <article class="glass-card rounded-3xl border border-white/80 p-5">
-            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.totp.title">两步验证（验证器）</p>
-                <p class="text-sm text-muted" data-i18n="profile.totp.desc">绑定 Google Authenticator 等验证器 App 后，登录需要在密码之外输入 6 位动态码。</p>
-              </div>
-              <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
-                <span class="rounded-full px-3 py-1.5 text-xs font-bold" id="totpStatusChip"></span>
-                <button class="rounded-lg border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="totpActionBtn" type="button" disabled></button>
-              </div>
-            </div>
-            <div id="totpDevicesList" class="mt-4" aria-live="polite"></div>
-            <p id="totpListError" class="mt-3 text-sm text-red-600 hidden" role="alert"></p>
-            <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted" id="totpRecoveryInfo" hidden>
-              <span data-i18n="profile.totp.recovery_remaining">剩余恢复码：</span><span class="font-bold text-ink" id="totpRecoveryRemaining">0</span>
-              <button class="rounded-lg border border-line bg-white px-2.5 py-1.5 font-bold text-muted hover:text-primary" id="totpRegenerateBtn" type="button" data-i18n="profile.totp.recovery_regen">重新生成</button>
-            </div>
-            <div id="totpCodesResult" class="mt-3 hidden rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p class="text-xs font-bold text-amber-700" data-i18n="profile.totp.recovery_save">请立即保存恢复码（仅显示一次），手机丢失时可用于登录：</p>
-              <div class="mt-2 grid grid-cols-2 gap-1 font-mono text-xs text-amber-800 sm:grid-cols-3" id="totpCodesList"></div>
-            </div>
-          </article>
-
-          <article class="glass-card rounded-3xl border border-white/80 p-5">
-            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.sessions.title">登录设备</p>
-                <p class="text-sm text-muted" data-i18n="profile.sessions.desc">当前账号的活跃登录会话，可随时退出陌生设备。</p>
-              </div>
-              <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="revokeOthersBtn" type="button" data-i18n="profile.sessions.revoke_others">退出其他设备</button>
-            </div>
-            <div class="mt-4 grid gap-3" id="sessionList"><p class="text-sm text-muted" data-i18n="common.loading">加载中...</p></div>
-          </article>
-
-          <section class="border-t border-line py-5" aria-labelledby="applicationsTitle">
-            <div class="flex items-center justify-between gap-3">
-              <h2 class="text-lg font-bold" id="applicationsTitle" data-i18n="profile.apps.title">登录过的应用</h2>
-              <button class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-white text-muted" id="applicationsRefresh" type="button" data-i18n-title="profile.apps.refresh" title="刷新应用" aria-label="刷新应用"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
-            </div>
-            <p class="mt-3 text-sm text-muted" id="applicationsStatus" role="status" aria-live="polite" data-i18n="common.loading">加载中...</p>
-            <div class="mt-3" id="applicationsList"></div>
           </section>
 
-          <article class="glass-card rounded-3xl border border-white/80 p-5">
-            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.apps.bindings">第三方应用绑定</p>
-              </div>
-              <div class="flex flex-wrap justify-end gap-2" id="bindIdentityButtons"><span class="text-sm text-muted">正在读取可绑定的账号...</span></div>
+          <section class="profile-panel" id="applicationsPanel" aria-labelledby="applicationsTitle">
+            <div class="profile-panel-heading">
+              <span class="profile-heading-icon material-symbols-outlined" aria-hidden="true">apps</span>
+              <div><h2 id="applicationsTitle" data-i18n="profile.apps.title">登录过的应用</h2><p id="applicationsCount"></p></div>
+              <button class="profile-icon-button" id="applicationsRefresh" type="button" data-i18n-title="profile.apps.refresh" title="刷新应用" aria-label="刷新应用"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
             </div>
-            <div class="mt-4 grid gap-3" id="identityList"><p class="text-sm text-muted">正在加载绑定信息...</p></div>
-          </article>
+            <p class="profile-list-status" id="applicationsStatus" role="status" aria-live="polite" data-i18n="common.loading">加载中...</p>
+            <div class="profile-applications" id="applicationsList"></div>
+          </section>
+        </div>
 
-          <article class="glass-card rounded-3xl border border-white/80 p-5">
-            <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.username">用户名</p>
-            <p class="text-lg font-bold text-ink break-words" id="usernameValue"></p>
-            <p class="text-sm text-muted mt-2" data-i18n="profile.field.username_hint">当前用户名已锁定，无法修改。</p>
-          </article>
-
-          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div class="min-w-0">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.email">邮箱</p>
-              <p class="text-lg font-bold text-ink break-words" id="emailValue"></p>
+        <div class="profile-side-column">
+          <section class="profile-panel" id="securityPanel" aria-labelledby="securityPanelTitle">
+            <div class="profile-panel-heading">
+              <span class="profile-heading-icon material-symbols-outlined" aria-hidden="true">shield</span>
+              <div><h2 id="securityPanelTitle" data-i18n="profile.totp.title">两步验证（验证器）</h2></div>
+              <span class="profile-status-chip" id="totpStatusChip"></span>
             </div>
-            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editEmailBtn" type="button" data-i18n="profile.button.edit_email">修改邮箱</button>
-          </article>
-
-          <article class="glass-card rounded-3xl border border-white/80 p-5">
-            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div class="min-w-0">
-                <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.phone">手机号</p>
-                <p class="text-lg font-bold text-ink break-words" id="phoneValue"></p>
-                <p class="text-xs text-muted mt-1 break-words" id="phoneCountryHint"></p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2 shrink-0">
-                <span class="rounded-full px-3 py-1.5 text-xs font-bold shrink-0" id="phoneVerifiedChip"></span>
-                <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors" id="editPhoneBtn" type="button"><span class="material-symbols-outlined text-base">edit</span> <span data-i18n="profile.phone.edit">修改手机号</span></button>
-              </div>
+            <div class="profile-security-intro">
+              <strong data-i18n="profile.totp.title">两步验证（验证器）</strong>
+              <p data-i18n="profile.totp.desc">绑定 Google Authenticator 等验证器 App 后，登录需要在密码之外输入 6 位动态码。</p>
+              <button class="profile-wide-action" id="totpActionBtn" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">add</span><span id="totpActionLabel"></span></button>
             </div>
-            <p class="text-sm text-muted mt-3" data-i18n="profile.field.phone_hint">手动修改后的手机号为未验证状态。</p>
-            <p class="text-sm text-muted mt-1 hidden" id="phoneBindHint" data-i18n="profile.phone.bind_hint">使用华为账号一键登录后，手机号会自动绑定到当前账号。</p>
-          </article>
-
-          <article class="glass-card rounded-3xl border border-white/80 p-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div class="min-w-0">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.new_password">密码</p>
-              <p class="text-lg font-bold text-ink break-words" id="passwordValue" data-i18n="profile.value.password_masked">已隐藏</p>
+            <h3 class="profile-subheading" data-i18n="profile.totp.existing_device">现有验证器</h3>
+            <div id="totpDevicesList" aria-live="polite"></div>
+            <p class="profile-list-error hidden" id="totpListError" role="alert"></p>
+            <div class="profile-recovery-row" id="totpRecoveryInfo" hidden>
+              <span><span class="material-symbols-outlined" aria-hidden="true">history</span><span data-i18n="profile.totp.recovery_remaining">剩余恢复码：</span><strong id="totpRecoveryRemaining">0</strong></span>
+              <button id="totpRegenerateBtn" type="button" data-i18n="profile.totp.recovery_regen">重新生成</button>
             </div>
-            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-bold text-muted hover:text-primary transition-colors shrink-0" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">修改密码</button>
-          </article>
+            <div class="profile-recovery-codes hidden" id="totpCodesResult">
+              <p data-i18n="profile.totp.recovery_save">请立即保存恢复码（仅显示一次），手机丢失时可用于登录：</p>
+              <div id="totpCodesList"></div>
+            </div>
+          </section>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <article class="glass-card rounded-3xl border border-white/80 p-5">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.user_id">用户 ID</p>
-              <p class="text-sm font-semibold text-ink break-all" id="userIdValue"></p>
-            </article>
-            <article class="glass-card rounded-3xl border border-white/80 p-5">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.created_at">创建时间</p>
-              <p class="text-sm font-semibold text-ink break-words" id="createdAtValue"></p>
-            </article>
-            <article class="glass-card rounded-3xl border border-white/80 p-5">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.updated_at">最近更新时间</p>
-              <p class="text-sm font-semibold text-ink break-words" id="updatedAtValue"></p>
-            </article>
-            <article class="glass-card rounded-3xl border border-white/80 p-5">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.credits">积分</p>
-              <p class="text-sm font-semibold text-ink break-words" id="creditsValue">0</p>
-            </article>
-            <article class="glass-card rounded-3xl border border-white/80 p-5">
-              <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2" data-i18n="profile.field.last_login_ip">最后登录 IP</p>
-              <p class="text-sm font-semibold text-ink break-words" id="lastLoginIpValue">-</p>
-            </article>
-          </div>
-        </section>
+          <section class="profile-panel" id="sessionsPanel" aria-labelledby="sessionsPanelTitle">
+            <div class="profile-panel-heading">
+              <span class="profile-heading-icon material-symbols-outlined" aria-hidden="true">devices</span>
+              <div><h2 id="sessionsPanelTitle" data-i18n="profile.sessions.title">登录设备</h2><p data-i18n="profile.sessions.desc">当前账号的活跃登录会话，可随时退出陌生设备。</p></div>
+              <button class="profile-heading-action" id="revokeOthersBtn" type="button" data-i18n="profile.sessions.revoke_others">退出其他设备</button>
+            </div>
+            <div class="profile-sessions" id="sessionList"><p class="profile-list-status" data-i18n="common.loading">加载中...</p></div>
+          </section>
+
+          <section class="profile-panel" id="identitiesPanel" aria-labelledby="identitiesPanelTitle">
+            <div class="profile-panel-heading">
+              <span class="profile-heading-icon material-symbols-outlined" aria-hidden="true">hub</span>
+              <div><h2 id="identitiesPanelTitle" data-i18n="profile.apps.bindings">第三方应用绑定</h2></div>
+            </div>
+            <div class="profile-identities" id="identityList"><p class="profile-list-status" data-i18n="common.loading">加载中...</p></div>
+            <div class="profile-binding-actions" id="bindIdentityButtons"></div>
+          </section>
+        </div>
       </div>
-    </section>
+    </main>
   </div>
+  <footer class="profile-footer"><span>VaultSSO</span></footer>
 
   <div class="modal-backdrop" id="profileModal" data-modal-backdrop>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
@@ -385,8 +364,8 @@
     </div>
   </div>
 
-  <script src="/js/shared/i18n.js?v=20260928-js-1"></script>
-  <script src="/js/pages/account/authenticators.js?v=20260928-js-1"></script>
-  <script src="/js/pages/account/profile.js?v=20260928-js-1"></script>
+  <script src="/js/shared/i18n.js?v=20260929-personal-1"></script>
+  <script src="/js/pages/account/authenticators.js?v=20260929-personal-1"></script>
+  <script src="/js/pages/account/profile.js?v=20260929-personal-1"></script>
 </body>
 </html>
