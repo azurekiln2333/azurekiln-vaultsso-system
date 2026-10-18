@@ -16,7 +16,7 @@
     return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString();
   }
   function field(label, value) {
-    return `<div class="min-w-0"><dt class="mb-1 text-xs text-muted">${label}</dt><dd class="break-all text-sm text-ink">${escapeHtml(value || '未记录')}</dd></div>`;
+    return `<div class="admin-kv"><dt class="napi-label">${label}</dt><dd class="admin-cell-sub">${escapeHtml(value || '未记录')}</dd></div>`;
   }
   function render() {
     if (!loaded) return;
@@ -27,39 +27,41 @@
       ...account.bindings.flatMap(binding => [binding.provider, binding.providerName, binding.clientId, binding.openId, binding.unionId, binding.huaweiUnionScope, binding.providerUserId, binding.providerSecondaryId])
     ].join(' ').toLowerCase().includes(keyword));
     count.textContent = `${accounts.length} 个账号 · ${accounts.reduce((total, account) => total + (account.applications || []).length, 0)} 条应用记录 · ${accounts.reduce((total, account) => total + account.bindings.length, 0)} 个第三方绑定`;
-    status.className = 'mb-6 text-sm text-muted';
+    status.className = 'admin-status mb-4';
     status.textContent = !accounts.length ? '暂无用户应用记录' : !visible.length ? '没有符合条件的用户应用' : `显示 ${visible.length} 个账号`;
-    container.innerHTML = visible.map(account => `<section class="border-t border-line pt-5">
-      <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <a class="break-all text-lg font-bold text-primary hover:underline" href="/user.html?id=${encodeURIComponent(account.user.id)}">${escapeHtml(account.user.name || account.user.username)}</a>
-          <p class="mt-1 break-all text-xs text-muted">${escapeHtml(account.user.username)} · ${escapeHtml(account.user.email)}</p>
-          <p class="mt-1 break-all text-xs text-muted">${escapeHtml(account.user.id)}</p>
+    container.innerHTML = visible.map(account => `<section class="napi-panel">
+      <div class="napi-panel-head">
+        <div class="min-w-0">
+          <a class="napi-panel-title" href="/user.html?id=${encodeURIComponent(account.user.id)}">${escapeHtml(account.user.name || account.user.username)}</a>
+          <p class="napi-panel-desc">${escapeHtml(account.user.username)} · ${escapeHtml(account.user.email)}</p>
+          <p class="napi-panel-desc">${escapeHtml(account.user.id)}</p>
         </div>
-        <span class="text-xs text-muted">${(account.applications || []).length} 条应用记录 · ${account.bindings.length} 个第三方绑定</span>
+        <span class="napi-badge">${(account.applications || []).length} 应用 · ${account.bindings.length} 绑定</span>
       </div>
-      <h2 class="mb-2 text-sm font-bold">登录过的应用</h2>
-      <div>${(account.applications || []).length ? account.applications.map(app => `<article class="border-b border-line py-4" data-client-id="${escapeHtml(app.clientId)}">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 class="break-all text-sm font-bold">${escapeHtml(app.name || app.clientId)}</h3><span class="text-xs text-muted">${!app.configured ? '应用已移除' : app.enabled ? '已启用' : '已禁用'}</span></div>
-        <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">${field('Client ID', app.clientId)}${field('首次记录', dateText(app.firstUsedAt))}${field('最近活动', dateText(app.lastUsedAt))}</dl>
-      </article>`).join('') : '<p class="mb-4 text-sm text-muted">暂无应用登录记录</p>'}</div>
-      <h2 class="mb-2 mt-4 text-sm font-bold">第三方应用绑定</h2>
-      <div>${account.bindings.map(binding => `<article class="border-b border-line py-4">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 class="break-all text-sm font-bold">${escapeHtml(binding.providerName)} <span class="font-normal text-muted">${escapeHtml(binding.provider)}</span></h3>
-          <span class="text-xs ${!binding.configured ? 'text-amber-700' : binding.enabled ? 'text-green-700' : 'text-muted'}">${!binding.configured ? '未配置 / 配置已移除' : binding.enabled ? '已启用' : '已禁用'}</span>
-        </div>
-        <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          ${field('Client ID / App ID', binding.clientId)}
-          ${binding.providerType === 'huawei_quicklogin' ? field('OpenID · App', binding.openId) + field('UnionID · 主体', binding.unionId) + field('华为主体分组', binding.huaweiUnionScope || '独立（未设置）') : field('用户标识', binding.providerUserId) + field('第二标识', binding.providerSecondaryId)}
-          ${field('绑定时间', dateText(binding.createdAt))}${field('更新时间', dateText(binding.updatedAt))}
-        </dl>
-      </article>`).join('') || '<p class="text-sm text-muted">暂无第三方应用绑定</p>'}</div>
+      <div class="napi-panel-body">
+        <h2 class="napi-section-title mb-2">登录过的应用</h2>
+        ${(account.applications || []).length ? account.applications.map(app => `<article class="admin-binding-item" data-client-id="${escapeHtml(app.clientId)}">
+          <div class="admin-binding-head"><h3 class="admin-cell-strong">${escapeHtml(app.name || app.clientId)}</h3><span class="napi-badge ${!app.configured ? 'napi-badge-warning' : app.enabled ? 'napi-badge-success' : ''}">${!app.configured ? '应用已移除' : app.enabled ? '已启用' : '已禁用'}</span></div>
+          <dl class="admin-kv-grid">${field('Client ID', app.clientId)}${field('首次记录', dateText(app.firstUsedAt))}${field('最近活动', dateText(app.lastUsedAt))}</dl>
+        </article>`).join('') : '<p class="admin-cell-sub mb-4">暂无应用登录记录</p>'}
+        <h2 class="napi-section-title mb-2 mt-4">第三方应用绑定</h2>
+        ${account.bindings.map(binding => `<article class="admin-binding-item">
+          <div class="admin-binding-head">
+            <h3 class="admin-cell-strong">${escapeHtml(binding.providerName)} <span class="admin-cell-sub">${escapeHtml(binding.provider)}</span></h3>
+            <span class="napi-badge ${!binding.configured ? 'napi-badge-warning' : binding.enabled ? 'napi-badge-success' : ''}">${!binding.configured ? '未配置 / 配置已移除' : binding.enabled ? '已启用' : '已禁用'}</span>
+          </div>
+          <dl class="admin-kv-grid">
+            ${field('Client ID / App ID', binding.clientId)}
+            ${binding.providerType === 'huawei_quicklogin' ? field('OpenID · App', binding.openId) + field('UnionID · 主体', binding.unionId) + field('华为主体分组', binding.huaweiUnionScope || '独立（未设置）') : field('用户标识', binding.providerUserId) + field('第二标识', binding.providerSecondaryId)}
+            ${field('绑定时间', dateText(binding.createdAt))}${field('更新时间', dateText(binding.updatedAt))}
+          </dl>
+        </article>`).join('') || '<p class="admin-cell-sub">暂无第三方应用绑定</p>'}
+      </div>
     </section>`).join('');
   }
   async function load() {
     refresh.disabled = true;
-    status.className = 'mb-6 text-sm text-muted';
+    status.className = 'admin-status mb-4';
     status.textContent = '正在加载应用...';
     try {
       const response = await fetch('/api/admin/account-bindings', { credentials: 'same-origin' });
@@ -76,7 +78,7 @@
       loaded = false;
       container.innerHTML = '';
       count.textContent = '';
-      status.className = 'mb-6 text-sm text-red-600';
+      status.className = 'admin-status admin-status-error mb-4';
       status.textContent = error.message;
     } finally {
       refresh.disabled = false;

@@ -15,21 +15,25 @@
 </head>
 <body class="vaultsso-page-surface min-h-screen text-ink">
   <main class="admin-main mx-auto max-w-7xl px-6 py-6 lg:px-8">
-    <header class="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <p class="min-w-0 text-sm text-muted">按账号查看登录过的应用和第三方应用绑定。</p>
-      <span class="text-sm text-muted" id="bindingsCount"></span>
-    </header>
-    <div class="mb-6 flex items-center gap-3">
-      <label class="relative block min-w-0 flex-1">
-        <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true">search</span>
-        <input class="w-full rounded-lg border-line py-3 pl-12 pr-4 text-sm" id="bindingsSearch" type="search" aria-label="搜索账号应用绑定" placeholder="搜索用户、App、OpenID、UnionID 或主体分组">
-      </label>
-      <button class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-white text-muted hover:text-primary disabled:opacity-50" id="bindingsRefresh" type="button" title="刷新" aria-label="刷新">
-        <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-      </button>
+    <div class="napi-page-header">
+      <p class="napi-page-desc admin-page-desc">按账号查看登录过的应用和第三方应用绑定。</p>
+      <span class="napi-badge" id="bindingsCount"></span>
     </div>
-    <p class="mb-6 text-sm text-muted" id="bindingsStatus" role="status" aria-live="polite">正在加载应用...</p>
-    <div class="space-y-6" id="bindingsAccounts"></div>
+
+    <div class="admin-toolbar-card mb-4">
+      <div class="admin-toolbar-row">
+        <label class="admin-search">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input class="napi-input" id="bindingsSearch" type="search" aria-label="搜索账号应用绑定" placeholder="搜索用户、App、OpenID、UnionID 或主体分组">
+        </label>
+        <button class="napi-btn napi-btn-secondary napi-btn-sm" id="bindingsRefresh" type="button" title="刷新" aria-label="刷新">
+          <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="admin-status mb-4" id="bindingsStatus" role="status" aria-live="polite">正在加载应用...</p>
+    <div class="admin-bindings-list" id="bindingsAccounts"></div>
   </main>
 </body>
 </html>
