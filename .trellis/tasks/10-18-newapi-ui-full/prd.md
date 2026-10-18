@@ -62,20 +62,20 @@ duplicated titles/blocks/footers. Round 2 extends that to the full UI.
 
 ## Acceptance Criteria
 
-- [ ] The 10 user-authored files are committed as conventional commits with
+- [x] The 10 user-authored files are committed as conventional commits with
       `check-syntax` and the related tests passing, and no user code removed.
-- [ ] Shared component baselines exist in `vaultsso-base.css` /
+- [x] Shared component baselines exist in `vaultsso-base.css` /
       `vaultsso-utilities.css` and reference `--radius-*` only.
-- [ ] Admin content pages present filter bar + table + empty state, clear
+- [x] Admin content pages present filter bar + table + empty state, clear
       button hierarchy, and grouped dialog forms.
-- [ ] Account/auth/docs pages present grouped setting cards and a clear button
+- [x] Account/auth/docs pages present grouped setting cards and a clear button
       hierarchy.
-- [ ] The admin shell shows the page title or breadcrumb exactly once, has
+- [x] The admin shell shows the page title or breadcrumb exactly once, has
       sidebar group headings, and a tooltip-bearing collapsed rail.
-- [ ] No radius above 16px outside circular avatars and pills.
-- [ ] All JS-referenced selectors, forms, API calls and i18n keys still resolve.
-- [ ] `node scripts/check-syntax.js` and every `package.json` test script pass.
-- [ ] Tool directories (`.agent/`, `.claude/`, `.codex/`, …) and `AGENTS.md`
+- [x] No radius above 16px outside circular avatars and pills.
+- [x] All JS-referenced selectors, forms, API calls and i18n keys still resolve.
+- [x] `node scripts/check-syntax.js` and every `package.json` test script pass.
+- [x] Tool directories (`.agent/`, `.claude/`, `.codex/`, …) and `AGENTS.md`
       stay untracked.
 
 ## Background
@@ -84,3 +84,6 @@ duplicated titles/blocks/footers. Round 2 extends that to the full UI.
 - Working tree carries the 10 user-authored files plus untracked
   `public/css/vaultsso-mfa.css`, which `views/auth/mfa.html` references and
   therefore belongs in the same commit as the MFA work.
+
+See `validation.md` for the full check log and `notes.md` for the commit split,
+component baseline and file ownership.
