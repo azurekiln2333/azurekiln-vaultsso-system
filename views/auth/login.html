@@ -7,7 +7,7 @@
   <title>VaultSSO | Sign In</title>
   <link rel="stylesheet" href="/css/vaultsso-utilities.css">
   <link rel="stylesheet" href="/css/vaultsso-base.css">
-  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261001-radius-1">
+  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261021-login-cleanup-1">
 </head>
 <body class="bg-mesh min-h-screen flex flex-col text-on-surface">
   <header class="page-header">
@@ -35,17 +35,6 @@
             <button class="logout-button" id="logoutButton" type="button" data-i18n="common.action.logout_short">Log out</button>
           </div>
           <span class="session-text" id="sessionBannerText"></span>
-        </div>
-      </div>
-
-      <div class="card-section hidden oauth-panel" id="oauthCard">
-        <small class="oauth-eyebrow" data-i18n="auth.oauth.eyebrow">Authorization Request</small>
-        <strong class="oauth-title" id="oauthClientName"></strong>
-        <p class="oauth-text" id="oauthDescription"></p>
-        <div class="scope-list" id="scopeList"></div>
-        <div class="redirect-panel">
-          <span class="redirect-label" data-i18n="auth.oauth.redirect_label">Redirect URI</span>
-          <code class="redirect-code" id="redirectUriPreview"></code>
         </div>
       </div>
 
@@ -239,7 +228,7 @@
     </section>
   </main>
 
-  <script src="/js/shared/i18n.js?v=20260928-turnstile-1"></script>
-  <script src="/js/pages/auth/login.js?v=20260929-turnstile-2"></script>
+  <script src="/js/shared/i18n.js?v=20261021-login-cleanup-1"></script>
+  <script src="/js/pages/auth/login.js?v=20261021-login-cleanup-1"></script>
 </body>
 </html>

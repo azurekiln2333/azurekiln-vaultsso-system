@@ -22,7 +22,6 @@ const i18n = window.VaultI18n;
     const sessionBanner = document.getElementById('sessionBanner');
     const sessionEntry = document.getElementById('sessionEntry');
     const logoutButton = document.getElementById('logoutButton');
-    const oauthCard = document.getElementById('oauthCard');
     const oidcDivider = document.getElementById('oidcDivider');
     const oidcProviders = document.getElementById('oidcProviders');
     let modeRevision = 0;
@@ -261,24 +260,9 @@ const i18n = window.VaultI18n;
           client: getClientLabel()
         });
         document.getElementById('panelDescription').textContent = i18n.t('auth.panel.oauth_description');
-        document.getElementById('oauthClientName').textContent = getClientLabel();
-        document.getElementById('oauthDescription').textContent = i18n.t('auth.oauth.description');
-        document.getElementById('redirectUriPreview').textContent = oauthParams.redirect_uri;
-
-        const scopeList = document.getElementById('scopeList');
-        scopeList.innerHTML = '';
-        oauthParams.scope.split(' ').filter(Boolean).forEach(function (scope) {
-          const chip = document.createElement('span');
-          chip.className = 'scope-chip';
-          chip.textContent = scope;
-          scopeList.appendChild(chip);
-        });
-
-        oauthCard.classList.remove('hidden');
       } else {
         document.getElementById('panelTitle').textContent = i18n.t('auth.panel.default_title');
         document.getElementById('panelDescription').textContent = i18n.t('auth.panel.default_description');
-        oauthCard.classList.add('hidden');
       }
     }
 
