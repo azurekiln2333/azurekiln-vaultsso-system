@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search all shared-background consumers and reuse existing tokens/components before adding overrides."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/admin-surfaces.md","reason":"Admin-only hook/load-order proof, reference primitives, eight consumers and cache references."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/visual-baseline.md","reason":"Actual admin shell/table/form baseline and viewport measurements."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/planning-review.md","reason":"Selected panel treatment, no new inset workspace, and scoped test/research corrections."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Concrete admin shell/iframe paint boundaries, coherent MFA responsive cascade, cache versions and current visual review requirements."}

@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Check preserved MFA accessibility, feedback, recovery and redirect semantics against the updated completion contract."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check single-owner request flow and scoped styling without duplicate overrides."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/admin-surfaces.md","reason":"Check all admin surfaces and protect shared public consumers."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-layout.md","reason":"Check real geometry/cascade defects and all input-mode visual states."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-auto-verify.md","reason":"Check behavior-driven test coverage and unchanged backend/continuation contract."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/visual-baseline.md","reason":"Compare current before/after screenshots rather than relying on historical acceptance."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/planning-review.md","reason":"Apply final decisions and known limits instead of unselected research suggestions."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Concrete admin shell/iframe paint boundaries, coherent MFA responsive cascade, cache versions and current visual review requirements."}

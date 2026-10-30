@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Preserve field names, native input, localization, recovery, locking and success-only same-origin continuation; update obsolete completion clause."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse the current form-submit/fetch path instead of adding a second authentication owner."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-layout.md","reason":"Cascade root cause, compact scale, recovery geometry and visual checks."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-auto-verify.md","reason":"Completion event/state trace, retry/locking rules and existing tests that require adjustment."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/visual-baseline.md","reason":"Actual TOTP/email/recovery screenshots and measured before-state proportions."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/planning-review.md","reason":"Final IME, concurrency-test, capture and scope clarifications."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Concrete admin shell/iframe paint boundaries, coherent MFA responsive cascade, cache versions and current visual review requirements."}

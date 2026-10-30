@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Existing MFA input, feedback, recovery, locking and redirect contracts; requested auto-verification supersedes the no-auto-submit clause."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse the existing submit owner and shared visual tokens; search consumers before changing shared values."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/admin-surfaces.md","reason":"Complete gradient-consumer audit, shell/iframe scope and local visual reference anchors."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-layout.md","reason":"MFA cascade root cause, compact geometry and existing input constraints."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-auto-verify.md","reason":"Event-state/API trace, duplicate/retry cases and affected test expectations."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/visual-baseline.md","reason":"Actual current screenshot matrix, measured geometry and capture limits."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/planning-review.md","reason":"Main-session visual review and reconciled research corrections/design boundaries."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Concrete admin shell/iframe paint boundaries, coherent MFA responsive cascade, cache versions and current visual review requirements."}

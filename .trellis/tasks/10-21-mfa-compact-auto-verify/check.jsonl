@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Check updated automatic-completion contract and all preserved authentication UX constraints."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that one submit owner still handles automatic and manual attempts."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-layout.md","reason":"Check consolidated CSS and real proportional geometry across factor/mode/locales."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/mfa-auto-verify.md","reason":"Review typing/paste/autofill, duplicates, failures, same-code retry, recovery and terminal tests."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/visual-baseline.md","reason":"Use actual before/after views and inspect wrapping/overflow beyond static token assertions."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/planning-review.md","reason":"Honor reconciled design and deterministic request-lock test requirements."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Concrete admin shell/iframe paint boundaries, coherent MFA responsive cascade, cache versions and current visual review requirements."}

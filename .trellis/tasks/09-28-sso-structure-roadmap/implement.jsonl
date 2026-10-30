@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/account-bindings.md","reason":"Preserve phone, Huawei, session and deployment contracts through extraction"}
+{"file":".trellis/spec/backend/password-verification.md","reason":"Preserve pending MFA and native/password login boundaries"}
+{"file":".trellis/tasks/09-28-sso-structure-roadmap/design.md","reason":"Reviewed target architecture, page mapping and feature gap matrix"}

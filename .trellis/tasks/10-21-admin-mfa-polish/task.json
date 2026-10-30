@@ -1,0 +1,29 @@
+{
+  "id": "admin-mfa-polish",
+  "name": "admin-mfa-polish",
+  "title": "Polish admin surfaces and MFA verification",
+  "description": "Remove decorative admin content gradients, rebalance MFA code-entry proportions, and automatically verify complete six-digit codes.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "lichengyu",
+  "assignee": "lichengyu",
+  "createdAt": "2026-10-21",
+  "completedAt": null,
+  "branch": "fix/admin-mfa-polish",
+  "base_branch": "style/oauth-login-cleanup",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-21-admin-flat-surfaces",
+    "10-21-mfa-compact-auto-verify"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

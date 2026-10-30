@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/account-bindings.md","reason":"Phone writes and credential invalidation"}
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Visible localized auth feedback"}
+{"file":".trellis/tasks/09-27-login-account-regressions/design.md","reason":"Pending verification and proxy trust boundaries"}

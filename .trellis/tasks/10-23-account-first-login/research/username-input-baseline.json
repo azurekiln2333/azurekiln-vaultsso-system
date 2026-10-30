@@ -1,0 +1,45 @@
+{
+  "baseline": "D:\\AppData\\Local\\Temp\\username-input-followup-e0sdx3rr",
+  "files": [
+    {
+      "file": "server.js",
+      "sha256": "7f449cbd2177dc24e12d32c77f38de0d205d545963619fa2075d2a19a4971019"
+    },
+    {
+      "file": "public/js/pages/auth/login.js",
+      "sha256": "6576b0d5187a52acd967bc55c7d8c345da3b462c81932e7e5a064276d1f4aa19"
+    },
+    {
+      "file": "public/js/shared/i18n.js",
+      "sha256": "9b4e403912f661da1877b1099e19032003ed180b70ceaec6fbb1804c9b37791a"
+    },
+    {
+      "file": "views/auth/login.html",
+      "sha256": "cb391c285b626dbf37c00f0f522a8c1bbc90d4c6dfc0e24ac5873b256afc43a6"
+    },
+    {
+      "file": "views/auth/mfa.html",
+      "sha256": "ccdf8fb2648e80f40d5cd925adbb9727594d2470fbd120a156ef9454fb231bd2"
+    },
+    {
+      "file": "views/account/profile.html",
+      "sha256": "85cced5c8aac62a8a5a00dd51aac45992e7998bb357adcf02bf6a4f9342fa4ef"
+    },
+    {
+      "file": "tests/security.test.js",
+      "sha256": "996ea9b41e03a977250ecd200285ab72fb080d3bbf273674b9f0b5be7a58110a"
+    },
+    {
+      "file": "tests/auth-feedback-browser.cjs",
+      "sha256": "07bbb2f088fcd81e974672731a6709edd24a8cc9b35733221b1819964d4b2015"
+    },
+    {
+      "file": "tests/i18n.test.js",
+      "sha256": "32de99daa9b17a78462d4da47387a5c4fb5dfe508eacaac9e5860c13f9b4552a"
+    },
+    {
+      "file": "views/docs/api.html",
+      "sha256": "af47840bf0d2be6dc9d0b4d211bc1fccabc816e63c422bf073f7e7ced83a2ec1"
+    }
+  ]
+}

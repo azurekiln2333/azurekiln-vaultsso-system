@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Client schema and backward-compatible migration conventions"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend API and validation conventions"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Client administration form conventions"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Trace PKCE policy across persistence, API, UI, and OAuth endpoints"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing client boolean persistence and S256 validation patterns"}

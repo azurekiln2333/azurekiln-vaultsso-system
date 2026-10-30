@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Verify complete admin consumer coverage without shared-public-surface changes."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/admin-surfaces.md","reason":"Review both independent background painters, actual reference layout and CSS cache versions."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/visual-baseline.md","reason":"Check rendered surface/spacing comparisons and mobile/table behavior against current evidence."}
+{"file":".trellis/tasks/10-21-admin-mfa-polish/research/planning-review.md","reason":"Apply final scope and known capture limitations; avoid CSS-mirroring persistent tests."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Concrete admin shell/iframe paint boundaries, coherent MFA responsive cascade, cache versions and current visual review requirements."}

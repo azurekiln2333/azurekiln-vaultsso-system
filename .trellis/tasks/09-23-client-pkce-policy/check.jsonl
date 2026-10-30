@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Review schema defaults and migration compatibility"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review server validation and security tests"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Review per-client editor and localized UI behavior"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify policy round-trip and authorization-code data flow"}

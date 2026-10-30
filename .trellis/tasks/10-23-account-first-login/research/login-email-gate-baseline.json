@@ -1,0 +1,53 @@
+{
+  "baseline": "D:/AppData/Local/Temp/login-email-gate-baseline-ro8e6rxd",
+  "files": [
+    {
+      "file": "server.js",
+      "sha256": "42e84905685a086e72ffbec25ec1e145196737d3c78f2555ee303bc374ae3690"
+    },
+    {
+      "file": "models/User.js",
+      "sha256": "761c3c936e50804e8de79547bc999ba4c4a2a23921ddf88b5604b3224f848559"
+    },
+    {
+      "file": "models/EmailVerificationCode.js",
+      "sha256": "048a84321309bf98866fa386bcf98c861747ece3fd5709156ebd8bd006df3756"
+    },
+    {
+      "file": "public/js/pages/auth/login.js",
+      "sha256": "b7d65e6ce3118c8c0013c08296118fce575cd4565cfa6439f500c4117813e687"
+    },
+    {
+      "file": "public/js/pages/auth/mfa.js",
+      "sha256": "080c71bb2f7e207c40a62ff5f3e374f78343e02ddd984f00f983c03b606898b5"
+    },
+    {
+      "file": "public/js/shared/i18n.js",
+      "sha256": "7056fd631149a9cc67cfd5469226135817b3eba12925a65c4016531dc25c2764"
+    },
+    {
+      "file": "views/auth/login.html",
+      "sha256": "c61ff64b707d3ea4fec0e66a3df8955a6661bba7823e8e9dc7a141702f84a92b"
+    },
+    {
+      "file": "views/auth/mfa.html",
+      "sha256": "fc33d88327b0646d586eae1d28abf114aca1feb40cfc79faa2fec216fc6e76bb"
+    },
+    {
+      "file": "tests/support/fixture.js",
+      "sha256": "100b24da268bf5702ec89db4bd4639748a8985e172ac53b75853a54873d6d5f9"
+    },
+    {
+      "file": "tests/support/memory-db.js",
+      "sha256": "3a0bf7cac0a71a000838f028f576390b1e91e5b470d2db90616b883124f29fc4"
+    },
+    {
+      "file": "tests/user-import-upload.test.js",
+      "sha256": "719465f0ce230e3a44cacc403628de41fe2d249248082f07fa59c083df1cf7f0"
+    },
+    {
+      "file": "package.json",
+      "sha256": "0c26552350e5cfe26c97a96e62ff8a9cec2cb77ca6a6249c99ff3b59daa1bf60"
+    }
+  ]
+}

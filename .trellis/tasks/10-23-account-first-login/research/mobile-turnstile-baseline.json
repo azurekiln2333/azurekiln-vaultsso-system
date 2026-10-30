@@ -1,0 +1,21 @@
+{
+  "baseline": "D:\\AppData\\Local\\Temp\\mobile-turnstile-followup-ijqqcyfd",
+  "files": [
+    {
+      "file": "public/js/pages/auth/login.js",
+      "sha256": "b7d65e6ce3118c8c0013c08296118fce575cd4565cfa6439f500c4117813e687"
+    },
+    {
+      "file": "public/css/vaultsso-authorize.css",
+      "sha256": "e30895fe51c6c7fea0d91ee2c15439ea7fce9fb9c67366efd2d9b7ad914e9091"
+    },
+    {
+      "file": "views/auth/login.html",
+      "sha256": "79db215d792c828f885fe28e30f512d059f099a6a92c609dc750a01cf7a21505"
+    },
+    {
+      "file": "tests/turnstile-browser.cjs",
+      "sha256": "5b991da4d120ca6e9fb5c2d1f9e8b17bbc77f1736d2354c3505ec6ea83c17089"
+    }
+  ]
+}

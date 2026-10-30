@@ -1,0 +1,33 @@
+{
+  "baseline": "D:\\AppData\\Local\\Temp\\users-sort-followup-sr70qgav",
+  "files": [
+    {
+      "file": "server.js",
+      "sha256": "d8a2b1d29f5a9047994325083e8225e6f8db0462ee08e86265a880d7cfdfcf12"
+    },
+    {
+      "file": "public/js/pages/auth/login.js",
+      "sha256": "b7d65e6ce3118c8c0013c08296118fce575cd4565cfa6439f500c4117813e687"
+    },
+    {
+      "file": "public/js/pages/admin/users.js",
+      "sha256": "a89abb4706e5fae3ab42bbeaf20155a89af694870181b3cde0ff4136cd650d01"
+    },
+    {
+      "file": "public/js/shared/i18n.js",
+      "sha256": "47083872bb1ca65443bfebf803bf72d521384a66c071ce8de3b76930c3a3ca09"
+    },
+    {
+      "file": "views/auth/login.html",
+      "sha256": "16fbbfb923c9c3e9ab0a0334d4af890aec918d7674784c8758214bf817cb63aa"
+    },
+    {
+      "file": "views/admin/users.html",
+      "sha256": "4e93eb49b0234d582cdb3220411f56c340479dc13be60d36ea71e4a22de0e7f3"
+    },
+    {
+      "file": "public/css/vaultsso-admin-pages.css",
+      "sha256": "30f2c59aea8b5bd784fc4f82cd77b5cf4e87ec389fca247bee63ee3b832a95ce"
+    }
+  ]
+}

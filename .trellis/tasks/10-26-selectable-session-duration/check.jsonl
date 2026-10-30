@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/password-verification.md","reason":"Verify no pre-verification login, factor bypass, replay, or pending-proof lifetime extension."}
+{"file":".trellis/spec/backend/multiple-authenticators.md","reason":"Verify session policy changes preserve account transactions, revocation, authenticators, and existing current-session row semantics."}
+{"file":".trellis/spec/backend/account-bindings.md","reason":"Check OIDC linking, Huawei binding/MFA, profile replacement, OAuth no-cookie handoff, and phone-scope compatibility."}
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Verify the selector and submitted value survive discovery, language changes, and authentication continuation."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Check actual desktop/phone form evidence and all changed asset references."}
+{"file":".trellis/tasks/10-26-selectable-session-duration/research/login-duration-flow.md","reason":"Audit complete propagation across every affected login source and stage."}
+{"file":".trellis/tasks/10-26-selectable-session-duration/research/session-contract.md","reason":"Check exact fixed deadlines, legacy renewal/rotation caps, revocation consumers, and genuine controlled-clock coverage."}
+{"file":".trellis/spec/backend/session-duration.md","reason":"Review the implemented 1/7/14-day API, fixed deadlines, saved continuations and legacy/replacement compatibility as one executable contract."}

@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/index.md","reason":"Discover the existing authentication and session-adjacent contracts."}
+{"file":".trellis/spec/backend/password-verification.md","reason":"Preserve account discovery, required factors, persisted mailbox contexts, proof deadlines, and final issuance."}
+{"file":".trellis/spec/backend/multiple-authenticators.md","reason":"Preserve account locks, held connections, fresh-state verification, and current-session retention."}
+{"file":".trellis/spec/backend/account-bindings.md","reason":"Preserve native Huawei/OIDC handoff, identity-management intent, phone projection, and profile session behavior."}
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Integrate with account-first login, request ownership, localization, and MFA continuation without regressions."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Use existing compact form controls, update asset versions, and inspect desktop/phone browser evidence."}
+{"file":".trellis/tasks/10-26-selectable-session-duration/research/login-duration-flow.md","reason":"Map the duration's input, signed state, pending-stage, and final session issuance boundaries."}
+{"file":".trellis/tasks/10-26-selectable-session-duration/research/session-contract.md","reason":"Apply the focused session-consumer/replacement audit, legacy-cap handling, and consistent Date mocking guidance."}

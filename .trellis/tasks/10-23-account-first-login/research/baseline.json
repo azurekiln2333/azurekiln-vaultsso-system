@@ -1,0 +1,32 @@
+{
+  "directory": "D:\\AppData\\Local\\Temp\\account-first-login-baseline-5p1oqwoy",
+  "files": {
+    ".trellis/spec/backend/password-verification.md": "3e1e27eb478e82be8543dd00c29c32ea8847c92ff647c007ed2e2bab64e64b0b",
+    ".trellis/spec/frontend/auth-feedback.md": "fa103b10f1a7ef030ca42405d72651bdbb5fc96c87cb11cc0d5dd758a076b773",
+    "models/User.js": "295e792679dd38166df566d703ab1122451f3c335a2823e536b9dcd9c8dc35c3",
+    "package.json": "5d3f0ec7239fa0c51dc114c76cb1e09330c3958e4ffabb7163c061f0c58017be",
+    "public/css/vaultsso-admin-pages.css": "30f2c59aea8b5bd784fc4f82cd77b5cf4e87ec389fca247bee63ee3b832a95ce",
+    "public/css/vaultsso-admin.css": "786a8ac525238ccd1064afa1d9cb98ebde357e65e708b21283ca5bc5222eaee0",
+    "public/css/vaultsso-authorize.css": "e30895fe51c6c7fea0d91ee2c15439ea7fce9fb9c67366efd2d9b7ad914e9091",
+    "public/css/vaultsso-mfa.css": "f4b97372c32a500134cac4b070a0d4a0d8a9b4bcb0ff2e023b15dd5549dd3e0d",
+    "public/js/pages/auth/login.js": "d989477ce0adf2372e0ad50ee9154f0cf63e2b2ad0b9571bd22cb0b602de795f",
+    "public/js/pages/auth/mfa.js": "080c71bb2f7e207c40a62ff5f3e374f78343e02ddd984f00f983c03b606898b5",
+    "public/js/shared/i18n.js": "56fb14f87c75c50ebcef254fba116bb40df633f81512d4b8d2fc7b01d1a1b827",
+    "server.js": "0192052d5e9b74d7c575c19b112f4c27bd080a8ef3ea1f8c8c942d90595ac689",
+    "tests/multi-authenticator-browser.cjs": "17885db99f013c8073e12aa924b4f33eba8651f4f6e3a7503f4d0a95ddea8ed6",
+    "tests/password-mfa-browser.cjs": "35847ee48c5350764b678961e6597e133e37386a29b0166e69536339003e3a5e",
+    "tests/support/fixture.js": "100b24da268bf5702ec89db4bd4639748a8985e172ac53b75853a54873d6d5f9",
+    "tests/support/memory-db.js": "0c5fd3fbb1955689c4e8f9c0042494091fac083d9deb9945613a1778ea72b2d6",
+    "views/admin/clients.html": "c43aa6a036b3cf27872963cb011ac9ba0b490ca9ac74b587628a8ad21e676f27",
+    "views/admin/index.html": "c830a1b456ff3b6c46cdeb54f95468af018dd99b0b5b6146bed950989164c1a8",
+    "views/admin/security.html": "602badbbfb671152499a54164c41f9f361cc7a2f7c291b659563f09a67fb2207",
+    "views/admin/smtp.html": "0505173ee62ef978658b84a4bf54b4026e86bb3c38b2c16ff39b9f180c59b326",
+    "views/admin/tokens.html": "8deadb503a0c15250edf47aa4cddc8b1b9e7e99d52071552b7ee1be8e3bf292b",
+    "views/admin/user-applications.html": "cd0a2cfdc2a74d76b3d8d7a649166c4238ea2a9a1ad61e1a99d69389ba36260b",
+    "views/admin/user.html": "e0977cc932b5ee42ecb96bb2e58a392fab2279179f95331564a45829ca79b07a",
+    "views/admin/users.html": "86385265e8e994a32ee1a2f918c57e110edcf606e6b3436eb5c445e93164a8f6",
+    "views/auth/login.html": "ed2365855003b8b2494d83429d22d888a1a411da34bb52ae7dac087ca46359af",
+    "views/auth/mfa.html": "fc33d88327b0646d586eae1d28abf114aca1feb40cfc79faa2fec216fc6e76bb",
+    "views/docs/api.html": "55320bdb99216f483f3ee411ae94eea761e791b07c3c930565a2b0f32f3e421b"
+  }
+}

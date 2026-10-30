@@ -1,0 +1,65 @@
+{
+  "baseline": "D:\\AppData\\Local\\Temp\\icon-font-loading-followup-l7koh7st",
+  "files": [
+    {
+      "file": "public/css/vaultsso-base.css",
+      "sha256": "0838c98b995247d5bdaad9a393b1eba2645613f262a3501f0c66c83c6511ee04"
+    },
+    {
+      "file": "views/account/profile.html",
+      "sha256": "0f01d879b0d39dd5d4e85c5119bee6a80c8c58fd93996bd117d43256d01f24fd"
+    },
+    {
+      "file": "views/admin/clients.html",
+      "sha256": "c43aa6a036b3cf27872963cb011ac9ba0b490ca9ac74b587628a8ad21e676f27"
+    },
+    {
+      "file": "views/admin/index.html",
+      "sha256": "c830a1b456ff3b6c46cdeb54f95468af018dd99b0b5b6146bed950989164c1a8"
+    },
+    {
+      "file": "views/admin/security.html",
+      "sha256": "602badbbfb671152499a54164c41f9f361cc7a2f7c291b659563f09a67fb2207"
+    },
+    {
+      "file": "views/admin/smtp.html",
+      "sha256": "0505173ee62ef978658b84a4bf54b4026e86bb3c38b2c16ff39b9f180c59b326"
+    },
+    {
+      "file": "views/admin/tokens.html",
+      "sha256": "8deadb503a0c15250edf47aa4cddc8b1b9e7e99d52071552b7ee1be8e3bf292b"
+    },
+    {
+      "file": "views/admin/user-applications.html",
+      "sha256": "cd0a2cfdc2a74d76b3d8d7a649166c4238ea2a9a1ad61e1a99d69389ba36260b"
+    },
+    {
+      "file": "views/admin/user.html",
+      "sha256": "e0977cc932b5ee42ecb96bb2e58a392fab2279179f95331564a45829ca79b07a"
+    },
+    {
+      "file": "views/admin/users.html",
+      "sha256": "e60cf98ea50db02a7b8144362b5189cd14d9d31c699b8dc92069244f09fb4240"
+    },
+    {
+      "file": "views/auth/error.html",
+      "sha256": "87092b6d9221ccb2ed2ca2b09cf5f37639847c97e1abab40d155fac8d3db624d"
+    },
+    {
+      "file": "views/auth/login.html",
+      "sha256": "06727c1423980c44c7dfea0ab41837b762ce471c35231cdd36a15be319f3805c"
+    },
+    {
+      "file": "views/auth/mfa.html",
+      "sha256": "b4292e434c2f738868473263c6f085294c1b52ef75265b03343c5f065d9b1e4b"
+    },
+    {
+      "file": "views/docs/api.html",
+      "sha256": "af8f78ae58f83e9b6ac4ec333e89a78cc2290dfad19f951b56d98f682dac94be"
+    },
+    {
+      "file": "package.json",
+      "sha256": "3f19bf240912369ea6f37d0d1bb592a565557141b0d9f174e99f26d137ae6013"
+    }
+  ]
+}
