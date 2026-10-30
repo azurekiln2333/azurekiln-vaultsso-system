@@ -6,6 +6,25 @@ const i18n = window.VaultI18n;
     let applicationsLoading = false;
     let applicationsError = '';
     let statusTimer = null;
+    let passwordMinLength = null;
+
+    function renderPasswordGuidance() {
+      const hint = i18n.passwordGuidance(passwordMinLength);
+      document.getElementById('newPasswordInput').placeholder = hint;
+      document.getElementById('profilePasswordHint').textContent = hint;
+    }
+
+    async function loadPasswordGuidance() {
+      passwordMinLength = null;
+      renderPasswordGuidance();
+      try {
+        const response = await fetch('/api/auth/config');
+        if (response.ok) passwordMinLength = (await response.json()).passwordMinLength;
+      } catch (error) {
+        console.error('Load password guidance failed:', error);
+      }
+      renderPasswordGuidance();
+    }
 
     function buildAvatarDataUri(name) {
       const safeName = (name || 'U').trim();
@@ -350,6 +369,7 @@ const i18n = window.VaultI18n;
 
     function renderDocument() {
       i18n.apply(document);
+      renderPasswordGuidance();
       document.title = i18n.t('profile.page.title');
 
       if (currentUser) {
@@ -610,6 +630,7 @@ const i18n = window.VaultI18n;
       button.addEventListener('click', () => { document.querySelector('.profile-language-menu').open = false; });
     });
     renderDocument();
+    loadPasswordGuidance();
     loadProfile();
     const identityResult = new URLSearchParams(window.location.search);
     if (identityResult.has('account_merged')) setStatus('success', i18n.t('profile.identity.merge_success'));

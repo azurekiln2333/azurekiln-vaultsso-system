@@ -1,11 +1,21 @@
+/* MFA verification page.
+   Visual rhythm follows the shared new-api baseline in vaultsso-base.css:
+   a flat bordered white panel, one panel heading, compact spacing and a
+   32px control rhythm. All colour, radius and spacing values come from the
+   shared tokens; nothing is redefined locally.
+
+   Structure: one authoritative component layer, then one mobile adjustment
+   layer, then reduced-motion. Do not append further override layers — change
+   the component rules below instead, or the cascade will drift again. */
+
 .mfa-page {
   margin: 0;
   min-height: 100vh;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
-  background: #f8f9fb;
-  color: #191c1e;
+  background: var(--surface-page);
+  color: var(--text-strong);
   letter-spacing: 0;
 }
 
@@ -23,7 +33,7 @@
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 16px 32px;
+  padding: var(--space-3) var(--space-5);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -31,67 +41,10 @@
 
 .mfa-brand {
   font-family: 'Manrope', sans-serif;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
-  color: #003d9b;
-}
-
-.mfa-language {
-  position: relative;
-  z-index: 2;
-}
-
-.mfa-language summary {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #4c5e83;
-  cursor: pointer;
-  list-style: none;
-}
-
-.mfa-language summary::-webkit-details-marker {
-  display: none;
-}
-
-.mfa-language summary:hover,
-.mfa-language[open] summary {
-  background: #e7e8ea;
-  color: #003d9b;
-}
-
-.mfa-language-options {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 160px;
-  padding: 6px;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgba(25, 28, 30, .12);
-}
-
-.mfa-language-options button {
-  width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: #434654;
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.mfa-language-options button:hover,
-.mfa-language-options button.active {
-  background: #edf2fb;
-  color: #003d9b;
+  letter-spacing: -0.02em;
+  color: var(--accent);
 }
 
 .mfa-main {
@@ -99,327 +52,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
-}
-
-.mfa-card {
-  width: 100%;
-  max-width: 480px;
-  padding: 48px;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 20px 40px rgba(25, 28, 30, .04);
-}
-
-.mfa-intro {
-  margin-bottom: 40px;
-  text-align: center;
-}
-
-.mfa-lock {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: #f3f4f6;
-  color: #003d9b;
-}
-
-.mfa-lock .material-symbols-outlined {
-  font-size: 32px;
-  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 32;
-}
-
-.mfa-intro h1 {
-  margin: 0 0 12px;
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
-
-#instructions {
-  min-height: 48px;
-  margin: 0;
-  color: #434654;
-  font-size: 15px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-.mfa-code-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.mfa-code-entry {
-  position: relative;
-  height: 80px;
-  margin-bottom: 40px;
-}
-
-.mfa-code-slots {
-  height: 100%;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-  pointer-events: none;
-}
-
-.mfa-code-slot {
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: #e1e2e4;
-  font-size: 26px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  transition: background .15s, box-shadow .15s;
-}
-
-.mfa-code-slot:empty::before {
-  content: '\2022';
-  color: #737685;
-  font-size: 22px;
-}
-
-.mfa-code-slot.is-active {
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(0, 61, 155, .4);
-}
-
-/* Keep the actual field viewable to autofill while the slots render its value. */
-#code {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 12px;
-  outline: 0;
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-  -webkit-text-fill-color: transparent;
-  font: inherit;
-  font-size: 26px;
-}
-
-#code::placeholder,
-#code::selection {
-  color: transparent;
-  background: transparent;
-}
-
-#code:disabled {
-  cursor: not-allowed;
-}
-
-.mfa-code-entry.is-recovery .mfa-code-slots {
-  display: none;
-}
-
-.mfa-code-entry.is-recovery #code {
-  padding: 16px;
-  background: #f3f4f6;
-  color: #191c1e;
-  caret-color: #003d9b;
-  -webkit-text-fill-color: #191c1e;
-  font-size: 16px;
-}
-
-.mfa-code-entry.is-recovery #code::placeholder {
-  color: #737685;
-  -webkit-text-fill-color: #737685;
-}
-
-.mfa-code-entry.is-recovery #code::selection {
-  color: #191c1e;
-  background: #dae2ff;
-}
-
-.mfa-code-entry.is-recovery #code:focus {
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(0, 61, 155, .4);
-}
-
-.mfa-submit {
-  width: 100%;
-  min-height: 56px;
-  padding: 16px 20px;
-  border: 0;
-  border-radius: 12px;
-  box-shadow: 0 8px 16px rgba(0, 61, 155, .16);
-  color: #fff;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: box-shadow .15s;
-}
-
-.mfa-submit:hover:not(:disabled) {
-  box-shadow: 0 10px 20px rgba(0, 61, 155, .24);
-}
-
-.mfa-submit:disabled {
-  opacity: .6;
-  cursor: not-allowed;
-}
-
-#status {
-  margin: 0;
-  color: #ba1a1a;
-  font-size: 14px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-#status:not(:empty) {
-  margin-top: 16px;
-}
-
-.mfa-actions {
-  margin-top: 24px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-#backLogin,
-#recoveryToggle {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: #4c5e83;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-#backLogin .material-symbols-outlined {
-  font-size: 18px;
-}
-
-#backLogin:hover,
-#recoveryToggle:hover:not(:disabled) {
-  color: #003d9b;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-#recoveryToggle:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-.mfa-language summary:focus-visible,
-.mfa-language-options button:focus-visible,
-.mfa-submit:focus-visible,
-#backLogin:focus-visible,
-#recoveryToggle:focus-visible {
-  outline: 2px solid #0c56d0;
-  outline-offset: 4px;
-}
-
-@media (max-width: 540px) {
-  .mfa-header {
-    padding: 16px 20px;
-  }
-
-  .mfa-main {
-    padding: 24px 16px;
-  }
-
-  .mfa-card {
-    padding: 32px 28px;
-  }
-
-  .mfa-intro {
-    margin-bottom: 32px;
-  }
-
-  .mfa-intro h1 {
-    font-size: 26px;
-  }
-
-  .mfa-code-entry {
-    height: 64px;
-    margin-bottom: 32px;
-  }
-
-  .mfa-code-slots {
-    gap: 6px;
-  }
-
-  .mfa-code-slot {
-    font-size: 24px;
-  }
-
-  .mfa-actions {
-    gap: 8px;
-  }
-
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mfa-code-slot,
-  .mfa-submit {
-    transition: none;
-  }
-}
-
-/* ==========================================================================
- * new-api surface alignment
- *
- * Keeps the six-slot code entry and every existing hook (.mfa-code-slot,
- * data-code-slot, #code) untouched; only the chrome is retuned to the shared
- * baseline: flat bordered panel, compact spacing, 32px control rhythm and a
- * three-level button hierarchy. Values come from vaultsso-base.css tokens.
- * ========================================================================== */
-
-.mfa-page {
-  background: var(--surface-page);
-}
-
-.mfa-header {
-  padding: var(--space-3) var(--space-5);
-}
-
-.mfa-brand {
-  color: var(--accent);
-  font-size: 18px;
-  letter-spacing: -0.02em;
-}
-
-.mfa-main {
   padding: var(--space-5) var(--space-4);
 }
 
-/* Panel: hairline border + flat shadow instead of a 40px drop shadow. */
+/* Panel: white card with a hairline border and flat shadow. */
 .mfa-card {
+  width: 100%;
   max-width: 26rem;
   padding: var(--space-6);
   border: 1px solid var(--line);
@@ -435,11 +73,14 @@
   text-align: left;
 }
 
-/* Icon block becomes a quiet square header mark. */
+/* Icon block is a quiet square header mark, not a hero illustration. */
 .mfa-lock {
   width: 40px;
   height: 40px;
   margin: 0 0 var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
@@ -448,28 +89,162 @@
 
 .mfa-lock .material-symbols-outlined {
   font-size: 22px;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-/* Code slots keep 8px radius; they read as inputs, not cards. */
+/* Panel heading: title left aligned and stated once. */
+.mfa-intro h1 {
+  margin: 0 0 6px;
+  color: var(--text-strong);
+  font-family: 'Manrope', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* Hint text: min-height is a floor that reserves room for a short hint, and
+   the element stays free to grow for longer localized strings. Never clip it
+   to a fixed number of lines. */
+#instructions {
+  min-height: 1.6em;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.mfa-code-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Code row: 48px desktop. Six decorative slots render the value; #code is a
+   transparent overlay so autofill and native editing keep working. */
+.mfa-code-entry {
+  position: relative;
+  height: 48px;
+  margin-bottom: var(--space-5);
+}
+
+.mfa-code-slots {
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
 .mfa-code-slot {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
   color: var(--text-strong);
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--motion), box-shadow var(--motion);
 }
 
-/* Button hierarchy: primary filled 32px+, secondary outlined. */
+/* Idle placeholder dot. */
+.mfa-code-slot:empty::before {
+  content: '\2022';
+  color: var(--text-faint);
+  font-size: 16px;
+}
+
+.mfa-code-slot.is-active {
+  background: var(--surface-card);
+  box-shadow: 0 0 0 2px rgba(11, 87, 208, 0.4);
+}
+
+/* Keep the actual field viewable to autofill while the slots render its value. */
+#code {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  -webkit-text-fill-color: transparent;
+  font: inherit;
+  font-size: 18px;
+}
+
+#code::placeholder,
+#code::selection {
+  color: transparent;
+  background: transparent;
+}
+
+#code:disabled {
+  cursor: not-allowed;
+}
+
+/* Recovery mode: slots collapse and the same input becomes a readable single
+   field at normal control height, not a code-row-tall text box. */
+.mfa-code-entry.is-recovery {
+  height: 40px;
+}
+
+.mfa-code-entry.is-recovery .mfa-code-slots {
+  display: none;
+}
+
+.mfa-code-entry.is-recovery #code {
+  padding: 0 12px;
+  background: var(--surface-subtle);
+  color: var(--text-strong);
+  caret-color: var(--accent);
+  -webkit-text-fill-color: var(--text-strong);
+  font-size: 16px;
+}
+
+.mfa-code-entry.is-recovery #code::placeholder {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+}
+
+.mfa-code-entry.is-recovery #code::selection {
+  color: var(--text-strong);
+  background: var(--accent-soft);
+}
+
+.mfa-code-entry.is-recovery #code:focus {
+  background: var(--surface-card);
+  box-shadow: 0 0 0 2px rgba(11, 87, 208, 0.4);
+}
+
+/* Primary action: filled, at least 36px tall so it reads as the main control
+   rather than a strip beneath the code row. */
 .mfa-submit {
-  min-height: var(--control-height);
-  padding: 0 16px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--space-4);
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--accent-contrast);
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
-  box-shadow: none;
+  cursor: pointer;
   transition: background-color var(--motion), border-color var(--motion);
 }
 
@@ -479,34 +254,187 @@
 }
 
 .mfa-submit:disabled {
-  cursor: wait;
   opacity: 0.6;
+  cursor: wait;
 }
 
-.mfa-secondary,
-.mfa-link-button {
-  min-height: var(--control-height);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  color: var(--text-body);
+/* Feedback: keeps the empty status region out of the layout, then grows
+   naturally with wrapped localized text. */
+#status {
+  margin: 0;
+  color: var(--danger);
   font-size: 13px;
-  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
-.mfa-secondary:hover,
-.mfa-link-button:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
+#status:not(:empty) {
+  margin-top: var(--space-3);
+}
+
+#status.is-success {
   color: var(--accent);
 }
 
-/* Language menu follows the shared control surface. */
-.mfa-language summary {
+/* Email gate: masked target, optional new-address field and its send button.
+   Only shown for the email_bind / email_verify stages. */
+#emailGateControls {
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.mfa-gate-target {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.mfa-gate-target:not(:empty) {
+  margin-bottom: var(--space-3);
+}
+
+.mfa-gate-label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.mfa-gate-input {
+  width: 100%;
+  height: var(--control-height);
+  margin-bottom: var(--space-3);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  transition: box-shadow var(--motion);
+}
+
+.mfa-gate-input:focus {
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(11, 87, 208, 0.4);
+}
+
+.mfa-gate-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mfa-gate-send {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--motion), border-color var(--motion);
+}
+
+.mfa-gate-send:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mfa-gate-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mfa-actions {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+#backLogin,
+#recoveryToggle {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+#backLogin .material-symbols-outlined {
+  font-size: 18px;
+}
+
+#backLogin:hover,
+#recoveryToggle:hover:not(:disabled) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#recoveryToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Language menu follows the shared control surface. */
+.mfa-language {
+  position: relative;
+  z-index: 2;
+}
+
+.mfa-language summary {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.mfa-language summary::-webkit-details-marker {
+  display: none;
+}
+
+.mfa-language summary:hover,
+.mfa-language[open] summary {
+  background: var(--surface-muted);
+  color: var(--accent);
 }
 
 .mfa-language-options {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 160px;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-card);
@@ -514,9 +442,17 @@
 }
 
 .mfa-language-options button {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
   border-radius: var(--radius-xs);
+  background: transparent;
   color: var(--text-muted);
+  font: inherit;
   font-size: 12px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .mfa-language-options button:hover,
@@ -525,15 +461,49 @@
   color: var(--accent);
 }
 
-/* Status messages use the shared semantic pairs. */
-.mfa-status.is-error {
-  border-radius: var(--radius-sm);
-  background: var(--danger-soft);
-  color: var(--danger);
+.mfa-language summary:focus-visible,
+.mfa-language-options button:focus-visible,
+.mfa-submit:focus-visible,
+.mfa-gate-input:focus-visible,
+.mfa-gate-send:focus-visible,
+#backLogin:focus-visible,
+#recoveryToggle:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 4px;
 }
 
-.mfa-status.is-success {
-  border-radius: var(--radius-sm);
-  background: var(--success-soft);
-  color: var(--success);
+/* --------------------------------------------------------------------------
+ * Narrow mobile adjustment layer.
+ * Only overrides what genuinely differs; everything else inherits from the
+ * component layer above.
+ * -------------------------------------------------------------------------- */
+@media (max-width: 540px) {
+  .mfa-header {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .mfa-main {
+    padding: var(--space-4);
+  }
+
+  .mfa-intro h1 {
+    font-size: 18px;
+  }
+
+  .mfa-code-entry {
+    height: 44px;
+  }
+
+  .mfa-code-slots {
+    gap: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mfa-code-slot,
+  .mfa-gate-input,
+  .mfa-gate-send,
+  .mfa-submit {
+    transition: none;
+  }
 }

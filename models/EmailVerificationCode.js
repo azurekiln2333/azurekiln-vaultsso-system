@@ -58,6 +58,16 @@ class EmailVerificationCodeModel {
     );
   }
 
+  // Login mail gate: replace the stored pending_context of one exact unconsumed row. Callers hold
+  // the account lock and compare the persisted mail version in application code before calling.
+  async updatePendingContext(id, nextContext) {
+    const [result] = await this.pool.execute(
+      'UPDATE email_verification_codes SET pending_context = ? WHERE id = ? AND consumed_at IS NULL',
+      [nextContext == null ? null : JSON.stringify(nextContext), id]
+    );
+    return result.affectedRows === 1;
+  }
+
   async deleteExpired(now = new Date()) {
     await this.pool.execute(
       'DELETE FROM email_verification_codes WHERE expires_at < ? OR consumed_at IS NOT NULL',

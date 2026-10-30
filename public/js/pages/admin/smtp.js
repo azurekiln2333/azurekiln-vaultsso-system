@@ -9,11 +9,63 @@ const statusBar = document.getElementById('statusBar');
       statusBar.textContent = message;
     }
     async function request(url, options = {}) {
-      const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
-      const payload = response.status === 204 ? null : await response.json();
-      if (response.status === 401) { window.location.href = '/oauth2/authorize'; throw new Error('登录已过期'); }
-      if (response.status === 403) { window.location.href = '/oauth2/error?error=access_denied'; throw new Error('没有权限'); }
-      if (!response.ok) throw new Error(payload?.error_description || '请求失败');
+      let response;
+      try {
+        response = await fetch(url, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+      } catch (error) {
+        throw new Error(error.name === 'AbortError' || error.name === 'TimeoutError'
+          ? '请求超时，请稍后重试。'
+          : '网络请求失败，无法连接服务器，请检查网络后重试。');
+      }
+
+      const httpStatus = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+      const redirectedToLogin = response.redirected && new URL(response.url).origin === window.location.origin
+        && new URL(response.url).pathname === '/oauth2/authorize';
+      if (response.status === 401 || redirectedToLogin) {
+        window.location.href = '/oauth2/authorize';
+        throw new Error(`登录已过期，请重新登录（${httpStatus}）。`);
+      }
+      if (response.status === 403) {
+        window.location.href = '/oauth2/error?error=access_denied';
+        throw new Error(`没有权限访问发件设置（${httpStatus}）。`);
+      }
+      if (response.status === 204) return null;
+
+      let text;
+      try {
+        text = await response.text();
+      } catch (error) {
+        throw new Error(`读取服务器响应失败（${httpStatus}），连接可能已中断，请稍后重试。`);
+      }
+      const contentType = response.headers.get('content-type') || '';
+      const isHtml = /html/i.test(contentType) || /^\s*</.test(text);
+      let payload = null;
+      if (!isHtml && text.trim()) {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed;
+        } catch (error) {
+          // Proxies may return an HTML/text error page instead of the application's JSON.
+        }
+      }
+      if (!response.ok) {
+        const descriptions = {
+          404: '请求的接口不存在，请检查服务部署和请求地址。',
+          408: '请求超时，请稍后重试。',
+          429: '请求过于频繁，请稍后重试。',
+          502: '网关请求失败，请检查应用服务或反向代理。',
+          503: '服务暂时不可用，请稍后重试。',
+          504: '网关等待服务器响应超时，请检查服务连接后重试。'
+        };
+        const description = [payload?.error_description, payload?.message]
+          .find(value => typeof value === 'string' && value.trim());
+        const plainText = !payload && !isHtml && !/json/i.test(contentType) && !/^\s*[\[{]/.test(text)
+          ? text.trim().replace(/\s+/g, ' ').slice(0, 500) : '';
+        const fallback = descriptions[response.status] || (response.status >= 500
+          ? '服务器处理请求失败，请稍后重试。' : '请求未能完成，请检查输入后重试。');
+        throw new Error(`请求失败（${httpStatus}）：${description?.trim() || plainText || fallback}`);
+      }
+      if (!payload) throw new Error(`服务器响应异常（${httpStatus}），请刷新页面或检查服务状态。`);
       return payload;
     }
     function renderState(settings) {
@@ -37,7 +89,7 @@ const statusBar = document.getElementById('statusBar');
         renderState(settings);
         setStatus('info', settings.host && settings.user && settings.hasPassword
           ? 'SMTP 已配置。修改后点保存立即生效。'
-          : 'SMTP 尚未完整配置（主机 / 用户名 / 密码），未配置时验证码只打印在服务端控制台。');
+          : 'SMTP 尚未完整配置（主机 / 用户名 / 密码），验证码邮件无法发送，请填写并保存完整配置。');
       } catch (error) { setStatus('error', error.message); }
     }
     document.getElementById('smtpForm').addEventListener('submit', async (event) => {

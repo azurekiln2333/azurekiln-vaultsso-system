@@ -73,8 +73,20 @@ h3 {
   font-family: 'Manrope', sans-serif;
 }
 
+/* Reserve the icon slot without painting ligature names before font success. */
 .material-symbols-outlined {
+  display: inline-block;
+  inline-size: 1em;
+  block-size: 1em;
+  flex-shrink: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: nowrap;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+html.vaultsso-icons-ready .material-symbols-outlined {
+  visibility: visible;
 }
 
 .vault-gradient,

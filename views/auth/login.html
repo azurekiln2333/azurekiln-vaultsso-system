@@ -6,8 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VaultSSO | Sign In</title>
   <link rel="stylesheet" href="/css/vaultsso-utilities.css">
-  <link rel="stylesheet" href="/css/vaultsso-base.css">
-  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261021-login-cleanup-1">
+  <link rel="stylesheet" href="/css/vaultsso-base.css?v=20261025-icon-font-1">
+  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261026-session-duration-1">
+  <script src="/js/shared/icon-font.js?v=20261025-icon-font-1" defer></script>
 </head>
 <body class="bg-mesh min-h-screen flex flex-col text-on-surface">
   <header class="page-header">
@@ -56,7 +57,7 @@
             <input type="hidden" name="code_challenge">
             <input type="hidden" name="code_challenge_method">
 
-            <div class="field-group">
+            <div class="field-group" data-login-step="account">
               <label class="field-label" for="loginUsername" data-i18n="auth.form.username_or_email">Username or Email</label>
               <div class="field-shell">
                 <span class="material-symbols-outlined field-icon">person</span>
@@ -64,12 +65,21 @@
               </div>
             </div>
 
-            <div class="field-group">
+            <div class="field-group" data-login-step="password" hidden>
               <label class="field-label" for="loginPassword" data-i18n="auth.form.password">Password</label>
               <div class="field-shell">
                 <span class="material-symbols-outlined field-icon">lock</span>
-                <input class="field-input" id="loginPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password" placeholder="Enter your password" required>
+                <input class="field-input" id="loginPassword" name="password" type="password" autocomplete="current-password" data-i18n-placeholder="auth.placeholder.password" placeholder="Enter your password" disabled>
               </div>
+            </div>
+
+            <div class="field-group" data-login-step="duration">
+              <label class="field-label" for="loginSessionDays" data-i18n="auth.session.duration_label">Keep me signed in</label>
+              <select class="napi-select" id="loginSessionDays" name="session_days">
+                <option value="1" data-i18n="auth.session.days_1" selected>1 day</option>
+                <option value="7" data-i18n="auth.session.days_7">7 days</option>
+                <option value="14" data-i18n="auth.session.days_14">14 days</option>
+              </select>
             </div>
 
             <div class="field-group" data-captcha-group hidden>
@@ -90,12 +100,52 @@
               <input type="hidden" name="turnstile_response">
             </div>
 
-            <button class="text-action-button" id="showRecoveryBtn" type="button" data-i18n="auth.button.forgot_password">Forgot password?</button>
-            <button class="primary-submit vault-gradient submit" type="submit" data-i18n="auth.button.login">Sign In and Continue</button>
+            <button class="text-action-button" id="showRecoveryBtn" type="button" data-i18n="auth.button.forgot_password" hidden>Forgot password?</button>
+            <button class="primary-submit vault-gradient submit" id="loginPrimarySubmit" type="submit" data-i18n="auth.button.continue">Continue</button>
             <div class="status-box" id="statusMessage" role="status" aria-live="polite" aria-atomic="true"></div>
             <div class="oidc-divider" id="oidcDivider" hidden><span data-i18n="auth.oidc.or">或使用</span></div>
             <div class="grid gap-3" id="oidcProviders"></div>
           </form>
+
+          <form class="auth-form" id="passwordSetupForm" hidden>
+            <p class="card-description" data-i18n="auth.setup.heading">Set your first password</p>
+            <p class="field-label" id="setupEmailMasked"></p>
+            <p class="card-description" data-i18n="auth.setup.email_hint">We will send a verification code to this address.</p>
+
+            <button class="secondary-submit" id="sendSetupCodeBtn" type="button" data-i18n="auth.button.send_code">Send verification code</button>
+
+            <div class="field-group">
+              <label class="field-label" for="setupEmailCode" data-i18n="auth.form.email_code">Email Verification Code</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">pin</span>
+                <input class="field-input" id="setupEmailCode" name="email_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" data-i18n-placeholder="auth.placeholder.email_code" placeholder="6-digit code" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="setupPassword" data-i18n="auth.form.new_password">New Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">lock</span>
+                <input class="field-input" id="setupPassword" name="password" type="password" autocomplete="new-password" data-i18n-placeholder="auth.placeholder.new_password" placeholder="Choose a new password" required>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="setupConfirmPassword" data-i18n="auth.form.confirm_password">Confirm Password</label>
+              <div class="field-shell">
+                <span class="material-symbols-outlined field-icon">verified_user</span>
+                <input class="field-input" id="setupConfirmPassword" name="confirm_password" type="password" autocomplete="new-password" data-i18n-placeholder="auth.placeholder.confirm_password" placeholder="Enter the password again" required>
+              </div>
+            </div>
+
+            <button class="primary-submit vault-gradient submit" id="setupSubmitBtn" type="submit" data-i18n="auth.button.set_password">Save password</button>
+          </form>
+
+          <div id="loginContactAdmin" hidden>
+            <p class="card-description" data-i18n="auth.setup.contact_admin">This account has no usable email address. Please contact an administrator to reset the password.</p>
+          </div>
+
+          <button class="text-action-button mt-3" id="changeLoginAccountBtn" type="button" data-i18n="auth.button.change_account" hidden>Use a different account</button>
         </div>
 
         <div class="hidden" data-card="register">
@@ -122,8 +172,9 @@
               <label class="field-label" for="registerUsername" data-i18n="auth.form.username">Username</label>
               <div class="field-shell">
                 <span class="material-symbols-outlined field-icon">person</span>
-                <input class="field-input" id="registerUsername" name="username" type="text" data-i18n-placeholder="auth.placeholder.username" placeholder="Leave empty to reuse your email">
+                <input class="field-input" id="registerUsername" name="username" type="text" pattern="[A-Za-z0-9_]{1,255}" maxlength="255" autocomplete="username" autocapitalize="none" spellcheck="false" aria-describedby="registerUsernameHint" data-i18n-placeholder="auth.placeholder.username" placeholder="Leave empty to reuse your email">
               </div>
+              <p class="card-description" id="registerUsernameHint" data-i18n="auth.username.hint">Use 1–255 letters (A–Z, a–z), digits or underscores. Leave empty to use your email.</p>
             </div>
 
             <div class="field-group">
@@ -148,7 +199,7 @@
               <label class="field-label" for="registerPassword" data-i18n="auth.form.password">Password</label>
               <div class="field-shell">
                 <span class="material-symbols-outlined field-icon">lock</span>
-                <input class="field-input" id="registerPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password_short" placeholder="At least 6 characters" required>
+                <input class="field-input" id="registerPassword" name="password" type="password" autocomplete="new-password" data-i18n-placeholder="auth.placeholder.new_password" placeholder="Choose a new password" required>
               </div>
             </div>
 
@@ -208,7 +259,7 @@
               <label class="field-label" for="recoverPassword" data-i18n="auth.form.new_password">New Password</label>
               <div class="field-shell">
                 <span class="material-symbols-outlined field-icon">lock</span>
-                <input class="field-input" id="recoverPassword" name="password" type="password" data-i18n-placeholder="auth.placeholder.password_short" placeholder="At least 6 characters" required>
+                <input class="field-input" id="recoverPassword" name="password" type="password" autocomplete="new-password" data-i18n-placeholder="auth.placeholder.new_password" placeholder="Choose a new password" required>
               </div>
             </div>
 
@@ -228,7 +279,7 @@
     </section>
   </main>
 
-  <script src="/js/shared/i18n.js?v=20261021-login-cleanup-1"></script>
-  <script src="/js/pages/auth/login.js?v=20261021-login-cleanup-1"></script>
+  <script src="/js/shared/i18n.js?v=20261026-session-duration-1"></script>
+  <script src="/js/pages/auth/login.js?v=20261026-session-duration-1"></script>
 </body>
 </html>

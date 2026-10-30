@@ -261,13 +261,25 @@
   color: var(--danger);
 }
 
+/* ---------- 主内容面板：统一 12px 圆角、细边框、无阴影 ----------
+ * 对齐本地 new-api 参考：面板用 1px 边框表达层次，不叠加投影。
+ * 基线的 .napi-panel / .napi-card 来自 vaultsso-base.css（共享层，不在本任务改动范围），
+ * 因此在这里按管理内容页作用域收口，而不是再叠一层全局覆盖。
+ * 用 data-admin-page 文档钩子而不是 .admin-main 后代选择器：clients.html 的
+ * <template id="clientCardTemplate"> 位于 .admin-main 之外，克隆后才会进入内容区。
+ */
+html[data-admin-page] .napi-panel,
+html[data-admin-page] .napi-card {
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
 /* ---------- 工具栏 / 筛选栏 ---------- */
 
 .admin-toolbar-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-card);
-  box-shadow: var(--shadow-flat);
 }
 
 .admin-toolbar-row {
@@ -312,9 +324,8 @@
 .admin-table-panel {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--surface-card);
-  box-shadow: var(--shadow-panel);
 }
 
 .admin-table-cell-user {
@@ -351,9 +362,22 @@
 }
 
 .admin-cell-sub {
+  max-width: 320px;
   color: var(--text-muted);
   font-size: 11px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+/* 日期/时间列：整串保持在一行，避免时间戳在数字中间断行（例如末位数字被挤到下一行）。
+ * 只作用于 <td>，因为 .admin-cell-sub 同时用于用户名与 UUID 的 <span>/<code>，
+ * 那些位置仍需要正常换行。不加 ellipsis、不加截断，完整值始终保留；
+ * 列变宽由 .napi-table-scroll 的容器横向滚动承载。
+ * 覆盖 max-width，避免 nowrap 后内容溢出单元格。 */
+td.admin-cell-sub {
+  max-width: none;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .admin-row-actions {
@@ -364,10 +388,63 @@
   gap: var(--space-2);
 }
 
+/* ---------- 列头排序按钮：真实 button，继承 th 排版，带方向指示 ----------
+ * 仅 .napi-table th 内部的 .admin-sort-btn 使用；.text-right 的操作列表头不参与。 */
+.admin-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.admin-sort-btn:hover {
+  color: var(--accent);
+}
+
+.admin-sort-btn:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* 方向指示：未激活时留空，激活时由 aria-sort 驱动，不影响屏幕阅读器（aria-hidden）。 */
+.admin-sort-arrow {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-faint);
+}
+
+th[data-sort-column][aria-sort="ascending"] .admin-sort-btn,
+th[data-sort-column][aria-sort="descending"] .admin-sort-btn {
+  color: var(--accent);
+}
+
+th[data-sort-column][aria-sort="ascending"] .admin-sort-arrow::before {
+  content: '\25B2';
+}
+
+th[data-sort-column][aria-sort="descending"] .admin-sort-arrow::before {
+  content: '\25BC';
+}
+
+th[data-sort-column][aria-sort="ascending"] .admin-sort-arrow,
+th[data-sort-column][aria-sort="descending"] .admin-sort-arrow {
+  color: var(--accent);
+}
+
 /* ---------- 空状态：基于 .napi-empty ---------- */
 
 .admin-empty {
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--surface-card);
 }
 
@@ -390,15 +467,12 @@
   gap: var(--space-3);
 }
 
+/* 两列一直保持到最窄宽度：四个指标只装一个数字，单列会堆成四条高行。
+ * 卡片标签是普通 <p>，会自然换行，不会裁切。320px 下每列内容宽约 106px，
+ * 中文与英文标签均能容纳。.admin-stat-grid-3（user.html 三卡）不受影响。 */
 @media (max-width: 960px) {
   .admin-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 520px) {
-  .admin-stat-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -409,6 +483,13 @@
 @media (max-width: 720px) {
   .admin-stat-grid-3 {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 用户列表：窄屏把表格滚动限制在容器内，避免整页横向溢出。
+   * 仅作用于 users 页，不影响其他后台页面。 */
+  html[data-admin-page="users"] .napi-table-scroll {
+    max-height: 70vh;
+    overflow: auto;
   }
 }
 
@@ -425,7 +506,6 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-card);
-  box-shadow: var(--shadow-flat);
 }
 
 .admin-stat-label {

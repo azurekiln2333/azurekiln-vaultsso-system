@@ -54,7 +54,9 @@ const PUBLIC_BASE_URL = RUNTIME.publicBaseUrl;
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ADMIN_ONLY_STATIC_PATHS = new Set(adminPagePaths.keys());
+// Normalised so a casing/trailing-slash variant cannot fall through this gate and still match the
+// (case-insensitive) Express route further down.
+const ADMIN_ONLY_STATIC_PATHS = new Set([...adminPagePaths.keys()].map(normalizeGuardPath));
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const OIDC_CALLBACK_PATH = '/api/v1/auth/oauth/oidc/callback';
 const OIDC_STATE_COOKIE = 'oidc_state';
@@ -69,7 +71,8 @@ setInterval(() => {
   }
 }, 60000).unref();
 // 这些端点由原生 App / 服务端直接调用，不经过浏览器，因此按机器调用校验来源。
-const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete']);
+const OIDC_EMAIL_SEND_PATH = '/api/v1/auth/oauth/oidc/email/send';
+const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete', OIDC_EMAIL_SEND_PATH]);
 
 let User;
 let Authenticator;
@@ -87,7 +90,19 @@ let signingKeys;
 let pool = null;
 let oidcStorageSource = 'database';
 
-app.use(express.json());
+// The user-import route parses its own body so a selected file can be uploaded as raw
+// bytes within an import-specific 10 MiB bound. Every other endpoint keeps the ordinary
+// JSON limit; the urlencoded parser stays global so form-encoded behaviour is unchanged.
+const defaultJsonParser = express.json();
+
+// Mirrors Express' default route matching for POST `/api/users/import`: case-insensitive
+// with at most one optional trailing slash, and POST only. Keeping this strict prevents the
+// body-parser skip from leaking onto other requests.
+function isUserImportRequest(req) {
+  return req.method === 'POST' && /^\/api\/users\/import\/?$/i.test(String(req.path || ''));
+}
+
+app.use((req, res, next) => (isUserImportRequest(req) ? next() : defaultJsonParser(req, res, next)));
 app.use(express.urlencoded({ extended: false, limit: '100kb', parameterLimit: 100 }));
 app.use(cookieParser());
 function isSameOriginBrowserRequest(req) {
@@ -115,6 +130,18 @@ function isMachineClientRequest(req) {
     return true;
   }
 
+// Express matches routes case-insensitively and tolerates a trailing slash, while string guards are
+// case-sensitive. Normalise once so no casing/slash variant can slip past the origin or throttle
+// boundary and reach a pending-mutation handler unguarded.
+function normalizeGuardPath(path) {
+  let raw = String(path || '').toLowerCase();
+  while (raw.length > 1 && raw.endsWith('/')) raw = raw.slice(0, -1);
+  return raw || '/';
+}
+
+// Browser-origin guarded OAuth entry points (compared against a normalised path).
+const BROWSER_GUARD_PATHS = new Set(['/oauth2/authorize', '/oauth2/register']);
+
 app.use(function requestBoundary(req, res, next) {
     const origin = req.get('origin');
     if (origin === PUBLIC_BASE_URL) {
@@ -123,14 +150,16 @@ app.use(function requestBoundary(req, res, next) {
       res.vary('Origin');
     }
     const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
-    const browserEndpoint = req.path.startsWith('/api/') || ['/oauth2/authorize', '/oauth2/register'].includes(req.path);
-    const allowed = MACHINE_ENDPOINTS.has(req.path)
+    const guardPath = normalizeGuardPath(req.path);
+    const browserEndpoint = isUserImportRequest(req) || guardPath.startsWith('/api/')
+      || BROWSER_GUARD_PATHS.has(guardPath);
+    const allowed = MACHINE_ENDPOINTS.has(guardPath)
       ? isMachineClientRequest(req)
       : isSameOriginBrowserRequest(req);
     if (unsafe && browserEndpoint && !allowed) {
       return res.status(403).json({ error: 'forbidden', error_description: 'A same-origin browser request is required' });
     }
-    if (req.path.startsWith('/api/') || req.path.startsWith('/oauth2/') || req.cookies.session) {
+    if (guardPath.startsWith('/api/') || guardPath.startsWith('/oauth2/') || req.cookies.session) {
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Pragma', 'no-cache');
     }
@@ -145,11 +174,17 @@ app.use(function requestBoundary(req, res, next) {
   });
 
 app.use(asyncHandler(async function limitRequests(req, res, next) {
-    const isCaptcha = req.path === '/api/captcha';
-    const isSensitive = isCaptcha || req.path === '/api/v1/auth/oauth/oidc/login' || req.path === OIDC_CALLBACK_PATH || (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
-      && (req.path.startsWith('/api/') || req.path.startsWith('/oauth2/')));
+    const guardPath = normalizeGuardPath(req.path);
+    const isCaptcha = guardPath === '/api/captcha';
+    // The import and pending-mutation checks are case/slash normalised for the same reason: Express
+    // routes them anyway, so the throttle must classify every variant identically.
+    const isSensitive = isCaptcha || isUserImportRequest(req) || guardPath === '/api/v1/auth/oauth/oidc/login'
+      || guardPath === normalizeGuardPath(OIDC_CALLBACK_PATH) || (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+      && (guardPath.startsWith('/api/') || guardPath.startsWith('/oauth2/')));
     if (!isSensitive) return next();
-    const category = isCaptcha ? 'captcha' : req.path === '/api/email-verification/send' ? 'mail' : 'auth';
+    const category = isCaptcha ? 'captcha'
+      : (guardPath === '/api/email-verification/send' || guardPath === OIDC_EMAIL_SEND_PATH) ? 'mail'
+      : 'auth';
     const limit = category === 'mail' ? 10 : category === 'captcha' ? 30 : 120;
     const result = await RateLimit.consume(`http:${category}:${getClientIp(req)}`, limit, 60 * 1000);
     if (!result.allowed) {
@@ -407,13 +442,13 @@ const ANOMALY_DISTINCT_IP_SUCCESS = 3;
 
 // 行为分析：基于登录日志的滚动窗口判定。触发后给账户打上"下次登录强制图形验证码"
 // 标记，并发送警告邮件；成功通过验证码的登录会自动解除标记。
-async function detectAndFlagAnomalousLogin(user, req, event, database = pool) {
+async function detectAndFlagAnomalousLogin(user, req, event, database = pool, options = {}) {
   try {
     if ((await getSettingValue('anomaly_detection', database)) !== 'true') {
-      return;
+      return null;
     }
     if (user.captcha_required) {
-      return;
+      return null;
     }
 
     const since = Date.now() - ANOMALY_WINDOW_MS;
@@ -436,20 +471,26 @@ async function detectAndFlagAnomalousLogin(user, req, event, database = pool) {
       reasons.push(`短时间内 ${successIps.size} 个不同 IP 成功登录`);
     }
     if (!reasons.length) {
-      return;
+      return null;
     }
 
     await new UserModel(database).update(user.id, { captchaRequired: true });
     const description = reasons.join('；');
     await recordLoginLog({ username: user.username, userId: user.id, req, result: 'anomaly_detected', detail: description, database });
-    if (user.email) {
-      sendBehaviorAlertEmail({ to: user.email, username: user.username, reason: description }).catch(error => {
+    console.log(`[security:anomaly] ${user.username}: ${description}`);
+    const alert = user.email ? { to: user.email, username: user.username, reason: description } : null;
+    // Transactional callers defer the alert so a rolled-back login never emails an alert and SMTP
+    // never starts under the account lock; every other caller keeps the fire-and-forget behaviour.
+    if (options.deferAlerts) return alert;
+    if (alert) {
+      sendBehaviorAlertEmail(alert).catch(error => {
         console.error('Behavior alert delivery failed:', error.message);
       });
     }
-    console.log(`[security:anomaly] ${user.username}: ${description}`);
+    return alert;
   } catch (error) {
     console.error('Anomaly detection failed:', error.message);
+    return null;
   }
 }
 
@@ -510,6 +551,9 @@ function parseDurationToMs(value, fallbackMs) {
 const ACCESS_TOKEN_TTL_MS = parseDurationToMs(TOKEN_EXPIRY, 60 * 60 * 1000);
 const REFRESH_TOKEN_TTL_MS = parseDurationToMs(REFRESH_TOKEN_EXPIRY, 7 * 24 * 60 * 60 * 1000);
 const SESSION_MAX_AGE = ACCESS_TOKEN_TTL_MS;
+const DEFAULT_SESSION_DAYS = 1;
+const SUPPORTED_SESSION_DAYS = [1, 7, 14];
+const SESSION_DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_ABSOLUTE_TTL_MS = parseDurationToMs(process.env.SESSION_ABSOLUTE_EXPIRY || '12h', 12 * 60 * 60 * 1000);
 // 登出后允许跳回的站点白名单（注册域名，逗号分隔；为空时保持原行为）
 const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
@@ -523,6 +567,9 @@ const EMAIL_PURPOSE_REGISTER = 'register';
 const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
 const EMAIL_PURPOSE_LOGIN = 'login';
 const EMAIL_PURPOSE_EMAIL_CHANGE = 'email_change';
+// Dedicated purpose for the post-password mailbox gate. Deliberately excluded from
+// normalizeEmailPurpose so the public generic send endpoint cannot mint gate proofs.
+const EMAIL_PURPOSE_LOGIN_GATE = 'login_gate';
 const EMAIL_CODE_TTL_MS = parseDurationToMs(process.env.EMAIL_CODE_EXPIRY || '10m', 10 * 60 * 1000);
 const EMAIL_CODE_MAX_ATTEMPTS = Number(process.env.EMAIL_CODE_MAX_ATTEMPTS || 5);
 if (![ACCESS_TOKEN_TTL_MS, REFRESH_TOKEN_TTL_MS, EMAIL_CODE_TTL_MS, SESSION_ABSOLUTE_TTL_MS].every(value => Number.isFinite(value) && value >= 1000)
@@ -1110,10 +1157,63 @@ function validateToken(token, expectedType = 'session') {
     } catch { return null; }
   }
 
-function createSessionToken(user, sid, expiresAt) {
+// Login inputs are a whitelist, not a duration parser: forms/query strings must be exact.
+function normalizeSessionDays(value, allowString = false) {
+    if (value === undefined) return DEFAULT_SESSION_DAYS;
+    if (allowString && typeof value === 'string' && ['1', '7', '14'].includes(value)) return Number(value);
+    return Number.isInteger(value) && SUPPORTED_SESSION_DAYS.includes(value) ? value : null;
+  }
+
+function invalidSessionDuration(res) {
+    return res.status(400).json({ error: 'invalid_request', error_key: 'auth.session.invalid_duration',
+      error_description: '请选择 1 天、7 天或 14 天的登录时长' });
+  }
+
+// Only authenticated request-local policies may supply an existing deadline. New logins start
+// their fixed period here, after every factor succeeds, at the same precision as the signed JWT.
+function sessionPolicyForIssue({ sessionDays = DEFAULT_SESSION_DAYS, expiresAt, deadline } = {}) {
+    if (deadline === undefined) {
+      if (!Number.isInteger(sessionDays) || !SUPPORTED_SESSION_DAYS.includes(sessionDays)) {
+        throw new AccountTransactionAbort(401, 'auth.required', '登录状态已失效，请重新登录');
+      }
+      expiresAt = Math.floor(Date.now() / 1000) * 1000 + sessionDays * SESSION_DAY_MS;
+      deadline = expiresAt / 1000;
+    } else {
+      expiresAt = Math.floor(Math.min(expiresAt, deadline * 1000) / 1000) * 1000;
+      if ((sessionDays !== null && (!Number.isInteger(sessionDays) || !SUPPORTED_SESSION_DAYS.includes(sessionDays)))
+          || !Number.isSafeInteger(deadline) || !Number.isFinite(expiresAt)) {
+        throw new AccountTransactionAbort(401, 'auth.required', '登录状态已失效，请重新登录');
+      }
+      if (sessionDays !== null) deadline = expiresAt / 1000;
+    }
+    if (expiresAt <= Date.now()) throw new AccountTransactionAbort(401, 'auth.required', '登录状态已失效，请重新登录');
+    return { sessionDays, expiresAt, deadline };
+  }
+
+function authenticatedSessionPolicy(session, row) {
+    const rowExpiry = new Date(row.expires_at).getTime();
+    const hasDays = Object.prototype.hasOwnProperty.call(session, 'session_days');
+    const hasDeadline = Object.prototype.hasOwnProperty.call(session, 'session_deadline');
+    if (hasDeadline && !Number.isSafeInteger(session.session_deadline)) return null;
+    if (hasDays) {
+      if (!Number.isInteger(session.session_days) || !SUPPORTED_SESSION_DAYS.includes(session.session_days)
+          || !hasDeadline || session.exp !== session.session_deadline) return null;
+      const expiresAt = Math.min(rowExpiry, session.session_deadline * 1000);
+      return Number.isFinite(expiresAt) && expiresAt > Date.now()
+        ? { sessionDays: session.session_days, expiresAt, deadline: Math.floor(expiresAt / 1000) } : null;
+    }
+    const rowCap = new Date(row.created_at).getTime() + SESSION_ABSOLUTE_TTL_MS;
+    const deadline = Math.floor(Math.min(rowCap, hasDeadline ? session.session_deadline * 1000 : rowCap) / 1000);
+    const expiresAt = Math.min(rowExpiry, session.exp * 1000, deadline * 1000);
+    return Number.isSafeInteger(deadline) && Number.isFinite(expiresAt) && expiresAt > Date.now()
+      ? { sessionDays: null, expiresAt, deadline } : null;
+  }
+
+function createSessionToken(user, sid, policy) {
     return jwt.sign({
       sub: user.id, sid, type: 'session', iss: PUBLIC_BASE_URL, aud: PUBLIC_BASE_URL,
-      exp: Math.floor(expiresAt / 1000)
+      ...(policy.sessionDays === null ? {} : { session_days: policy.sessionDays }),
+      session_deadline: policy.deadline, exp: Math.floor(policy.expiresAt / 1000)
     }, JWT_SECRET, { algorithm: 'HS256' });
   }
 
@@ -1124,16 +1224,16 @@ function sessionCookieOptions(maxAge = SESSION_MAX_AGE) {
     return options;
   }
 
-async function setSessionCookie(req, res, user, database = pool) {
+async function setSessionCookie(req, res, user, database = pool, options = {}) {
     const sid = crypto.randomUUID();
-    const maxAge = Math.min(SESSION_MAX_AGE, SESSION_ABSOLUTE_TTL_MS);
-    const expiresAt = Date.now() + maxAge;
+    const policy = sessionPolicyForIssue(options);
     req.authSession = await new SessionModel(database).create({
       userId: user.id, token: sid, ip: getClientIp(req),
-      userAgent: req.headers['user-agent'] || '', expiresAt
+      userAgent: req.headers['user-agent'] || '', expiresAt: policy.expiresAt
     });
     req.authenticatedUser = user;
-    res.cookie('session', createSessionToken(user, sid, expiresAt), sessionCookieOptions(maxAge));
+    req.authSessionPolicy = policy;
+    res.cookie('session', createSessionToken(user, sid, policy), sessionCookieOptions(policy.expiresAt - Date.now()));
   }
 
 async function getAuthenticatedUser(req, res = null) {
@@ -1142,16 +1242,19 @@ async function getAuthenticatedUser(req, res = null) {
     if (!session || !session.sid) return null;
     const row = await Session.findActiveTokenByToken(session.sid);
     if (!row || row.user_id !== session.sub) return null;
-    const absoluteExpiry = new Date(row.created_at).getTime() + SESSION_ABSOLUTE_TTL_MS;
-    if (!Number.isFinite(absoluteExpiry) || absoluteExpiry <= Date.now()) return null;
+    const policy = authenticatedSessionPolicy(session, row);
+    if (!policy) return null;
     const user = await User.findById(row.user_id);
     if (!user || isUserBanned(user)) return null;
     req.authSession = row;
+    req.authSessionPolicy = policy;
     req.authenticatedUser = user;
-    if (res && session.iat * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
-      const expiresAt = Math.min(Date.now() + SESSION_MAX_AGE, absoluteExpiry);
+    if (policy.sessionDays === null && res && session.iat * 1000 < Date.now() - SESSION_REFRESH_THRESHOLD_MS) {
+      const expiresAt = Math.floor(Math.min(Date.now() + SESSION_MAX_AGE, policy.deadline * 1000) / 1000) * 1000;
       if (await Session.extend(row.id, expiresAt)) {
-        res.cookie('session', createSessionToken(user, row.token, expiresAt), sessionCookieOptions(expiresAt - Date.now()));
+        policy.expiresAt = expiresAt;
+        row.expires_at = new Date(expiresAt);
+        res.cookie('session', createSessionToken(user, row.token, policy), sessionCookieOptions(expiresAt - Date.now()));
       } else {
         req.authenticatedUser = null;
         return null;
@@ -1175,45 +1278,129 @@ async function verifyTotpLocked(user, code, authenticators, users) {
     return counter !== null && await users.consumeTotpCounter(user.id, counter);
 }
 
-async function verifyTotpOnce(user, code) {
-    const limit = await RateLimit.consume(`totp:${user.id}`, 10, 5 * 60 * 1000);
-    if (!limit.allowed) return false;
-    const valid = await Authenticator.withUser(user.id, async (current, authenticators, users) => {
-      if (!current || !current.totp_enabled || pendingLoginSecurityState(current) !== pendingLoginSecurityState(user)) return false;
-      return verifyTotpLocked(current, code, authenticators, users);
-    });
-    if (valid) await RateLimit.clear(`totp:${user.id}`);
-    return valid;
-}
-
 const OIDC_PENDING_COOKIE = 'oidc_pending';
 
 function pendingLoginSecurityState(user) {
   return crypto.createHmac('sha256', JWT_SECRET).update(JSON.stringify([
-    user.password, user.email, user.role, user.banned, user.phone_e164,
+    user.password, user.email, Boolean(user.email_verified), user.role, user.banned, user.phone_e164,
     user.phone_country_code, user.phone_number, user.totp_enabled, user.totp_secret, Number(user.totp_revision || 0)
   ])).digest('hex');
 }
 
-async function beginOidcSecondFactor(res, user, returnTo, factor, providerKey, source = 'external', extraContext = {}) {
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-  const challenge = crypto.randomBytes(32).toString('base64url');
-  if (factor === 'email') {
-    await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
+// A mailbox is usable only when it is a real, deliverable address. @users.invalid placeholders are
+// unbound even if a corrupt verification flag claims otherwise.
+function isUsableMailbox(email) {
+  const normalized = normalizeEmail(email);
+  return Boolean(normalized) && !isSyntheticEmail(normalized) && isValidEmail(normalized);
+}
+
+// Mandatory post-password mailbox gate for local password logins. Returns the required stage or
+// null. NULL and FALSE email_verified both count as unverified.
+function resolvePasswordMailGate(user) {
+  if (!isUsableMailbox(user.email)) return 'email_bind';
+  if (!Boolean(user.email_verified)) return 'email_verify';
+  return null;
+}
+
+// Rollback sentinel: thrown inside an account transaction so every success-path write is undone.
+// Converted to an HTTP response only after the transaction has rolled back.
+class AccountTransactionAbort extends Error {
+  constructor(status, key, description, options = {}) {
+    super(key);
+    this.status = status;
+    // Recoverable cooldowns carry a machine-readable retry hint; terminal lockouts leave it null so
+    // the frontend can distinguish `auth.email_gate.cooldown` from `auth.mfa.locked`.
+    this.retryAfter = Number.isFinite(options.retryAfter) ? Math.max(0, Math.trunc(options.retryAfter)) : null;
+    this.body = {
+      error: ERROR_CODE_BY_STATUS[status] || 'invalid_request',
+      error_key: key,
+      error_description: description
+    };
+    if (this.retryAfter !== null) this.body.retry_after = this.retryAfter;
   }
-  const record = await EmailVerificationCode.create({
-    email: user.email, userId: user.id, purpose: source === 'password' ? 'password_mfa' : 'oidc_mfa',
-    codeHash: crypto.createHash('sha256').update(challenge).digest('hex'), expiresAt,
-    pendingContext: { returnTo: getOidcReturnPath(returnTo), ...extraContext }
-  });
-  const pending = jwt.sign({
-    sub: user.id, jti: record.id, challenge, factor, provider: providerKey, source,
+}
+
+const ERROR_CODE_BY_STATUS = {
+  400: 'invalid_request', 401: 'invalid_grant', 403: 'forbidden', 404: 'not_found',
+  409: 'conflict', 429: 'too_many_requests', 502: 'email_delivery_failed'
+};
+
+function newMailGateContext({ totpSatisfied = false, proofExpiresAt, sessionDays = DEFAULT_SESSION_DAYS }) {
+  const context = {
+    sessionDays,
+    proofExpiresAt: Number(proofExpiresAt),
+    mail: { version: 0, targetEmail: null, codeId: null, sentAt: null }
+  };
+  if (totpSatisfied) context.totpSatisfied = true;
+  return context;
+}
+
+function readPendingContext(record) {
+  try {
+    return typeof record.pending_context === 'string'
+      ? JSON.parse(record.pending_context)
+      : record.pending_context;
+  } catch { return null; }
+}
+
+function pendingChallengeHash(challenge) {
+  return crypto.createHash('sha256').update(challenge).digest('hex');
+}
+
+function safeEqualHex(left, right) {
+  const a = Buffer.from(String(left || ''), 'utf8');
+  const b = Buffer.from(String(right || ''), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function signPendingCredential({ user, recordId, challenge, factor, provider, source, expiresAt }) {
+  return jwt.sign({
+    sub: user.id, jti: recordId, challenge, factor, provider, source,
     securityState: pendingLoginSecurityState(user),
     type: 'oidc_pending', iss: PUBLIC_BASE_URL, aud: PUBLIC_BASE_URL, exp: Math.floor(expiresAt.getTime() / 1000)
   }, JWT_SECRET, { algorithm: 'HS256' });
-  res.cookie(OIDC_PENDING_COOKIE, pending, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/', maxAge: 5 * 60 * 1000 });
+}
+
+function setPendingCookie(res, pending, expiresAt) {
   // 原生 App 未必保留 Cookie，因此同时返回同一个凭据，供 X-Oidc-Pending 头回传。
+  res.cookie(OIDC_PENDING_COOKIE, pending, {
+    httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/',
+    maxAge: Math.max(0, expiresAt.getTime() - Date.now())
+  });
   return pending;
+}
+
+// Creates the persisted pending row for one stage. Split from publishing so a caller inside an
+// account transaction can create the successor atomically and publish the credential only after commit.
+async function createSecondFactorRecord({ user, returnTo, factor, source, extraContext, expiresAt, codes = EmailVerificationCode, issueCode = false }) {
+  const challenge = crypto.randomBytes(32).toString('base64url');
+  // Only the optional global email factor sends during stage creation. The mandatory mailbox gate
+  // is always a manual send, so discovery and stage creation never emit mail.
+  if (issueCode) {
+    await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
+  }
+  const record = await codes.create({
+    email: user.email, userId: user.id, purpose: source === 'password' ? 'password_mfa' : 'oidc_mfa',
+    codeHash: pendingChallengeHash(challenge), expiresAt,
+    pendingContext: { returnTo: getOidcReturnPath(returnTo), sessionDays: DEFAULT_SESSION_DAYS, ...extraContext }
+  });
+  return { record, challenge };
+}
+
+function publishSecondFactor(res, user, { factor, provider, source, challenge, record, expiresAt }) {
+  const pending = signPendingCredential({ user, recordId: record.id, challenge, factor, provider, source, expiresAt });
+  return setPendingCookie(res, pending, expiresAt);
+}
+
+async function beginOidcSecondFactor(res, user, returnTo, factor, providerKey, source = 'external', extraContext = {}, options = {}) {
+  const now = Date.now();
+  const proofExpiresAt = Number(options.proofExpiresAt) > 0 ? Number(options.proofExpiresAt) : now + 5 * 60 * 1000;
+  // A stage successor must never extend the original password proof deadline.
+  const expiresAt = new Date(Math.min(now + 5 * 60 * 1000, proofExpiresAt));
+  const { record, challenge } = await createSecondFactorRecord({
+    user, returnTo, factor, source, extraContext, expiresAt, issueCode: factor === 'email'
+  });
+  return publishSecondFactor(res, user, { factor, provider: providerKey, source, challenge, record, expiresAt });
 }
 
 const OIDC_PENDING_HEADER = 'x-oidc-pending';
@@ -1238,6 +1425,9 @@ async function getPendingOidcLogin(req) {
     context = typeof record.pending_context === 'string' ? JSON.parse(record.pending_context) : record.pending_context;
   } catch { return null; }
   if (!context || !isSafeFrontendPath(context.returnTo)) return null;
+  const sessionDays = normalizeSessionDays(context.sessionDays);
+  if (sessionDays === null) return null;
+  context.sessionDays = sessionDays;
   if (pending.source === 'huawei' && (!context.huawei || typeof context.huawei !== 'object')) return null;
   pending.returnTo = context.returnTo;
   const user = await User.findById(pending.sub);
@@ -1245,39 +1435,66 @@ async function getPendingOidcLogin(req) {
   return { pending, record, user, context };
 }
 
-async function beginPasswordSecondFactor(req, res, user, factor) {
-  const validation = await validateAuthorizationRequest(req.body);
-  if (validation.body) return res.status(validation.status).json(validation.body);
+const OIDC_CONTINUATION_KEYS = ['client_id', 'redirect_uri', 'scope', 'state', 'nonce', 'response_type', 'code_challenge', 'code_challenge_method'];
+
+function passwordContinuationReturnTo(req, validation) {
+  if (!validation.value) return '/profile';
   const continuation = new URLSearchParams();
-  if (validation.value) {
-    for (const key of ['client_id', 'redirect_uri', 'scope', 'state', 'nonce', 'response_type', 'code_challenge', 'code_challenge_method']) {
-      if (req.body[key] !== undefined) continuation.set(key, normalizeText(req.body[key]));
-    }
+  for (const key of OIDC_CONTINUATION_KEYS) {
+    if (req.body[key] !== undefined) continuation.set(key, normalizeText(req.body[key]));
   }
-  await beginOidcSecondFactor(res, user, validation.value ? `/oauth2/authorize?${continuation}` : '/profile', factor, '', 'password');
-  grantCaptchaContinuation(req, res, user.id);
-  await recordLoginLog({ username: user.username, userId: user.id, req, result: factor === 'totp' ? 'totp_required' : 'email_code_required' });
-  return res.json({
-    mfa_url: '/oauth2/mfa', require_totp: factor === 'totp', require_email_code: factor === 'email',
-    email_masked: factor === 'email' ? maskEmail(user.email) : undefined,
-    message_key: factor === 'totp' ? 'auth.totp.required' : 'auth.login_code.sent'
-  });
+  return `/oauth2/authorize?${continuation}`;
 }
 
-async function completePasswordLogin(req, res, user, database = pool) {
-  const users = new UserModel(database);
-  const ip = getClientIp(req);
-  await new RateLimitModel(database).clear(`login:${user.id}`);
-  res.clearCookie('login_step', { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'strict', path: '/' });
-  await detectAndFlagAnomalousLogin(user, req, 'success', database);
-  if (user.captcha_required) await users.update(user.id, { captchaRequired: false });
-  const previousIp = normalizeText(user.last_login_ip || user.lastLoginIp);
-  if (previousIp && previousIp !== ip && user.email) {
-    sendLoginAlertEmail({ to: user.email, ip, userAgent: req.headers['user-agent'] }).catch(() => {});
-  }
-  await users.update(user.id, { lastLoginIp: ip });
-  await recordLoginLog({ username: user.username, userId: user.id, req, result: 'success', database });
-  await setSessionCookie(req, res, user, database);
+// Shared stage payload for every password-source challenge, so the direct entry path and the
+// /complete transition never drift in shape.
+function passwordStagePayload(user, factor, pendingToken) {
+  const isGate = factor === 'email_bind' || factor === 'email_verify';
+  return {
+    mfa_url: '/oauth2/mfa',
+    require_totp: factor === 'totp',
+    require_email_code: factor === 'email' || isGate,
+    email_gate: isGate ? (factor === 'email_bind' ? 'bind' : 'verify') : undefined,
+    code_sent: factor === 'email',
+    email_masked: factor === 'email' ? maskEmail(user.email) : undefined,
+    // Native clients that do not keep cookies echo this credential back via the pending header.
+    pending_token: pendingToken,
+    pending_header: 'X-Oidc-Pending',
+    message_key: factor === 'totp' ? 'auth.totp.required'
+      : isGate ? (factor === 'email_bind' ? 'auth.email_gate.bind_hint' : 'auth.email_gate.verify_hint')
+      : 'auth.login_code.sent'
+  };
+}
+
+// Restores the credential-failure audit trail that the transactional verifiers can no longer emit
+// themselves (a log written inside a rolled-back transaction would vanish).
+function factorFailureLogResult(body) {
+  const key = body?.error_key;
+  if (key === 'auth.totp.invalid') return 'totp_invalid';
+  if (key === 'email_code.invalid' || key === 'email_code.expired') return 'email_code_invalid';
+  return null;
+}
+
+async function recordFactorFailure(req, user, outcome) {
+  const result = factorFailureLogResult(outcome.body);
+  if (result) await recordLoginLog({ username: user.username, userId: user.id, req, result });
+}
+
+async function beginPasswordSecondFactor(req, res, user, factor, options = {}) {
+  const validation = await validateAuthorizationRequest(req.body);
+  if (validation.body) return res.status(validation.status).json(validation.body);
+  const isGate = factor === 'email_bind' || factor === 'email_verify';
+  const proofExpiresAt = Number(options.proofExpiresAt) > 0 ? Number(options.proofExpiresAt) : Date.now() + 5 * 60 * 1000;
+  // Every password-source stage persists the absolute password-proof deadline, so a later stage
+  // transition inherits it instead of inventing a fresh window.
+  const extraContext = isGate
+    ? newMailGateContext({ totpSatisfied: Boolean(options.totpSatisfied), proofExpiresAt, sessionDays: options.sessionDays })
+    : { proofExpiresAt, sessionDays: options.sessionDays };
+  const pendingToken = await beginOidcSecondFactor(res, user, passwordContinuationReturnTo(req, validation),
+    factor, '', 'password', extraContext, { proofExpiresAt });
+  grantCaptchaContinuation(req, res, user.id);
+  await recordLoginLog({ username: user.username, userId: user.id, req, result: factor === 'totp' ? 'totp_required' : 'email_code_required' });
+  return res.json(passwordStagePayload(user, factor, pendingToken));
 }
 
 async function finishAccountLogin(user, work) {
@@ -1285,8 +1502,152 @@ async function finishAccountLogin(user, work) {
     if (!current || isUserBanned(current) || pendingLoginSecurityState(current) !== pendingLoginSecurityState(user)) {
       return authenticatorError(401, 'auth.mfa.expired', '账户安全状态已改变，请重新登录');
     }
-    return work(current, connection);
+    return work(current, connection, authenticators, users);
   });
+}
+
+// Wrap an account transaction so a controlled abort becomes an HTTP response only after rollback.
+async function withAccountTransaction(user, work) {
+  try {
+    return await finishAccountLogin(user, work);
+  } catch (error) {
+    if (error instanceof AccountTransactionAbort) {
+      const result = { status: error.status, body: error.body };
+      if (error.retryAfter !== null) result.retryAfter = error.retryAfter;
+      return result;
+    }
+    throw error;
+  }
+}
+
+// Emits the standard Retry-After header for a recoverable cooldown, mirroring the existing send route.
+function applyRetryAfter(res, outcome) {
+  if (Number.isFinite(outcome.retryAfter)) res.setHeader('Retry-After', String(outcome.retryAfter));
+}
+
+function readRawPendingToken(req) {
+  return normalizeText(req.get(OIDC_PENDING_HEADER)) || normalizeText(req.body?.pending_token) || normalizeText(req.cookies[OIDC_PENDING_COOKIE]);
+}
+
+function parsePendingToken(req) {
+  return validateToken(readRawPendingToken(req), 'oidc_pending');
+}
+
+// Seconds until another send is permitted for this account (0 when the 60s cooldown has elapsed).
+async function resendRetryAfter(userId, rateLimits = RateLimit) {
+  const state = await rateLimits.check(gateSendKey(userId), 1);
+  return state.allowed ? 0 : state.retryAfter;
+}
+
+// Durable login issuance performed inside the account transaction. Cookie application and the login
+// alert are returned as a deferred payload and applied only after a successful commit, so a rollback
+// can never leave a success cookie on the response or fire an alert for a login that never landed.
+async function issueLoginWithinTransaction(req, user, database, options = {}) {
+  const users = new UserModel(database);
+  const ip = getClientIp(req);
+  await new RateLimitModel(database).clear(`login:${user.id}`);
+  const anomalyAlert = await detectAndFlagAnomalousLogin(user, req, 'success', database, { deferAlerts: true });
+  if (user.captcha_required) await users.update(user.id, { captchaRequired: false });
+  const previousIp = normalizeText(user.last_login_ip || user.lastLoginIp);
+  await users.update(user.id, { lastLoginIp: ip });
+  await recordLoginLog({ username: user.username, userId: user.id, req, result: 'success', database });
+  const sid = crypto.randomUUID();
+  const policy = sessionPolicyForIssue(options);
+  await new SessionModel(database).create({
+    userId: user.id, token: sid, ip, userAgent: req.headers['user-agent'] || '', expiresAt: policy.expiresAt
+  });
+  return {
+    user, policy, sid, anomalyAlert,
+    alert: Boolean(previousIp && previousIp !== ip && user.email),
+    alertIp: ip
+  };
+}
+
+// Post-commit only. Applies the success cookie and fires the deferred login/behaviour alerts.
+function applyIssuedLogin(req, res, issued) {
+  res.clearCookie('login_step', { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'strict', path: '/' });
+  req.authSession = { token: issued.sid };
+  req.authSessionPolicy = issued.policy;
+  req.authenticatedUser = issued.user;
+  res.cookie('session', createSessionToken(issued.user, issued.sid, issued.policy), sessionCookieOptions(issued.policy.expiresAt - Date.now()));
+  if (issued.alert) {
+    sendLoginAlertEmail({ to: issued.user.email, ip: issued.alertIp, userAgent: req.headers['user-agent'] }).catch(() => {});
+  }
+  if (issued.anomalyAlert) {
+    sendBehaviorAlertEmail(issued.anomalyAlert).catch(error => {
+      console.error('Behavior alert delivery failed:', error.message);
+    });
+  }
+}
+
+function gateStageOf(factor) {
+  if (factor === 'email_bind') return 'bind';
+  if (factor === 'email_verify') return 'verify';
+  return null;
+}
+
+function gateProofExpiresAt(context) {
+  const value = Number(context?.proofExpiresAt);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// Raw-value version guard. `Number(value)` would coerce null/false/'' to 0 and accept a numeric
+// string, so the raw JSON value must already be a non-negative integer.
+function readMailVersion(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+// Lock-scoped re-read of the exact persisted parent pending. Uses only connection-scoped models so
+// no read escapes the account transaction. The JWT is re-validated against the freshly locked user,
+// so a password/mailbox/verification-flag/TOTP change kills the stage even if the row still exists.
+async function readPendingUnderLock(connection, pending, current) {
+  const stage = gateStageOf(pending?.factor);
+  if (!pending || pending.source !== 'password' || !stage || !current) return null;
+  // The JWT expires in whole seconds, so it can lapse up to 999ms before the row/proof timestamp.
+  // Re-checked under the lock because a queued request may cross that boundary while waiting.
+  if (!Number.isFinite(pending.exp) || pending.exp * 1000 <= Date.now()) return null;
+  if (pending.securityState !== pendingLoginSecurityState(current)) return null;
+  const record = await new EmailVerificationCodeModel(connection).findById(pending.jti);
+  if (!record || record.purpose !== 'password_mfa' || record.user_id !== pending.sub || record.consumed_at
+      || new Date(record.expires_at) <= new Date()
+      || record.code_hash !== pendingChallengeHash(pending.challenge)) return null;
+  const context = readPendingContext(record);
+  if (!context || !isSafeFrontendPath(context.returnTo)) return null;
+  const sessionDays = normalizeSessionDays(context.sessionDays);
+  if (sessionDays === null) return null;
+  context.sessionDays = sessionDays;
+  if (!context.mail || !Number.isInteger(context.mail.version) || context.mail.version < 0) return null;
+  // The mandatory gate is only reachable after the authenticator prerequisite was satisfied.
+  if (current.totp_enabled && context.totpSatisfied !== true) return null;
+  // A successor may never outlive the original password proof window.
+  const proofExpiresAt = gateProofExpiresAt(context) || new Date(record.expires_at).getTime();
+  if (!Number.isFinite(proofExpiresAt) || proofExpiresAt <= Date.now()) return null;
+  return { record, context, stage };
+}
+
+function gateSendKey(userId) { return `mailgate:${userId}`; }
+function gateTargetKey(target) { return `mailgate:target:${normalizeEmail(target)}`; }
+
+// Projection for GET /pending and for the TOTP->gate intermediate response. Never runs under the
+// account lock, and never exposes the code, hash, full mailbox or the synthetic placeholder.
+async function gatePendingFields(pending, context, user, codes = EmailVerificationCode, rateLimits = null) {
+  const stage = gateStageOf(pending.factor);
+  if (!stage) return {};
+  const mail = context.mail || { version: 0, targetEmail: null, codeId: null };
+  let codeActive = false;
+  if (mail.codeId) {
+    const codeRow = await codes.findById(mail.codeId);
+    codeActive = Boolean(codeRow && !codeRow.consumed_at && new Date(codeRow.expires_at) > new Date());
+  }
+  const target = mail.targetEmail || (stage === 'verify' ? normalizeEmail(user.email) : '');
+  const cooldown = rateLimits ? await rateLimits.check(gateSendKey(user.id), 1) : { allowed: true, retryAfter: 0 };
+  return {
+    email_gate: stage,
+    email: isUsableMailbox(target) ? maskEmail(target) : '',
+    mail_version: mail.version,
+    code_sent: codeActive,
+    retry_after: cooldown.allowed ? 0 : cooldown.retryAfter
+  };
 }
 
 async function rejectLockedLogin(req, res, username, attempt) {
@@ -1482,7 +1843,7 @@ async function requireAdminUser(req, res) {
 }
 
 app.use(asyncHandler(async (req, res, next) => {
-  if (!ADMIN_ONLY_STATIC_PATHS.has(req.path)) {
+  if (!ADMIN_ONLY_STATIC_PATHS.has(normalizeGuardPath(req.path))) {
     next();
     return;
   }
@@ -1683,10 +2044,10 @@ function validateClientPayload(body, options = {}) {
   };
 }
 
-async function findUserConflicts({ username, email, excludeUserId }) {
+async function findUserConflicts({ username, email, excludeUserId }, userModel = User) {
   const normalizedUsername = normalizeText(username).toLowerCase();
   const normalizedEmail = normalizeEmail(email);
-  const users = await User.findPotentialConflicts(normalizedUsername, normalizedEmail);
+  const users = await userModel.findPotentialConflicts(normalizedUsername, normalizedEmail);
 
   let usernameConflict = null;
   let emailConflict = null;
@@ -1804,6 +2165,29 @@ async function verifyEmailCode({ email, purpose, code, userId }) {
     return { ok: false, status: 400, error_key: 'email_code.expired', error_description: '验证码已被使用或已过期' };
   }
   return { ok: true };
+}
+
+// Connection-scoped twin of verifyEmailCode for callers already inside an account transaction. Same
+// semantics and keys, but every read/write goes through the bound model so nothing escapes the lock.
+async function verifyEmailCodeWith(codes, { email, purpose, code, userId }) {
+  const normalizedCode = normalizeText(code);
+  if (!/^\d{6}$/.test(normalizedCode)) {
+    return { ok: false, status: 400, error_key: 'email_code.invalid', error_description: '验证码格式不正确' };
+  }
+  const record = await codes.findLatestActive(email, purpose);
+  if (!record || (userId !== undefined && record.user_id !== userId)) {
+    return { ok: false, status: 400, error_key: 'email_code.expired', error_description: '验证码不存在或已过期' };
+  }
+  if (!await codes.incrementAttempts(record.id, EMAIL_CODE_MAX_ATTEMPTS)) {
+    return { ok: false, status: 429, error_key: 'email_code.too_many_attempts', error_description: '验证码尝试次数过多，请重新获取' };
+  }
+  if (record.code_hash !== hashEmailCode(email, purpose, normalizedCode)) {
+    return { ok: false, status: 400, error_key: 'email_code.invalid', error_description: '验证码不正确' };
+  }
+  if (!await codes.consume(record.id)) {
+    return { ok: false, status: 400, error_key: 'email_code.expired', error_description: '验证码已被使用或已过期' };
+  }
+  return { ok: true, record };
 }
 
 async function generateAccessToken(userId, clientId, scopes) {
@@ -1952,6 +2336,8 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
+  const sessionDays = normalizeSessionDays(req.query.session_days, true);
+  if (sessionDays === null) return invalidSessionDuration(res);
   await refreshOidcProvidersFromDatabase();
   const config = getOidcProviderConfig(req.query.provider);
   if (!config || !isOidcEnabled(config)) {
@@ -1975,6 +2361,7 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
   const state = crypto.randomBytes(32).toString('base64url');
   const nonce = crypto.randomBytes(32).toString('base64url');
   const stateData = {
+    sessionDays,
     state,
     nonce,
     returnTo: getOidcReturnPath(req.query.return_to),
@@ -2057,6 +2444,8 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
     }
     const config = getOidcProviderConfig(cookieState.provider);
     if (!config || !isOidcEnabled(config)) throw new Error('OIDC provider is no longer configured');
+    const sessionDays = normalizeSessionDays(cookieState.sessionDays);
+    if (sessionDays === null) throw new Error('Invalid login duration');
     const endpoints = await resolveOidcEndpoints(config);
     const tokenPayload = await exchangeOidcCode(code, cookieState.codeVerifier, endpoints, getOidcCallbackUrl(req), config);
     if (config.validateIdToken && !tokenPayload.id_token) {
@@ -2117,13 +2506,13 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
       ? 'totp'
       : (await isSettingEnabled('login_email_code')) && !isSyntheticEmail(user.email) ? 'email' : '';
     if (!cookieState.linkUserId && oidcFactor) {
-      await beginOidcSecondFactor(res, user, cookieState.returnTo, oidcFactor, config.providerKey);
+      await beginOidcSecondFactor(res, user, cookieState.returnTo, oidcFactor, config.providerKey, 'external', { sessionDays });
       return res.redirect('/oauth2/mfa');
     }
     const completed = await finishAccountLogin(user, async (current, connection) => {
       await new UserModel(connection).update(current.id, { lastLoginIp: getClientIp(req) });
       await recordLoginLog({ username: current.username, userId: current.id, req, result: 'success', detail: 'External identity authentication', database: connection });
-      await setSessionCookie(req, res, current, connection);
+      await setSessionCookie(req, res, current, connection, cookieState.linkUserId ? req.authSessionPolicy : { sessionDays });
       return { status: 200 };
     });
     if (completed.status !== 200) return res.redirect(oidcErrorRedirect(cookieState, completed.body.error_description));
@@ -2347,7 +2736,7 @@ function pendingHuaweiBinding(token) {
   return entry;
 }
 
-async function completeHuaweiQuickLogin(req, res, identity, config, result, linkIntent = false, currentUser = null) {
+async function completeHuaweiQuickLogin(req, res, identity, config, result, linkIntent = false, currentUser = null, sessionDays = DEFAULT_SESSION_DAYS) {
   let user = result.user;
   const phoneOutcome = await applyHuaweiPhone(user, identity);
   user = phoneOutcome.user;
@@ -2386,6 +2775,7 @@ async function completeHuaweiQuickLogin(req, res, identity, config, result, link
       } : {})
     } : null;
     const pendingToken = await beginOidcSecondFactor(res, user, req.body.return_to, factor, config.providerKey, 'huawei', {
+      sessionDays,
       huawei: {
         oauth,
         phone: huaweiPendingPhoneCipher.encrypt(phone),
@@ -2434,7 +2824,7 @@ async function completeHuaweiQuickLogin(req, res, identity, config, result, link
         phoneBinding: phoneOutcome.action
       } };
     }
-    await setSessionCookie(req, res, current, connection);
+    await setSessionCookie(req, res, current, connection, { sessionDays });
     return { status: 200, body: { user: serializeUser(current), phone, phoneStatus, phoneBinding: phoneOutcome.action } };
   });
   return res.status(completed.status).json(completed.body);
@@ -2459,6 +2849,8 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
   if (!isMachineClientRequest(req)) {
     return res.status(403).json({ error: 'forbidden', error_description: '该接口不接受跨站浏览器请求' });
   }
+  const sessionDays = normalizeSessionDays(req.body.session_days, Boolean(req.is('application/x-www-form-urlencoded')));
+  if (sessionDays === null) return invalidSessionDuration(res);
   await refreshOidcProvidersFromDatabase();
   const config = resolveHuaweiProvider(req.body.provider);
   if (!config) {
@@ -2543,14 +2935,14 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
     const { providerKey, providerName, huaweiUnionScope, clientId } = config;
     pendingHuaweiBindings.set(bindingToken, {
       identity: verifiedIdentity, config: { providerKey, providerName, huaweiUnionScope, clientId },
-      clientId: normalizeText(req.body.client_id), createdAt: Date.now(), inProgress: false
+      clientId: normalizeText(req.body.client_id), sessionDays, createdAt: Date.now(), inProgress: false
     });
     return res.json({ binding_required: true, binding_token: bindingToken,
       phone_available: Boolean(identity.phone && identity.phoneVerified),
       phone_status: !identity.phone ? 'not_returned' : identity.phoneVerified ? 'verified' : 'unverified' });
   }
 
-  return completeHuaweiQuickLogin(req, res, identity, config, result, linkIntent, currentUser);
+  return completeHuaweiQuickLogin(req, res, identity, config, result, linkIntent, currentUser, sessionDays);
 }));
 
 app.post(HUAWEI_SKIP_PATH, asyncHandler(async (req, res) => {
@@ -2568,7 +2960,7 @@ app.post(HUAWEI_SKIP_PATH, asyncHandler(async (req, res) => {
       return res.status(400).json({ error: 'invalid_request', error_description: error.message });
     }
     pendingHuaweiBindings.delete(token);
-    return await completeHuaweiQuickLogin(req, res, entry.identity, entry.config, result);
+    return await completeHuaweiQuickLogin(req, res, entry.identity, entry.config, result, false, null, entry.sessionDays);
   } finally {
     entry.inProgress = false;
   }
@@ -2612,36 +3004,283 @@ app.get('/oauth2/mfa', asyncHandler(async (req, res) => {
 app.get('/api/v1/auth/oauth/oidc/pending', asyncHandler(async (req, res) => {
   const login = await getPendingOidcLogin(req);
   if (!login) return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.mfa.expired', error_description: '登录验证已过期，请重新登录' });
-  res.json({ factor: login.pending.factor, email: maskEmail(login.user.email), login_url: login.pending.source === 'password' && login.pending.returnTo.startsWith('/oauth2/authorize?') ? login.pending.returnTo : '/oauth2/authorize' });
+  // Gate fields are derived from the exact active code row, so a send that failed after commit is
+  // reported as code_sent:false. Non-gate stages contribute nothing.
+  const gateFields = await gatePendingFields(login.pending, login.context, login.user, EmailVerificationCode, RateLimit);
+  res.json({
+    factor: login.pending.factor,
+    email: maskEmail(login.user.email),
+    login_url: login.pending.source === 'password' && login.pending.returnTo.startsWith('/oauth2/authorize?') ? login.pending.returnTo : '/oauth2/authorize',
+    ...gateFields
+  });
+}));
+
+// Manual, pending-gated mailbox-code send for the mandatory post-password gate. Deliberately
+// separate from the public generic send endpoint so the `login_gate` purpose cannot be minted by a
+// caller who does not already hold a password-proved pending challenge.
+app.post(OIDC_EMAIL_SEND_PATH, asyncHandler(async (req, res) => {
+  const pending = parsePendingToken(req);
+  if (!pending) return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.mfa.expired', error_description: '登录验证已过期，请重新登录' });
+  const stage = gateStageOf(pending.factor);
+  if (pending.source !== 'password' || !stage) {
+    return res.status(400).json({ error: 'invalid_request', error_key: 'auth.email_gate.unsupported', error_description: '当前登录步骤不支持发送邮箱验证码' });
+  }
+  const user = await User.findById(pending.sub);
+  if (!user) return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.mfa.expired', error_description: '登录验证已过期，请重新登录' });
+
+  let delivery = null;
+  const outcome = await withAccountTransaction(user, async (current, connection) => {
+    const codes = new EmailVerificationCodeModel(connection);
+    const rateLimits = new RateLimitModel(connection);
+    const fresh = await readPendingUnderLock(connection, pending, current);
+    if (!fresh) throw new AccountTransactionAbort(401, 'auth.mfa.expired', '登录验证已过期，请重新登录');
+    const parent = fresh.record;
+    const ctx = fresh.context;
+    const stale = () => new AccountTransactionAbort(409, 'auth.email_gate.stale', '邮箱验证状态已变化，请重新登录');
+
+    // Optimistic guard: exactly one concurrent send for a given version can win. A missing or
+    // malformed version is a request error; a well-formed but stale version is a state conflict.
+    const expectedVersion = readMailVersion(req.body.expected_mail_version);
+    if (expectedVersion === null) {
+      throw new AccountTransactionAbort(400, 'invalid_request', '缺少邮箱验证版本号');
+    }
+    if (expectedVersion !== ctx.mail.version) throw stale();
+
+    // The target is derived from the freshly locked account, never trusted from the request alone.
+    let target;
+    if (fresh.stage === 'verify') {
+      const supplied = normalizeEmail(req.body.email);
+      if (supplied && supplied !== normalizeEmail(current.email)) throw stale();
+      if (!isUsableMailbox(current.email) || Boolean(current.email_verified)) throw stale();
+      target = normalizeEmail(current.email);
+    } else {
+      if (isUsableMailbox(current.email)) throw stale();
+      target = normalizeEmail(req.body.email);
+      if (!target || !isValidEmail(target) || isSyntheticEmail(target)) {
+        throw new AccountTransactionAbort(400, 'auth.email_gate.invalid_email', '请输入有效的邮箱地址');
+      }
+      const conflicts = await findUserConflicts({ username: current.username, email: target, excludeUserId: current.id }, new UserModel(connection));
+      if (conflicts.emailConflict || conflicts.usernameConflict) {
+        throw new AccountTransactionAbort(409, 'auth.email_gate.email_taken', '该邮箱已被其他账户使用');
+      }
+    }
+
+    // Mail abuse limits, matching the established 60s mail cooldown: one send per challenge and one
+    // send per destination mailbox (so rotating the destination cannot bypass it), plus a separate
+    // per-IP ceiling. These are consumed on the transaction connection, so a state-conflict abort
+    // releases the quota instead of burning it.
+    const ip = getClientIp(req);
+    const ipLimit = await rateLimits.consume(`mailgate:ip:${ip}`, 10, 60 * 1000);
+    if (!ipLimit.allowed) {
+      throw new AccountTransactionAbort(429, 'auth.email_gate.cooldown', `发送过于频繁，请 ${ipLimit.retryAfter} 秒后重试`, { retryAfter: ipLimit.retryAfter });
+    }
+    const accountLimit = await rateLimits.consume(gateSendKey(current.id), 1, 60 * 1000);
+    if (!accountLimit.allowed) {
+      throw new AccountTransactionAbort(429, 'auth.email_gate.cooldown', `发送过于频繁，请 ${accountLimit.retryAfter} 秒后重试`, { retryAfter: accountLimit.retryAfter });
+    }
+    const targetLimit = await rateLimits.consume(gateTargetKey(target), 1, 60 * 1000);
+    if (!targetLimit.allowed) {
+      throw new AccountTransactionAbort(429, 'auth.email_gate.cooldown', `发送过于频繁，请 ${targetLimit.retryAfter} 秒后重试`, { retryAfter: targetLimit.retryAfter });
+    }
+
+    const nextVersion = ctx.mail.version + 1;
+    // Never extend the original password proof window; fall back to the parent row's own deadline.
+    const proofExpiresAt = gateProofExpiresAt(ctx) || new Date(parent.expires_at).getTime();
+    const codeExpiresAt = new Date(Math.min(getEmailCodeExpiresAt().getTime(), proofExpiresAt));
+    const code = generateEmailCode();
+    const created = await codes.create({
+      email: target, userId: current.id, purpose: EMAIL_PURPOSE_LOGIN_GATE,
+      codeHash: hashEmailCode(target, EMAIL_PURPOSE_LOGIN_GATE, code), expiresAt: codeExpiresAt,
+      pendingContext: { parentPendingId: parent.id, stage: fresh.stage, version: nextVersion, targetEmail: target }
+    });
+    const nextContext = { ...ctx, mail: { version: nextVersion, targetEmail: target, codeId: created.id, sentAt: Date.now() } };
+    if (!await codes.updatePendingContext(parent.id, nextContext)) throw stale();
+    // A previous proof for this stage must not survive a resend or a retarget.
+    if (ctx.mail.codeId) await codes.consume(ctx.mail.codeId);
+    delivery = { target, code, codeId: created.id, version: nextVersion, stage: fresh.stage, userId: current.id };
+    return { status: 200, body: {} };
+  });
+  if (outcome.status !== 200) {
+    applyRetryAfter(res, outcome);
+    return res.status(outcome.status).json(outcome.body);
+  }
+
+  // SMTP runs strictly outside the account lock. The mailer receives the *login* copy purpose
+  // (a sign-in verification code); the `login_gate` purpose stays server-side only, bound to the
+  // code row and hash, so the mail template needs no new branch.
+  try {
+    await sendVerificationEmail({ to: delivery.target, code: delivery.code, purpose: EMAIL_PURPOSE_LOGIN, expiresInMinutes: getEmailCodeExpiryMinutes() });
+  } catch (error) {
+    // Discard exactly this code row so code_sent reflects reality. The parent version stays advanced.
+    await EmailVerificationCode.consume(delivery.codeId);
+    // Echo the version reserved by THIS attempt (never a newer one) so the client can retry safely.
+    // The key is deliberately fixed: a transport code (ECONNECTION/EAUTH/...) is not a UI
+    // translation key, so exposing it would fall back to this hardcoded description in every locale.
+    return res.status(502).json({
+      error: 'email_delivery_failed',
+      error_key: 'email_delivery_failed',
+      error_description: '验证码邮件发送失败，请稍后再试或联系管理员',
+      email_gate: delivery.stage,
+      mail_version: delivery.version,
+      code_sent: false,
+      retry_after: await resendRetryAfter(delivery.userId)
+    });
+  }
+
+  // Success echoes the version/target reserved by THIS send. Re-reading the parent could report a
+  // newer version from a concurrent send and defeat the frontend's stale-state protection.
+  return res.json({
+    sent: true, message_key: 'auth.email_gate.sent',
+    email_gate: delivery.stage,
+    email: maskEmail(delivery.target),
+    mail_version: delivery.version,
+    code_sent: true,
+    retry_after: await resendRetryAfter(delivery.userId),
+    pending_token: readRawPendingToken(req),
+    pending_header: 'X-Oidc-Pending'
+  });
 }));
 
 app.post('/api/v1/auth/oauth/oidc/complete', asyncHandler(async (req, res) => {
   const login = await getPendingOidcLogin(req);
   if (!login) return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.mfa.expired', error_description: '登录验证已过期，请重新登录' });
   const { pending, record, user, context } = login;
-  if (!await EmailVerificationCode.incrementAttempts(record.id, 5)) {
-    return res.status(429).json({ error: 'too_many_attempts', error_key: 'auth.mfa.locked', error_description: '尝试次数过多，请重新登录' });
+
+  // ---- Mandatory mailbox gate stages -------------------------------------------------------
+  // The proof binds the exact persisted parent row, the exact OTP row and the mail version that
+  // issued it, all under the account lock. Attempts are charged to the parent pending, so a resend
+  // or retarget can never reset the brute-force budget.
+  const gateStage = gateStageOf(pending.factor);
+  if (gateStage) {
+    const outcome = await withAccountTransaction(user, async (current, connection) => {
+      const codes = new EmailVerificationCodeModel(connection);
+      const fresh = await readPendingUnderLock(connection, pending, current);
+      if (!fresh) throw new AccountTransactionAbort(401, 'auth.mfa.expired', '登录验证已过期，请重新登录');
+      const parent = fresh.record;
+      const ctx = fresh.context;
+      if (!await codes.incrementAttempts(parent.id, 5)) {
+        throw new AccountTransactionAbort(429, 'auth.mfa.locked', '尝试次数过多，请重新登录');
+      }
+      const stale = () => new AccountTransactionAbort(409, 'auth.email_gate.stale', '邮箱验证状态已变化，请重新发送验证码');
+      const mail = ctx.mail;
+      const expectedVersion = readMailVersion(req.body.expected_mail_version);
+      if (expectedVersion === null) {
+        throw new AccountTransactionAbort(400, 'invalid_request', '缺少邮箱验证版本号');
+      }
+      if (expectedVersion !== mail.version || mail.version < 1 || !mail.codeId) throw stale();
+      const target = normalizeEmail(mail.targetEmail);
+      if (!isUsableMailbox(target)) throw stale();
+
+      const codeRow = await codes.findById(mail.codeId);
+      const codeCtx = codeRow ? readPendingContext(codeRow) : null;
+      if (!codeRow || codeRow.consumed_at || new Date(codeRow.expires_at) <= new Date()
+          || codeRow.purpose !== EMAIL_PURPOSE_LOGIN_GATE || codeRow.user_id !== current.id
+          || !codeCtx || codeCtx.parentPendingId !== parent.id || codeCtx.stage !== gateStage
+          || codeCtx.version !== mail.version || normalizeEmail(codeCtx.targetEmail) !== target) throw stale();
+
+      const submitted = normalizeText(req.body.code);
+      if (!submitted || !safeEqualHex(codeRow.code_hash, hashEmailCode(target, EMAIL_PURPOSE_LOGIN_GATE, submitted))) {
+        // Only the attempt counter was written; nothing about the account changed.
+        return authenticatorError(400, 'auth.mfa.invalid', '验证码不正确、已使用或已过期');
+      }
+
+      // Recheck the mailbox requirement against the freshly locked account, then write conditionally.
+      if (gateStage === 'verify') {
+        if (normalizeEmail(current.email) !== target || Boolean(current.email_verified)) throw stale();
+        if (!await new UserModel(connection).markEmailVerifiedIfUnchanged(current.id, target)) throw stale();
+      } else {
+        if (isUsableMailbox(current.email)) throw stale();
+        const conflicts = await findUserConflicts({ username: current.username, email: target, excludeUserId: current.id }, new UserModel(connection));
+        if (conflicts.emailConflict) throw new AccountTransactionAbort(409, 'auth.email_gate.email_taken', '该邮箱已被其他账户使用');
+        if (!await new UserModel(connection).bindEmailIfUnchanged(current.id, current.email, target)) throw stale();
+      }
+
+      if (!await codes.consume(mail.codeId)) throw stale();
+      if (!await codes.consume(parent.id)) throw stale();
+      const refreshed = await new UserModel(connection).findById(current.id);
+      if (!refreshed) throw new AccountTransactionAbort(401, 'auth.mfa.expired', '登录验证已过期，请重新登录');
+      const issued = await issueLoginWithinTransaction(req, refreshed, connection, { sessionDays: ctx.sessionDays });
+      return { status: 200, body: { redirect: getOidcReturnPath(ctx.returnTo) }, issued };
+    });
+    if (outcome.status === 200 && outcome.issued) {
+      res.clearCookie(OIDC_PENDING_COOKIE, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' });
+      applyIssuedLogin(req, res, outcome.issued);
+    }
+    applyRetryAfter(res, outcome);
+    return res.status(outcome.status).json(outcome.body);
   }
   const code = normalizeText(req.body.code);
-  let valid = false;
-  if (pending.factor === 'totp' && user.totp_enabled) {
-    valid = await verifyTotpOnce(user, code) || await consumeRecoveryCode(user, code);
-  } else if (pending.factor === 'email' && !user.totp_enabled) {
-    valid = (await verifyEmailCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, code, userId: user.id })).ok;
-  }
-  if (!valid || !await getPendingOidcLogin(req)) {
-    return res.status(400).json({ error: 'invalid_grant', error_key: 'auth.mfa.invalid', error_description: '验证码不正确、已使用或已过期' });
-  }
-  const result = await finishAccountLogin(user, async (current, connection) => {
-    if (!await new EmailVerificationCodeModel(connection).consume(record.id)) {
-      return authenticatorError(400, 'auth.mfa.invalid', '验证码不正确、已使用或已过期');
+  // Verification, replay/counter consumption, parent consumption, any stage transition and final
+  // credential issuance all happen inside one account transaction. A wrong code writes only the
+  // attempt counter and commits; every later failure throws so nothing durable survives.
+  const result = await withAccountTransaction(user, async (current, connection, authenticators) => {
+    const codes = new EmailVerificationCodeModel(connection);
+    const users = new UserModel(connection);
+    // Re-read the original choice with the parent under the same account lock as consumption.
+    const parent = await codes.findById(pending.jti);
+    const context = parent && readPendingContext(parent);
+    const sessionDays = normalizeSessionDays(context?.sessionDays);
+    if (!parent || parent.consumed_at || parent.user_id !== current.id
+        || parent.purpose !== (pending.source === 'password' ? 'password_mfa' : 'oidc_mfa')
+        || parent.code_hash !== pendingChallengeHash(pending.challenge)
+        || new Date(parent.expires_at).getTime() <= Date.now() || pending.exp * 1000 <= Date.now()
+        || !context || !isSafeFrontendPath(context.returnTo) || sessionDays === null) {
+      throw new AccountTransactionAbort(401, 'auth.mfa.expired', '登录验证已过期，请重新登录');
+    }
+    if (!await codes.incrementAttempts(record.id, 5)) {
+      throw new AccountTransactionAbort(429, 'auth.mfa.locked', '尝试次数过多，请重新登录');
+    }
+    let valid = false;
+    if (pending.factor === 'totp' && current.totp_enabled) {
+      // The account lock is already held, so the locked verifier is used directly; it consumes the
+      // TOTP counter or the recovery code inside this same transaction.
+      valid = await verifyTotpLocked(current, code, authenticators, users) || await consumeRecoveryCode(current, code, users);
+    } else if (pending.factor === 'email' && !current.totp_enabled) {
+      valid = (await verifyEmailCodeWith(codes, { email: current.email, purpose: EMAIL_PURPOSE_LOGIN, code, userId: current.id })).ok;
+    }
+    if (!valid) {
+      // The attempt counter is the only write; the account itself is untouched.
+      return { status: 400, body: { error: 'invalid_grant', error_key: 'auth.mfa.invalid', error_description: '验证码不正确、已使用或已过期' } };
+    }
+    if (!await codes.consume(record.id)) {
+      // A valid factor already consumed its TOTP counter / recovery code / login code above, so a
+      // zero-row parent consume must roll everything back instead of committing a spent factor.
+      throw new AccountTransactionAbort(400, 'auth.mfa.invalid', '验证码不正确、已使用或已过期');
     }
     if (pending.source === 'password') {
-      await completePasswordLogin(req, res, current, connection);
+      // A mandatory mailbox gate still follows a verified authenticator. The successor stage is
+      // created in the same transaction that consumed this one, so the transition is atomic.
+      if (pending.factor === 'totp') {
+        const gate = resolvePasswordMailGate(current);
+        if (gate) {
+          // The successor inherits the exact original password-proof deadline; it may never extend it.
+          const proofExpiresAt = gateProofExpiresAt(context);
+          if (!proofExpiresAt || proofExpiresAt <= Date.now()) {
+            throw new AccountTransactionAbort(401, 'auth.mfa.expired', '登录验证已过期，请重新登录');
+          }
+          const stageContext = newMailGateContext({ totpSatisfied: true, proofExpiresAt, sessionDays });
+          const challenge = crypto.randomBytes(32).toString('base64url');
+          const expiresAt = new Date(Math.min(Date.now() + 5 * 60 * 1000, proofExpiresAt));
+          const created = await new EmailVerificationCodeModel(connection).create({
+            email: current.email, userId: current.id, purpose: 'password_mfa',
+            codeHash: pendingChallengeHash(challenge), expiresAt,
+            pendingContext: { returnTo: context.returnTo, ...stageContext }
+          });
+          return { status: 200, body: {}, stage: { user: current, factor: gate, challenge, created, expiresAt, stageContext } };
+        }
+      }
+      const issued = await issueLoginWithinTransaction(req, current, connection, { sessionDays });
+      return { status: 200, body: { redirect: getOidcReturnPath(pending.returnTo) }, issued };
     } else if (pending.source === 'huawei' && context.huawei.oauth) {
       const oauth = context.huawei.oauth;
       const authorized = await buildAuthorizationResponse(current, oauth, connection);
-      if (authorized.status !== 200) return authorized;
+      if (authorized.status !== 200) {
+        // Never return here: the factor consumption above is already written and must roll back.
+        const abort = new AccountTransactionAbort(authorized.status, authorized.body.error_key || 'invalid_request',
+          authorized.body.error_description || '授权请求无效');
+        if (authorized.body.error) abort.body.error = authorized.body.error;
+        throw abort;
+      }
       const redirect = new URL(authorized.body.redirect);
       const phoneGranted = oauth.scope.split(/\s+/).includes('phone');
       const responseUser = serializeUser(current);
@@ -2665,7 +3304,7 @@ app.post('/api/v1/auth/oauth/oidc/complete', asyncHandler(async (req, res) => {
     } else {
       await new UserModel(connection).update(current.id, { lastLoginIp: getClientIp(req) });
       await recordLoginLog({ username: current.username, userId: current.id, req, result: 'success', detail: 'External identity with second factor', database: connection });
-      await setSessionCookie(req, res, current, connection);
+      await setSessionCookie(req, res, current, connection, { sessionDays });
       if (pending.source === 'huawei') {
         return { status: 200, body: {
           redirect: getOidcReturnPath(pending.returnTo),
@@ -2678,13 +3317,92 @@ app.post('/api/v1/auth/oauth/oidc/complete', asyncHandler(async (req, res) => {
     }
     return { status: 200, body: { redirect: getOidcReturnPath(pending.returnTo) } };
   });
+  // TOTP -> mailbox gate transition: the successor stage was committed atomically with the parent
+  // consumption. Only now, after commit, is the new pending cookie issued.
+  if (result.stage) {
+    const { user: stageUser, factor, challenge, created, expiresAt, stageContext } = result.stage;
+    const nextPending = signPendingCredential({
+      user: stageUser, recordId: created.id, challenge, factor, provider: '', source: 'password', expiresAt
+    });
+    setPendingCookie(res, nextPending, expiresAt);
+    const gateFields = await gatePendingFields({ factor }, stageContext, stageUser, EmailVerificationCode, RateLimit);
+    return res.json({
+      next_step: true, factor,
+      // The rotated credential must also travel in the body: a native client cannot rely on the cookie.
+      ...passwordStagePayload(stageUser, factor, nextPending),
+      ...gateFields
+    });
+  }
+  if (result.status === 200 && result.issued) {
+    res.clearCookie(OIDC_PENDING_COOKIE, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' });
+    applyIssuedLogin(req, res, result.issued);
+    return res.json(result.body);
+  }
   if (result.status === 200) res.clearCookie(OIDC_PENDING_COOKIE, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' });
   res.status(result.status).json(result.body);
 }));
 
 app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
   const username = normalizeText(req.body.username);
+
+  // Account-only discovery: a strict, stateless JSON branch selected before the
+  // required-password guard. It validates the account/lock/ban/registered-OAuth
+  // state, then reports only the next step. It never creates a session, cookie,
+  // token, pending challenge or authorization code, and never sends mail.
+  if (req.body.discover_account === true) {
+    if (!username || username.length > 255) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid username length' });
+    }
+    const discoveryUser = await User.findByUsername(username);
+    // Same lock key as the final login so a locked account behaves identically here.
+    const discoveryAttemptKey = `login:${discoveryUser?.id || username.toLowerCase()}`;
+    const discoveryMaxAttempts = await getSettingNumber('login_max_attempts', 5);
+    const discoveryLock = await RateLimit.check(discoveryAttemptKey, discoveryMaxAttempts);
+    if (!discoveryLock.allowed) return rejectLockedLogin(req, res, username, discoveryLock);
+
+    if (discoveryUser && isUserBanned(discoveryUser)) {
+      await recordLoginLog({ username, userId: discoveryUser.id, req, result: 'banned' });
+      return res.status(403).json({
+        error: 'account_banned',
+        error_key: 'auth.account_banned',
+        error_description: '账户已被封禁，请联系管理员'
+      });
+    }
+
+    const discoveryValidation = await validateAuthorizationRequest(req.body);
+    if (discoveryValidation.body) {
+      return res.status(discoveryValidation.status).json(discoveryValidation.body);
+    }
+
+    // A null lookup can mean no match or an ambiguous username/email match. Only
+    // genuinely missing accounts get explicit discovery feedback.
+    if (!discoveryUser) {
+      const discoveryMatches = await User.findPotentialConflicts(username, username);
+      if (discoveryMatches.length === 0) {
+        return res.status(404).json({
+          error: 'account_not_found',
+          error_key: 'auth.account_not_found',
+          error_description: '账号不存在'
+        });
+      }
+    }
+
+    // Ambiguous identifiers still fail closed through the existing password step.
+    if (!discoveryUser || discoveryUser.password) {
+      return res.json({ next: 'password' });
+    }
+
+    const discoveryEmail = normalizeEmail(discoveryUser.email);
+    if (!discoveryEmail || isSyntheticEmail(discoveryEmail) || !isValidEmail(discoveryEmail)) {
+      return res.json({ next: 'contact_admin' });
+    }
+
+    return res.json({ next: 'set_password', email_masked: maskEmail(discoveryEmail) });
+  }
+
   const password = String(req.body.password || '');
+  const sessionDays = normalizeSessionDays(req.body.session_days, Boolean(req.is('application/x-www-form-urlencoded')));
+  if (sessionDays === null) return invalidSessionDuration(res);
   if (!username || username.length > 255 || !password || Buffer.byteLength(password, 'utf8') > 72) {
     return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid username or password length' });
   }
@@ -2728,7 +3446,14 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
       if (user) await detectAndFlagAnomalousLogin(user, req, 'failure');
       return res.status(401).json({ error: 'invalid_grant', error_key: 'auth.invalid_credentials', error_description: '用户名或密码错误' });
     }
-    const factor = user.totp_enabled ? 'totp' : await isSettingEnabled('login_email_code') ? 'email' : '';
+    // The probe may only report a stage. A mandatory mailbox gate is always a manual send, and the
+    // optional global email factor must never target a placeholder or malformed mailbox.
+    const probeGate = resolvePasswordMailGate(user);
+    const factor = user.totp_enabled ? 'totp'
+      : probeGate ? probeGate
+      : (await isSettingEnabled('login_email_code')) && isUsableMailbox(user.email) ? 'email'
+      : '';
+    const probeStage = gateStageOf(factor);
     if (factor === 'email') {
       try {
         await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
@@ -2742,7 +3467,9 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
     }
     return res.json({
       verification_required: true, factor,
-      email_masked: factor === 'email' ? maskEmail(user.email) : undefined,
+      email_gate: probeStage || undefined,
+      code_sent: factor === 'email',
+      email_masked: factor === 'email' || probeStage === 'verify' ? maskEmail(user.email) : undefined,
       captcha_required: Boolean(user.captcha_required) || await isSettingEnabled('captcha_login'),
       captcha_provider: 'image'
     });
@@ -2789,64 +3516,218 @@ app.post('/oauth2/authorize', asyncHandler(async (req, res) => {
 
   // Authenticator (TOTP) verification takes precedence over the email code.
   const totpActive = Boolean(user.totp_enabled);
-  if (totpActive) {
-    if (!submittedTotpCode) {
-      return beginPasswordSecondFactor(req, res, user, 'totp');
+  const mailGate = resolvePasswordMailGate(user);
+  const emailFactorEnabled = !totpActive && (await isSettingEnabled('login_email_code'));
+
+  // Validate the OAuth continuation before consuming any factor, so a malformed client request can
+  // never burn a TOTP counter, recovery code or login code.
+  let continuationValidation = null;
+  if (totpActive || mailGate || emailFactorEnabled) {
+    continuationValidation = await validateAuthorizationRequest(req.body);
+    if (continuationValidation.body) {
+      return res.status(continuationValidation.status).json(continuationValidation.body);
     }
-    const totpOk = /^\d{6}$/.test(submittedTotpCode) && await verifyTotpOnce(user, submittedTotpCode);
-    let recoveryOk = false;
-    if (!totpOk) {
-      recoveryOk = await consumeRecoveryCode(user, submittedTotpCode);
-    }
-    if (!totpOk && !recoveryOk) {
-      await recordLoginLog({ username, userId: user.id, req, result: 'totp_invalid' });
-      return res.status(400).json({
-        error: 'invalid_request',
-        error_key: 'auth.totp.invalid',
-        error_description: '动态验证码不正确或已过期'
+  }
+
+  if (totpActive && !submittedTotpCode) {
+    return beginPasswordSecondFactor(req, res, user, 'totp', { sessionDays });
+  }
+
+  // Mandatory post-password mailbox gate. Evaluated after TOTP so an authenticator always takes
+  // precedence, and before the optional global email factor so one proof satisfies both. A gate
+  // always answers with a stage challenge: no code supplied to this endpoint can skip it.
+  if (mailGate && !totpActive) {
+    return beginPasswordSecondFactor(req, res, user, mailGate, { totpSatisfied: false, sessionDays });
+  }
+
+  if (!totpActive && !mailGate && emailFactorEnabled && !submittedEmailCode) {
+    try {
+      return await beginPasswordSecondFactor(req, res, user, 'email', { sessionDays });
+    } catch (error) {
+      console.error('Failed to send login code:', error.message);
+      if (error.code === 'email_code.cooldown') {
+        return res.status(429).json({ error: 'too_many_attempts', error_key: error.code, error_description: error.message });
+      }
+      return res.status(502).json({
+        error: 'email_delivery_failed',
+        error_key: 'smtp.test_failed',
+        error_description: '验证码邮件发送失败，请稍后再试或联系管理员检查发件设置'
       });
     }
   }
 
-  if (!totpActive && (await isSettingEnabled('login_email_code'))) {
-    const emailCode = submittedEmailCode;
-    if (!emailCode) {
-      try {
-        return await beginPasswordSecondFactor(req, res, user, 'email');
-      } catch (error) {
-        console.error('Failed to send login code:', error.message);
-        if (error.code === 'email_code.cooldown') {
-          return res.status(429).json({ error: 'too_many_attempts', error_key: error.code, error_description: error.message });
-        }
-        return res.status(502).json({
-          error: 'email_delivery_failed',
-          error_key: 'smtp.test_failed',
-          error_description: '验证码邮件发送失败，请稍后再试或联系管理员检查发件设置'
-        });
+  // Consume the direct authenticator attempt allowance outside the transaction so a rejection never
+  // rolls back its own abuse counter, matching the non-transactional verifier it replaces.
+  const consumeTotpAllowance = async () => {
+    const limit = await RateLimit.consume(`totp:${user.id}`, 10, 5 * 60 * 1000);
+    if (limit.allowed) return null;
+    return { status: 429, body: { error: 'too_many_attempts', error_key: 'auth.mfa.locked', error_description: '尝试次数过多，请重新登录' } };
+  };
+
+  // Direct authenticator + mandatory gate: factor verification and successor creation share one
+  // account transaction, so a failed successor INSERT can never leave a spent authenticator behind.
+  if (totpActive && mailGate) {
+    const denied = await consumeTotpAllowance();
+    if (denied) return res.status(denied.status).json(denied.body);
+    const outcome = await withAccountTransaction(user, async (current, connection, authenticators) => {
+      const users = new UserModel(connection);
+      const codes = new EmailVerificationCodeModel(connection);
+      const totpOk = /^\d{6}$/.test(submittedTotpCode) && await verifyTotpLocked(current, submittedTotpCode, authenticators, users);
+      const accepted = totpOk || await consumeRecoveryCode(current, submittedTotpCode, users);
+      if (!accepted) throw new AccountTransactionAbort(400, 'auth.totp.invalid', '动态验证码不正确或已过期');
+      const proofExpiresAt = Date.now() + 5 * 60 * 1000;
+      const expiresAt = new Date(proofExpiresAt);
+      const stageContext = newMailGateContext({ totpSatisfied: true, proofExpiresAt, sessionDays });
+      const { record, challenge } = await createSecondFactorRecord({
+        user: current, returnTo: passwordContinuationReturnTo(req, continuationValidation),
+        factor: mailGate, source: 'password', extraContext: stageContext, expiresAt, codes
+      });
+      return { status: 200, stage: { user: current, factor: mailGate, challenge, record, expiresAt, stageContext } };
+    });
+    if (outcome.status !== 200) {
+      await recordFactorFailure(req, user, outcome);
+      applyRetryAfter(res, outcome);
+      return res.status(outcome.status).json(outcome.body);
+    }
+    const { user: stageUser, factor, challenge, record, expiresAt, stageContext } = outcome.stage;
+    // Publish only after the commit that both consumed the authenticator and created the successor.
+    const pendingToken = publishSecondFactor(res, stageUser, { factor, provider: '', source: 'password', challenge, record, expiresAt });
+    await RateLimit.clear(`totp:${stageUser.id}`);
+    grantCaptchaContinuation(req, res, stageUser.id);
+    await recordLoginLog({ username: stageUser.username, userId: stageUser.id, req, result: 'totp_required' });
+    const gateFields = await gatePendingFields({ factor }, stageContext, stageUser, EmailVerificationCode, RateLimit);
+    return res.json({ next_step: true, factor, ...passwordStagePayload(stageUser, factor, pendingToken), ...gateFields });
+  }
+
+  // Password + factor with no gate, or plain password login: issue the credentials atomically.
+  if (totpActive) {
+    const denied = await consumeTotpAllowance();
+    if (denied) return res.status(denied.status).json(denied.body);
+  }
+  const outcome = await withAccountTransaction(user, async (current, connection, authenticators) => {
+    const users = new UserModel(connection);
+    if (totpActive) {
+      const totpOk = /^\d{6}$/.test(submittedTotpCode) && await verifyTotpLocked(current, submittedTotpCode, authenticators, users);
+      const accepted = totpOk || await consumeRecoveryCode(current, submittedTotpCode, users);
+      if (!accepted) throw new AccountTransactionAbort(400, 'auth.totp.invalid', '动态验证码不正确或已过期');
+    } else if (emailFactorEnabled) {
+      const verification = await verifyEmailCodeWith(new EmailVerificationCodeModel(connection), {
+        email: current.email, purpose: EMAIL_PURPOSE_LOGIN, code: submittedEmailCode, userId: current.id
+      });
+      if (!verification.ok) {
+        // A wrong code only advanced its own attempt counter; commit that and nothing else.
+        return { status: verification.status, body: {
+          error: 'invalid_request', error_key: verification.error_key, error_description: verification.error_description
+        } };
       }
     }
-
-    const verification = await verifyEmailCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, code: emailCode, userId: user.id });
-    if (!verification.ok) {
-      await recordLoginLog({ username, userId: user.id, req, result: 'email_code_invalid' });
-      return res.status(verification.status).json({
-        error: 'invalid_request',
-        error_key: verification.error_key,
-        error_description: verification.error_description
-      });
+    const issued = await issueLoginWithinTransaction(req, current, connection, { sessionDays });
+    const authorized = await buildAuthorizationResponse(current, req.body, connection);
+    if (authorized.status !== 200) {
+      // A spent factor is already written, so a failed authorisation must roll everything back.
+      const abort = new AccountTransactionAbort(authorized.status, authorized.body.error_key || 'invalid_request',
+        authorized.body.error_description || '授权请求无效');
+      if (authorized.body.error) abort.body.error = authorized.body.error;
+      throw abort;
     }
-  }
-
-  const result = await finishAccountLogin(user, async (current, connection) => {
-    await completePasswordLogin(req, res, current, connection);
-    return buildAuthorizationResponse(current, req.body, connection);
+    return { status: 200, body: authorized.body, issued };
   });
-  return res.status(result.status).json(result.body);
+  if (outcome.status !== 200) {
+    await recordFactorFailure(req, user, outcome);
+    applyRetryAfter(res, outcome);
+    return res.status(outcome.status).json(outcome.body);
+  }
+  if (totpActive) await RateLimit.clear(`totp:${user.id}`);
+  // Cookie and alerts are applied only after the transaction committed.
+  applyIssuedLogin(req, res, outcome.issued);
+  return res.json(outcome.body);
 }));
 
 app.post('/api/email-verification/send', asyncHandler(async (req, res) => {
-  const email = normalizeEmail(req.body.email);
-  const purpose = normalizeEmailPurpose(req.body.purpose);
+  const body = req.body || {};
+  const hasUsernameField = Object.prototype.hasOwnProperty.call(body, 'username');
+  const hasEmailField = Object.prototype.hasOwnProperty.call(body, 'email');
+  const email = normalizeEmail(body.email);
+  const accountIdentifier = normalizeText(body.username);
+  const purpose = normalizeEmailPurpose(body.purpose);
+
+  if (hasUsernameField && hasEmailField) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.password.setup.invalid_identifier',
+      error_description: '请仅提供账号或邮箱中的一项。'
+    });
+  }
+
+  // Account-bound first-password code. Field presence selects this variant, so an
+  // empty or overlong username is a readable 400 instead of silently falling back
+  // to the legacy email branch. The server derives the destination from the stored
+  // account, so callers cannot choose where the code is delivered.
+  if (hasUsernameField) {
+    if (!accountIdentifier || accountIdentifier.length > 255) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: '请输入有效的账号'
+      });
+    }
+
+    if (purpose !== EMAIL_PURPOSE_PASSWORD_RESET) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'email_code.purpose.invalid',
+        error_description: '验证码用途无效'
+      });
+    }
+
+    const account = await User.findByUsername(accountIdentifier);
+    // Unknown and ambiguous identifiers keep the generic response so this endpoint
+    // cannot enumerate accounts, and no mail is ever sent for them.
+    if (!account) {
+      return res.json({
+        message_key: 'email_code.sent',
+        message: '如果邮箱存在，验证码将发送到该邮箱'
+      });
+    }
+
+    // An account that already has a password is not a first-password setup.
+    if (account.password) {
+      return res.status(409).json({
+        error: 'conflict',
+        error_key: 'auth.password.setup_changed',
+        error_description: '账户状态已变化，请重新检查账号后再试。'
+      });
+    }
+
+    const accountEmail = normalizeEmail(account.email);
+    if (!accountEmail || isSyntheticEmail(accountEmail) || !isValidEmail(accountEmail)) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'auth.password.contact_admin',
+        error_description: '该账户没有可用邮箱，请联系管理员重置。'
+      });
+    }
+
+    const latestAccountCode = await EmailVerificationCode.findLatestActive(accountEmail, EMAIL_PURPOSE_PASSWORD_RESET);
+    if (latestAccountCode && Date.now() - new Date(latestAccountCode.created_at).getTime() < 60 * 1000) {
+      return res.status(429).json({
+        error: 'too_many_requests',
+        error_key: 'email_code.cooldown',
+        error_description: '发送过于频繁，请 1 分钟后再试'
+      });
+    }
+
+    const accountDelivery = await issueEmailVerificationCode({
+      email: accountEmail,
+      purpose: EMAIL_PURPOSE_PASSWORD_RESET,
+      userId: account.id
+    });
+
+    return res.json({
+      message_key: 'email_code.sent',
+      message: '验证码已发送',
+      deliveryMode: accountDelivery.mode
+    });
+  }
 
   if (!email || !isValidEmail(email)) {
     return res.status(400).json({
@@ -2928,7 +3809,9 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
 
   const name = normalizeText(req.body.name);
   const email = normalizeEmail(req.body.email);
-  const username = normalizeText(req.body.username) || email;
+  const suppliedUsername = req.body.username;
+  const explicitUsername = normalizeText(suppliedUsername);
+  const username = explicitUsername || email;
   const password = String(req.body.password || '');
   const confirmPassword = String(req.body.confirm_password || '');
   const emailCode = normalizeText(req.body.email_code || req.body.verification_code);
@@ -2947,6 +3830,17 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
       error: 'invalid_request',
       error_key: 'validation.username.required',
       error_description: '请输入用户名'
+    });
+  }
+
+  // Registration-only policy: existing/imported identifiers remain valid elsewhere.
+  // Blank names retain the email fallback, already checked by the ASCII email validator.
+  if ((suppliedUsername != null && typeof suppliedUsername !== 'string')
+      || (explicitUsername && (suppliedUsername !== explicitUsername || !/^[A-Za-z0-9_]{1,255}$/.test(suppliedUsername)))) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'validation.username.invalid_format',
+      error_description: '用户名只能包含英文字母、数字和下划线，长度为 1–255 个字符'
     });
   }
 
@@ -3015,10 +3909,117 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/password-reset', asyncHandler(async (req, res) => {
-  const email = normalizeEmail(req.body.email);
-  const emailCode = normalizeText(req.body.email_code || req.body.verification_code);
-  const password = String(req.body.password || '');
-  const confirmPassword = String(req.body.confirm_password || '');
+  const body = req.body || {};
+  const hasUsernameField = Object.prototype.hasOwnProperty.call(body, 'username');
+  const hasEmailField = Object.prototype.hasOwnProperty.call(body, 'email');
+  const email = normalizeEmail(body.email);
+  const accountIdentifier = normalizeText(body.username);
+  const emailCode = normalizeText(body.email_code || body.verification_code);
+  const password = String(body.password || '');
+  const confirmPassword = String(body.confirm_password || '');
+
+  if (hasUsernameField && hasEmailField) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_key: 'auth.password.setup.invalid_identifier',
+      error_description: '请仅提供账号或邮箱中的一项。'
+    });
+  }
+
+  // Account-bound first-password setup. Field presence selects this variant, so an
+  // empty or overlong username is a readable 400 instead of falling back to the
+  // legacy email branch. The account and its stored address are re-resolved here;
+  // prior discovery is not proof and is not required.
+  if (hasUsernameField) {
+    if (!accountIdentifier || accountIdentifier.length > 255) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: '请输入有效的账号'
+      });
+    }
+
+    const setupPolicyError = await validatePasswordPolicy(password);
+    if (setupPolicyError) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'validation.password.weak',
+        error_description: setupPolicyError
+      });
+    }
+
+    if (confirmPassword && confirmPassword !== password) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'validation.password.confirm_mismatch',
+        error_description: '两次输入的密码不一致'
+      });
+    }
+
+    const account = await User.findByUsername(accountIdentifier);
+    // Unknown and ambiguous identifiers keep the existing expired-code failure.
+    if (!account) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'email_code.expired',
+        error_description: '验证码不存在或已过期'
+      });
+    }
+
+    const accountEmail = normalizeEmail(account.email);
+    // A known account without a usable mailbox has nothing to verify against.
+    if (!accountEmail || isSyntheticEmail(accountEmail) || !isValidEmail(accountEmail)) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'auth.password.contact_admin',
+        error_description: '该账户没有可用邮箱，请联系管理员重置。'
+      });
+    }
+
+    // First-password-only: never treat this as a general reset for an account that
+    // already has a password. The conditional update below is the authoritative race guard.
+    if (account.password) {
+      return res.status(409).json({
+        error: 'conflict',
+        error_key: 'auth.password.setup_changed',
+        error_description: '账户状态已变化，请重新检查账号后再试。'
+      });
+    }
+
+    const setupVerification = await verifyEmailCode({
+      email: accountEmail,
+      purpose: EMAIL_PURPOSE_PASSWORD_RESET,
+      code: emailCode,
+      userId: account.id
+    });
+
+    if (!setupVerification.ok) {
+      return res.status(setupVerification.status).json({
+        error: 'invalid_request',
+        error_key: setupVerification.error_key,
+        error_description: setupVerification.error_description
+      });
+    }
+
+    const initialSet = await User.setInitialPassword(account.id, accountEmail, password);
+    if (!initialSet) {
+      // A concurrent write claimed the password first. Report the conflict BEFORE any
+      // credential revocation so the current state is never partially mutated.
+      return res.status(409).json({
+        error: 'conflict',
+        error_key: 'auth.password.setup_changed',
+        error_description: '账户状态已变化，请重新检查账号后再试。'
+      });
+    }
+
+    await Session.revokeAllForUser(account.id);
+    await Token.revokeByUser(account.id);
+
+    res.json({
+      message_key: 'auth.password_reset.updated',
+      message: '密码已重置，请使用新密码登录'
+    });
+    return;
+  }
 
   if (!email || !isValidEmail(email)) {
     return res.status(400).json({
@@ -3340,7 +4341,7 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   if (newPassword || nextEmail !== currentUser.email || phoneUpdate.changed) {
     await Session.revokeAllForUser(currentUser.id);
     await Token.revokeByUser(currentUser.id);
-    await setSessionCookie(req, res, updatedUser);
+    await setSessionCookie(req, res, updatedUser, pool, req.authSessionPolicy);
   }
 
   res.json({
@@ -4194,7 +5195,6 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
   res.status(204).send();
 }));
 
-const USER_IMPORT_MAX_ROWS = 200;
 const USER_IMPORT_COLUMNS = ['username', 'email', 'name', 'password', 'role', 'nickname', 'photo', 'description', 'credits', 'qq_login_openid', 'ip', 'ischeck', 'state', 'create_time', 'update_time'];
 
 function parseImportCsvLine(line) {
@@ -4262,11 +5262,38 @@ function parseUserImportContent(content) {
   };
 }
 
-app.post('/api/users/import', asyncHandler(async (req, res) => {
+// Import-only transport. A selected file is uploaded as raw bytes in the request body;
+// pasted content keeps the JSON `{ content }` shape. Both share one 10 MiB import bound,
+// are parsed in memory, and never touch a temporary file or a background task.
+const USER_IMPORT_MAX_BODY_BYTES = 10 * 1024 * 1024;
+const USER_IMPORT_MAX_BODY = '10mb';
+const userImportRawParser = express.raw({ type: 'application/octet-stream', limit: USER_IMPORT_MAX_BODY });
+const userImportJsonParser = express.json({ limit: USER_IMPORT_MAX_BODY });
+
+function userImportBodyParser(req, res, next) {
+  const parse = req.is('application/octet-stream') ? userImportRawParser : userImportJsonParser;
+  parse(req, res, (error) => {
+    if (!error) return next();
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({
+        error: 'invalid_request',
+        error_key: 'users.import.too_large',
+        error_description: `导入内容不能超过 ${USER_IMPORT_MAX_BODY_BYTES / (1024 * 1024)} MiB（${USER_IMPORT_MAX_BODY_BYTES} 字节）`
+      });
+    }
+    next(error);
+  });
+}
+
+app.post('/api/users/import', userImportBodyParser, asyncHandler(async (req, res) => {
   const admin = await requireAdminUser(req, res);
   if (!admin) return;
 
-  const { rows, error } = parseUserImportContent(req.body.content);
+  // A Buffer is an uploaded file; an object keeps the pasted `{ content }` contract.
+  const importContent = Buffer.isBuffer(req.body)
+    ? req.body.toString('utf8')
+    : (req.body && req.body.content !== undefined ? req.body.content : '');
+  const { rows, error } = parseUserImportContent(importContent);
   if (error) {
     return res.status(400).json({
       error: 'invalid_request',
@@ -4281,16 +5308,10 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
       error_description: '没有可导入的用户记录'
     });
   }
-  if (rows.length > USER_IMPORT_MAX_ROWS) {
-    return res.status(400).json({
-      error: 'invalid_request',
-      error_key: 'users.import.too_many',
-      error_description: `单次最多导入 ${USER_IMPORT_MAX_ROWS} 条记录`
-    });
-  }
 
   const created = [];
   const skipped = [];
+  const importedWithoutEmail = [];
   const seen = new Set();
 
   for (let index = 0; index < rows.length; index++) {
@@ -4304,58 +5325,83 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
     const creditsRaw = String(row.credits ?? '').trim();
     const qqOpenid = String(row.qq_login_openid ?? '').trim();
     const lastLoginIp = normalizeText(row.ip).slice(0, 64);
-    const emailVerified = ['y', '1', 'true'].includes(normalizeText(row.ischeck).toLowerCase());
     const banned = ['1', 'true', 'y'].includes(normalizeText(row.state).toLowerCase());
     const createdAt = parseImportDate(row.create_time);
     const updatedAt = parseImportDate(row.update_time);
 
-    if (!email || !isValidEmail(email)) {
-      skipped.push({ row: index + 1, username, email, reason: '邮箱缺失或格式无效' });
+    // Only an omitted/null/empty/whitespace STRING counts as "no email". Any other nonempty
+    // source value is a malformed address, never silently downgraded to the missing-mailbox path.
+    const rawEmailValue = row.email;
+    const emailIsAbsent = rawEmailValue === undefined || rawEmailValue === null
+      || (typeof rawEmailValue === 'string' && rawEmailValue.trim() === '');
+    const emailSourceInvalid = !emailIsAbsent
+      && (typeof rawEmailValue !== 'string' || !isValidEmail(email));
+
+    if (emailSourceInvalid) {
+      skipped.push({ row: index + 1, username, email, reason_code: 'invalid_email', reason: '邮箱格式无效' });
       continue;
     }
     if (!username) {
-      skipped.push({ row: index + 1, username, email, reason: '缺少用户名' });
+      skipped.push({ row: index + 1, username, email, reason_code: 'missing_username', reason: '缺少用户名' });
       continue;
     }
+
+    // A blank email must not block the row. The schema requires a unique address, so a
+    // deterministic, unbound placeholder is stored instead. It is not a mailbox: it is never
+    // marked verified even with ischeck=y, and existing discovery/send/setup treat @users.invalid
+    // as contact_admin without sending mail.
+    const storedEmail = email
+      || `import-${crypto.createHash('sha256').update(username.toLowerCase()).digest('hex').slice(0, 24)}@users.invalid`;
+    const emailVerified = ['y', '1', 'true'].includes(normalizeText(row.ischeck).toLowerCase())
+      && !isSyntheticEmail(storedEmail);
+    // Created rows without a real mailbox are reported separately so the UI can present them
+    // as successes instead of mixing them into error counts.
+    const sourceMailboxUnusable = emailIsAbsent || isSyntheticEmail(email);
     if (password && await validatePasswordPolicy(password)) {
-      skipped.push({ row: index + 1, username, email, reason: '密码长度不满足系统要求' });
+      skipped.push({ row: index + 1, username, email, reason_code: 'invalid_password', reason: '密码长度不满足系统要求' });
       continue;
     }
     if (description.length > 500) {
-      skipped.push({ row: index + 1, username, email, reason: '个人简介不能超过 500 字' });
+      skipped.push({ row: index + 1, username, email, reason_code: 'invalid_description', reason: '个人简介不能超过 500 字' });
       continue;
     }
     let credits = 0;
     if (creditsRaw) {
       credits = Number(creditsRaw);
       if (!Number.isInteger(credits) || credits < 0) {
-        skipped.push({ row: index + 1, username, email, reason: '积分必须是不小于 0 的整数' });
+        skipped.push({ row: index + 1, username, email, reason_code: 'invalid_credits', reason: '积分必须是不小于 0 的整数' });
         continue;
       }
     }
 
-    const dedupeKey = `${username.toLowerCase()}|${email}`;
+    const dedupeKey = `${username.toLowerCase()}|${storedEmail}`;
     if (seen.has(dedupeKey)) {
-      skipped.push({ row: index + 1, username, email, reason: '与本次导入中的其他记录重复' });
+      skipped.push({ row: index + 1, username, email, reason_code: 'duplicate_identity', reason: '与本次导入中的其他记录重复' });
       continue;
     }
     seen.add(dedupeKey);
 
-    if (await User.findByUsername(username)) {
-      skipped.push({ row: index + 1, username, email, reason: '用户名或邮箱已存在' });
+    // Cross-field ambiguity makes User.findByUsername return null: when one account owns the
+    // value as its username and another owns it as its email, the single-row lookup yields two
+    // rows and reports "not found", so the insert would hit a unique constraint and abort the
+    // whole import. findUserConflicts resolves both fields with one query and keeps the original
+    // precedence (username first, then email) and the original skip reasons.
+    const { usernameConflict, emailConflict } = await findUserConflicts({ username, email: storedEmail });
+    if (usernameConflict) {
+      skipped.push({ row: index + 1, username, email, reason_code: 'duplicate_username', reason: '用户名或邮箱已存在' });
       continue;
     }
-    if (await User.findByUsername(email)) {
-      skipped.push({ row: index + 1, username, email, reason: '邮箱已被其他账户使用' });
+    if (emailConflict) {
+      skipped.push({ row: index + 1, username, email, reason_code: 'duplicate_email', reason: '邮箱已被其他账户使用' });
       continue;
     }
     if (qqOpenid && await ExternalIdentity.findByProviderUserId('qq', qqOpenid)) {
-      skipped.push({ row: index + 1, username, email, reason: 'QQ 账号已绑定其他用户' });
+      skipped.push({ row: index + 1, username, email, reason_code: 'duplicate_external_identity', reason: 'QQ 账号已绑定其他用户' });
       continue;
     }
 
     const role = normalizeText(row.role).toLowerCase() === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_USER;
-    const user = await User.create({ username, email, password: password || '', name, avatar, description, credits, role, emailVerified, banned, lastLoginIp, createdAt, updatedAt });
+    const user = await User.create({ username, email: storedEmail, password: password || '', name, avatar, description, credits, role, emailVerified, banned, lastLoginIp, createdAt, updatedAt });
     if (qqOpenid) {
       await ExternalIdentity.create({
         userId: user.id,
@@ -4363,17 +5409,19 @@ app.post('/api/users/import', asyncHandler(async (req, res) => {
         providerUserId: qqOpenid,
         providerUsername: username,
         displayName: name,
-        email,
+        email: storedEmail,
         profile: {}
       });
     }
     created.push(serializeUser(user));
+    if (sourceMailboxUnusable) importedWithoutEmail.push({ row: index + 1, username });
   }
 
   await recordAdminLog({ admin, req, action: 'import_users', detail: `created:${created.length} skipped:${skipped.length}` });
   res.json({
     createdCount: created.length,
     skippedCount: skipped.length,
+    importedWithoutEmail,
     created,
     skipped
   });
@@ -4970,6 +6018,7 @@ app.get('/', (req, res) => {
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
+  if (err instanceof AccountTransactionAbort) return res.status(err.status).json(err.body);
   if (err.code === 'PHONE_UPDATE_NOT_PERSISTED') {
     console.error('Request failed:', err.code);
     return res.status(500).json({

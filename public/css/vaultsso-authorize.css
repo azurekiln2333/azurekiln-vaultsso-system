@@ -209,14 +209,24 @@
   display: none !important;
 }
 
+.field-group[data-captcha-group] {
+  min-width: 0;
+}
+
 .turnstile-widget {
+  min-width: 0;
+  width: 100%;
   min-height: 65px;
   max-width: 100%;
 }
 
-@media (max-width: 380px) {
-  .turnstile-widget {
-    min-height: 120px;
+@media (max-width: 480px) {
+  .page-main {
+    padding-inline: var(--space-3);
+  }
+
+  .auth-card {
+    padding: var(--space-4);
   }
 }
 
@@ -281,6 +291,12 @@
   color: var(--text-body);
   font-size: 12px;
   font-weight: 600;
+}
+
+/* Restore the native dropdown arrow cleared by the forms reset. */
+.auth-form select.napi-select {
+  appearance: auto;
+  -webkit-appearance: auto;
 }
 
 /* 32px control baseline, matching .napi-input. */

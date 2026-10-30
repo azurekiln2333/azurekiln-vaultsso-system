@@ -42,7 +42,10 @@ class UserModel {
 
   async create(userData) {
     const id = crypto.randomUUID();
-    // Empty password means "not set yet": the user must verify email and set one before signing in.
+    // Empty password means "not set yet". Normally the owner verifies the linked email and sets
+    // one before signing in. An admin import may instead store an unbound @users.invalid
+    // placeholder email (see the user-import route), and such an account has no usable mailbox,
+    // so it can only be reset by an administrator.
     const hashedPassword = userData.password ? await bcrypt.hash(userData.password, 12) : '';
     const role = await this.pickDefaultRole(userData.role);
 
@@ -250,6 +253,42 @@ class UserModel {
       [hashedPassword, id]
     );
     return true;
+  }
+
+  // First-password setup only. The predicate binds the account id, the stored email
+  // that was actually verified for the code, and an empty password, so a concurrent
+  // administrator/profile/reset write cannot be overwritten by a stale setup request.
+  // Returns the real affected-row result; callers must treat false as a state change.
+  async setInitialPassword(id, verifiedEmail, newPassword) {
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    const [result] = await this.pool.execute(
+      `UPDATE users SET password = ?, email_verified = ?
+       WHERE id = ? AND email = ? AND (password IS NULL OR password = '')`,
+      [hashedPassword, true, id, verifiedEmail]
+    );
+    return result.affectedRows === 1;
+  }
+
+  // Login mail gate: bind a brand-new mailbox and mark it verified, but only while the stored
+  // address is still the one the caller observed. Callers hold the account lock.
+  async bindEmailIfUnchanged(id, expectedEmail, newEmail) {
+    const [result] = await this.pool.execute(
+      `UPDATE users SET email = ?, email_verified = ?
+       WHERE id = ? AND email = ?`,
+      [newEmail, true, id, expectedEmail]
+    );
+    return result.affectedRows === 1;
+  }
+
+  // Login mail gate: prove the already-stored mailbox. Only flips an unverified/NULL flag for the
+  // exact observed address, so a concurrent change cannot be marked verified by a stale proof.
+  async markEmailVerifiedIfUnchanged(id, expectedEmail) {
+    const [result] = await this.pool.execute(
+      `UPDATE users SET email_verified = ?
+       WHERE id = ? AND email = ? AND (email_verified = FALSE OR email_verified IS NULL)`,
+      [true, id, expectedEmail]
+    );
+    return result.affectedRows === 1;
   }
 
   async bindPhoneIfEmpty(id, phone, verified) {
