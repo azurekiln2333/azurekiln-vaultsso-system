@@ -92,6 +92,72 @@ function assertLoginRejected(result) {
   assert.doesNotMatch(result.cookie, /(?:^|;\s*)session=[^;]+/);
 }
 
+function sessionClaims(result) {
+  const value = result.cookie.match(/(?:^|;\s*)session=([^;]+)/);
+  assert.ok(value, JSON.stringify(result.body));
+  return jwt.verify(decodeURIComponent(value[1]), process.env.JWT_SECRET);
+}
+
+test('OIDC stores the selected duration locally and never forwards it to the upstream provider', async () => {
+  const started = await start(null, '&session_days=14');
+  assert.equal(started.params.has('session_days'), false);
+  const result = await finish(started);
+  const claims = sessionClaims(result);
+  assert.equal(claims.session_days, 14);
+  assert.equal(claims.exp, claims.session_deadline);
+  assert.ok(claims.exp - claims.iat >= 14 * 86400 - 1 && claims.exp - claims.iat <= 14 * 86400);
+  const row = f.pool.sessions.find(item => item.token === claims.sid);
+  assert.equal(new Date(row.expires_at).getTime(), claims.exp * 1000);
+});
+
+test('OIDC rejects unsupported and duplicate duration values before publishing signed state', async () => {
+  for (const query of ['session_days=2', 'session_days=%207', 'session_days=7&session_days=14']) {
+    const result = await f.request(`/api/v1/auth/oauth/oidc/login?provider=identity&${query}`);
+    assert.equal(result.status, 400);
+    assert.equal(result.body.error_key, 'auth.session.invalid_duration');
+    assert.equal(result.cookie, '');
+    assert.equal(result.headers.get('location'), null);
+  }
+});
+
+test('OIDC account linking preserves fixed policy and remaining deadline rather than restarting it', async t => {
+  const now = Math.floor(Date.now() / 1000) * 1000;
+  t.mock.timers.enable({ apis: ['Date'], now });
+  t.after(() => t.mock.timers.reset());
+  const user = await f.user();
+  let current = await f.login(user, { session_days: 7 });
+  const original = sessionClaims(current);
+  for (const elapsed of [60000, 120000]) {
+    t.mock.timers.setTime(now + elapsed);
+    const started = await start(current.cookie, '&intent=link&session_days=14');
+    current = await finish(started, { claims: { email: user.email } });
+    assert.equal(current.headers.get('location'), '/profile');
+    const replacement = sessionClaims(current);
+    assert.equal(replacement.session_days, 7);
+    assert.equal(replacement.exp, original.exp);
+    assert.equal(replacement.session_deadline, original.session_deadline);
+  }
+});
+
+test('OIDC account linking preserves a legacy session original cap', async t => {
+  const now = Math.floor(Date.now() / 1000) * 1000;
+  t.mock.timers.enable({ apis: ['Date'], now });
+  t.after(() => t.mock.timers.reset());
+  const user = await f.user();
+  await f.login(user);
+  const row = f.pool.sessions[0];
+  row.expires_at = new Date(now + 3600000);
+  const legacy = jwt.sign({ sub: user.id, sid: row.token, type: 'session',
+    iss: process.env.PUBLIC_BASE_URL, aud: process.env.PUBLIC_BASE_URL,
+    iat: now / 1000, exp: now / 1000 + 3600 }, process.env.JWT_SECRET);
+  t.mock.timers.setTime(now + 60000);
+  const result = await finish(await start(`session=${legacy}`, '&intent=link&session_days=14'), { claims: { email: user.email } });
+  const replacement = sessionClaims(result);
+  assert.equal(replacement.session_days, undefined);
+  assert.equal(replacement.exp, now / 1000 + 3600);
+  assert.equal(replacement.session_deadline, now / 1000 + 12 * 3600);
+});
+
 test('a valid signed external identity creates an ordinary account', async () => {
   const result = await finish(await start());
   assert.equal(result.status, 302);
@@ -265,27 +331,29 @@ test('external sign-in does not bypass local authenticator verification', async 
     recoveryCodes: JSON.stringify([crypto.createHash('sha256').update(recovery).digest('hex')])
   });
   await new ExternalIdentityModel(f.pool).create({ userId: user.id, provider: 'identity', providerUserId: sub });
-  const callback = await finish(await start(), { claims: { sub, email: user.email } });
+  const callback = await finish(await start(null, '&session_days=7'), { claims: { sub, email: user.email } });
   assert.equal(callback.headers.get('location'), '/oauth2/mfa');
   assert.doesNotMatch(callback.cookie, /(?:^|;\s*)session=[^;]+/);
   assert.equal((await f.request('/api/profile', { cookie: callback.cookie })).status, 401);
   const pending = await f.request('/api/v1/auth/oauth/oidc/pending', { cookie: callback.cookie });
   assert.equal(pending.body.factor, 'totp');
-  const completed = await f.request('/api/v1/auth/oauth/oidc/complete', { method: 'POST', cookie: callback.cookie, data: { code: recovery } });
+  const completed = await f.request('/api/v1/auth/oauth/oidc/complete', { method: 'POST', cookie: callback.cookie, data: { code: recovery, session_days: 14 } });
   assert.equal(completed.status, 200);
+  assert.equal(sessionClaims(completed).session_days, 7);
   assert.equal((await f.request('/api/profile', { cookie: completed.cookie })).status, 200);
   assert.equal((await f.request('/api/v1/auth/oauth/oidc/complete', { method: 'POST', cookie: callback.cookie, data: { code: recovery } })).status, 401);
 });
 
 test('external sign-in also enforces the configured email second factor', async () => {
   f.pool.settings.push({ setting_key: 'login_email_code', setting_value: 'true' });
-  const callback = await finish(await start());
+  const callback = await finish(await start(null, '&session_days=1'));
   assert.equal(callback.headers.get('location'), '/oauth2/mfa');
   const user = f.pool.users[0];
   const completed = await f.request('/api/v1/auth/oauth/oidc/complete', {
-    method: 'POST', cookie: callback.cookie, data: { code: f.lastCode(user.email) }
+    method: 'POST', cookie: callback.cookie, data: { code: f.lastCode(user.email), session_days: 14 }
   });
   assert.equal(completed.status, 200);
+  assert.equal(sessionClaims(completed).session_days, 1);
   assert.equal((await f.request('/api/profile', { cookie: completed.cookie })).status, 200);
 });
 

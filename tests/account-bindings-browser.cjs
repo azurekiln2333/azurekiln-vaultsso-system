@@ -7,6 +7,15 @@ const { createFixture } = require('./support/fixture');
 const ExternalIdentityModel = require('../models/ExternalIdentity');
 const OidcProviderModel = require('../models/OidcProvider');
 
+// Account-first login: the primary action advances from account entry to the password step.
+async function continueToPassword(page) {
+  await page.locator('#loginForm button[type=submit]').click();
+  await page.waitForFunction(() => {
+    const field = document.querySelector('#loginForm input[name=password]');
+    return Boolean(field) && !field.disabled && field.getBoundingClientRect().width > 1;
+  }, null, { timeout: 15000 });
+}
+
 async function main() {
   const reservation = net.createServer();
   await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
@@ -38,6 +47,7 @@ async function main() {
     page.on('dialog', dialog => dialog.accept());
     await page.goto(`${fixture.baseUrl}/oauth2/authorize`);
     await page.locator('#loginForm input[name=username]').fill(admin.username);
+    await continueToPassword(page);
     await page.locator('#loginForm input[name=password]').fill(admin.clearPassword);
     await page.locator('#loginForm button[type=submit]').click();
     await page.waitForURL('**/profile');

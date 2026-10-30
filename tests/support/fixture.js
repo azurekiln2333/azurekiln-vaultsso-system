@@ -39,7 +39,21 @@ fs.writeFileSync(process.env.OIDC_SIGNING_KEY_FILE, key.export({ type: 'pkcs8', 
 const mails = [];
 const nodemailer = require('nodemailer');
 const originalTransport = nodemailer.createTransport;
-nodemailer.createTransport = () => ({ async sendMail(message) { mails.push(message); return { accepted: [message.to] }; } });
+// Test-only delivery controls. `holdNextMail()` parks the next delivery until it is released or
+// failed, so a delayed response can be interleaved with a newer send. `failNextMail(error)` makes
+// the next delivery throw. Both are inert unless armed and are cleared by reset().
+const mailGates = [];
+let mailFailure = null;
+let blockedDeliveries = 0;
+nodemailer.createTransport = () => ({ async sendMail(message) {
+  if (mailFailure) { const error = mailFailure; mailFailure = null; throw error; }
+  if (mailGates.length) {
+    blockedDeliveries += 1;
+    try { await mailGates.shift(); } finally { blockedDeliveries -= 1; }
+  }
+  mails.push(message);
+  return { accepted: [message.to] };
+} });
 const captcha = require('../../services/captcha');
 const originalRenderCaptcha = captcha.renderCaptcha;
 const captchaAnswers = [];
@@ -120,9 +134,22 @@ async function createFixture({ port = 0 } = {}) {
     if (!message) throw new Error('No verification email was captured');
     return message.text.match(/code is: (\d{6})/)[1];
   }
+  // Parks the next delivery. The returned handle must be released (or failed) so the in-flight
+  // request finishes; blockedMailCount() tells the test when that delivery has reached SMTP.
+  function holdNextMail() {
+    let settle;
+    const gate = new Promise((resolve, reject) => { settle = { resolve, reject }; });
+    mailGates.push(gate);
+    return { release: () => settle.resolve(), fail: error => settle.reject(error) };
+  }
+  function failNextMail(error) { mailFailure = error; }
+  function blockedMailCount() { return blockedDeliveries; }
   function reset() {
     for (const key of Object.keys(pool)) if (Array.isArray(pool[key])) pool[key].length = 0;
     mails.length = 0;
+    mailGates.length = 0;
+    mailFailure = null;
+    blockedDeliveries = 0;
     captchaAnswers.length = 0;
   }
   async function close() {
@@ -133,7 +160,7 @@ async function createFixture({ port = 0 } = {}) {
     if (fs.existsSync(process.env.ADMIN_SETTINGS_FILE)) fs.unlinkSync(process.env.ADMIN_SETTINGS_FILE);
     fs.rmdirSync(directory);
   }
-  return { pool, User, Client, request, user, login, client, authorize, exchange, refresh, lastCode, reset, close, mails, captchaAnswers, baseUrl };
+  return { pool, User, Client, request, user, login, client, authorize, exchange, refresh, lastCode, reset, close, mails, captchaAnswers, baseUrl, holdNextMail, failNextMail, blockedMailCount };
 }
 
 module.exports = { createFixture, randomSecret };

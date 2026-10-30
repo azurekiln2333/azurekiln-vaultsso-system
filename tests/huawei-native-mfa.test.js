@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
+const jwt = require('jsonwebtoken');
 const { test, before, beforeEach, after } = require('node:test');
 const { createFixture, randomSecret } = require('./support/fixture');
 const OidcProviderModel = require('../models/OidcProvider');
@@ -92,6 +93,7 @@ test('Huawei MFA preserves native OAuth handoff and returns verified phone after
   const verifier = randomSecret();
   const state = randomSecret();
   const pending = await quickLogin({
+    session_days: 14,
     client_id: client.id, redirect_uri: client.redirectUris[0], scope: 'openid profile phone', state,
     code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256'
@@ -102,10 +104,11 @@ test('Huawei MFA preserves native OAuth handoff and returns verified phone after
   assert.doesNotMatch(pending.cookie, /(?:^|;\s*)session=/);
   const stored = f.pool.emailVerificationCodes.find(row => row.id === JSON.parse(Buffer.from(pending.body.pending_token.split('.')[1], 'base64url').toString()).jti);
   assert.ok(stored);
+  assert.equal(stored.pending_context.sessionDays, 14);
   assert.doesNotMatch(JSON.stringify(stored.pending_context), /13800138000/);
 
   const completed = await f.request('/api/v1/auth/oauth/oidc/complete', {
-    method: 'POST', headers: { 'X-Oidc-Pending': pending.body.pending_token }, data: { code: recovery }
+    method: 'POST', headers: { 'X-Oidc-Pending': pending.body.pending_token }, data: { code: recovery, session_days: 1 }
   });
   assert.equal(completed.status, 200, JSON.stringify(completed.body));
   assert.equal(completed.body.phone, '+8613800138000');
@@ -152,14 +155,18 @@ test('Huawei MFA rejects invalid native OAuth parameters before issuing pending 
 
 test('Huawei MFA without an OAuth client keeps browser session and redirect behavior', async () => {
   const recovery = await prepareAccount();
-  const pending = await quickLogin({});
+  const pending = await quickLogin({ session_days: 7 });
   assert.equal(pending.body.mfa_required, true);
   const completed = await f.request('/api/v1/auth/oauth/oidc/complete', {
-    method: 'POST', headers: { 'X-Oidc-Pending': pending.body.pending_token }, data: { code: recovery }
+    method: 'POST', headers: { 'X-Oidc-Pending': pending.body.pending_token }, data: { code: recovery, session_days: 14 }
   });
   assert.equal(completed.status, 200, JSON.stringify(completed.body));
   assert.ok(completed.body.redirect);
   assert.equal(completed.body.phone, '+8613800138000');
   assert.match(completed.cookie, /(?:^|;\s*)session=/);
+  const claims = jwt.decode(decodeURIComponent(completed.cookie.match(/session=([^;]+)/)[1]));
+  assert.equal(claims.session_days, 7);
+  assert.equal(claims.session_deadline, claims.exp);
+  assert.ok(claims.exp - claims.iat >= 7 * 86400 - 1 && claims.exp - claims.iat <= 7 * 86400);
   assert.equal((await f.request('/api/profile', { cookie: completed.cookie })).status, 200);
 });

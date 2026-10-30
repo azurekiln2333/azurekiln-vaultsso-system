@@ -451,6 +451,65 @@ class MemoryPool {
       }), []];
     }
 
+    // Login mail gate: bind a brand-new mailbox and mark it verified, but only while the stored
+    // address is still the exact one the caller observed (pre-mutation snapshot equality).
+    if (lower === 'update users set email = ?, email_verified = ? where id = ? and email = ?') {
+      return [this.updateRows(this.users,
+        row => row.id === params[2] && row.email === params[3],
+        row => { row.email = params[0]; row.email_verified = params[1]; row.updated_at = now(); }), []];
+    }
+
+    // Login mail gate: prove an already-stored mailbox, flipping only an unverified/NULL flag for
+    // the exact observed address so a concurrent change cannot be verified by a stale proof.
+    if (lower === 'update users set email_verified = ? where id = ? and email = ? and (email_verified = false or email_verified is null)') {
+      return [this.updateRows(this.users,
+        row => row.id === params[1] && row.email === params[2] && !row.email_verified,
+        row => { row.email_verified = params[0]; row.updated_at = now(); }), []];
+    }
+
+    // Account-first first-password setup (User.setInitialPassword). A conditional
+    // UPDATE that only fills an unset password for the exact resolved user and
+    // stored email, so a stale setup request cannot overwrite a password that an
+    // administrator/profile change established in the meantime. This adapter
+    // reports real affectedRows because the route turns zero rows into a
+    // state-changed conflict before revoking sessions/tokens.
+    if (lower.startsWith('update users set ')
+      && lower.includes('and email = ?')
+      && lower.includes('password is null')
+      && lower.includes("password = ''")) {
+      const setPart = normalized.slice(normalized.toLowerCase().indexOf(' set ') + 5, normalized.toLowerCase().lastIndexOf(' where '));
+      const id = params[params.length - 2];
+      const email = params[params.length - 1];
+      let valueIndex = 0;
+      const updates = setPart.split(',').map(part => part.trim()).filter(Boolean).map(assignment => {
+        const [column, rawValue] = assignment.split('=').map(part => part.trim());
+        if (rawValue === '?') return { column, value: params[valueIndex++] };
+        const keyword = rawValue.toLowerCase();
+        if (keyword === 'true') return { column, value: true };
+        if (keyword === 'false') return { column, value: false };
+        if (keyword === 'null') return { column, value: null };
+        return { column, value: rawValue };
+      });
+      const candidates = clone(this.users);
+      const result = this.updateRows(
+        candidates,
+        row => row.id === id && row.email === email
+          && (row.password === null || row.password === undefined || row.password === ''),
+        row => {
+          updates.forEach(update => { row[update.column] = update.value; });
+          row.updated_at = now();
+        }
+      );
+      candidates.forEach(user => {
+        user.phone_e164 = user.phone_country_code && user.phone_number
+          ? `+${user.phone_country_code}${user.phone_number}`
+          : null;
+      });
+      assertUserUniqueness(candidates);
+      this.users.splice(0, this.users.length, ...candidates);
+      return [result, []];
+    }
+
     if (lower.startsWith('update users set ') && lower.endsWith(' where id = ?')) {
       const candidates = clone(this.users);
       const result = this.updateDynamic(candidates, normalized, params, 'id');
@@ -480,6 +539,12 @@ class MemoryPool {
     }
 
     if (lower === 'insert into email_verification_codes (id, email, user_id, purpose, code_hash, expires_at, pending_context) values (?, ?, ?, ?, ?, ?, ?)') {
+      // Test-only fault injection: fail exactly one insert so a late-successor failure can be
+      // reproduced deterministically and its rollback observed.
+      if (injectedInsertFailure.has('email_verification_codes')) {
+        injectedInsertFailure.delete('email_verification_codes');
+        throw new Error('injected insert failure: email_verification_codes');
+      }
       const [id, email, userId, purpose, codeHash, expiresAt, pendingContext] = params;
       this.emailVerificationCodes.push({
         id,
@@ -501,6 +566,12 @@ class MemoryPool {
     }
 
     if (lower === 'insert into sessions (id, user_id, token, ip_address, user_agent, expires_at) values (?, ?, ?, ?, ?, ?)') {
+      // Test-only fault injection: fail the final session insert so the surrounding account
+      // transaction must roll back mailbox/proof mutations and emit no success cookie.
+      if (injectedInsertFailure.has('sessions')) {
+        injectedInsertFailure.delete('sessions');
+        throw new Error('injected insert failure: sessions');
+      }
       const [id, userId, token, ip, userAgent, expiresAt] = params;
       this.sessions.push({ id, user_id: userId, token, ip_address: ip, user_agent: userAgent, revoked_at: null, expires_at: new Date(expiresAt).toISOString(), created_at: now() });
       return [{ affectedRows: 1, insertId: id }, []];
@@ -639,6 +710,10 @@ class MemoryPool {
     }
 
     if (lower === 'update email_verification_codes set consumed_at = ? where id = ? and consumed_at is null and expires_at > ?') {
+      // Test-only fault injection: report zero affected rows for one named row so a rollback
+      // path can be exercised deterministically. Module-scoped because account transactions run
+      // on fresh MemoryPool instances that would not inherit a per-pool flag.
+      if (injectedConsumeZero.delete(params[1])) return [{ affectedRows: 0 }, []];
       return [this.updateRows(this.emailVerificationCodes, row => row.id === params[1] && !row.consumed_at && new Date(row.expires_at) > new Date(params[2]), row => {
         row.consumed_at = params[0];
       }), []];
@@ -646,6 +721,14 @@ class MemoryPool {
 
     if (lower === 'update email_verification_codes set consumed_at = ? where email = ? and purpose = ? and consumed_at is null') {
       return [this.updateRows(this.emailVerificationCodes, row => row.email === params[1] && row.purpose === params[2] && !row.consumed_at, row => { row.consumed_at = params[0]; }), []];
+    }
+
+    // Login mail gate: replace the pending_context of one exact unconsumed row. Reports real
+    // affectedRows so a zero-row write aborts the account transaction.
+    if (lower === 'update email_verification_codes set pending_context = ? where id = ? and consumed_at is null') {
+      return [this.updateRows(this.emailVerificationCodes,
+        row => row.id === params[1] && !row.consumed_at,
+        row => { row.pending_context = params[0]; }), []];
     }
 
     if (lower === 'delete from email_verification_codes where expires_at < ? or consumed_at is not null') {
@@ -864,6 +947,16 @@ function createMemoryPool() {
   return new MemoryPool();
 }
 
+// Test-only fault injection shared across the main pool and every transaction pool (which are
+// constructed as fresh MemoryPool instances). `failNextConsume(id)` makes the next consume of that
+// exact code row report zero affected rows, so a late-failure rollback can be reproduced.
+const injectedConsumeZero = new Set();
+function failNextConsume(id) { injectedConsumeZero.add(id); }
+const injectedInsertFailure = new Set();
+function failNextInsert(table) { injectedInsertFailure.add(table); }
+
 module.exports = {
-  createMemoryPool
+  createMemoryPool,
+  failNextConsume,
+  failNextInsert
 };

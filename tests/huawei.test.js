@@ -2,6 +2,7 @@ const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
+const jwt = require('jsonwebtoken');
 const { createFixture, randomSecret } = require('./support/fixture');
 const OidcProviderModel = require('../models/OidcProvider');
 const ClientModel = require('../models/Client');
@@ -115,6 +116,19 @@ function huaweiPayload(overrides = {}) {
     ...overrides
   };
 }
+
+test('Huawei rejects invalid duration before exchanging the upstream authorization code', async () => {
+  const code = stage(huaweiPayload());
+  for (const session_days of [null, false, 2, 1.5, [7], '7', ' 7']) {
+    const result = await quickLoginRaw({ code, session_days });
+    assert.equal(result.status, 400, JSON.stringify(session_days));
+    assert.equal(result.body.error_key, 'auth.session.invalid_duration');
+  }
+  assert.equal(upstreamCalls.length, 0);
+  assert.equal(f.pool.users.length, 0);
+  assert.equal(f.pool.sessions.length, 0);
+  assert.equal((await quickLogin({ code, session_days: 7 })).status, 200, 'rejected duration must not consume the code');
+});
 
 test('一键登录用官方 POST + JSON 换取标识，并把 0086 区号归一化为 E.164', async () => {
   const payload = huaweiPayload();
@@ -294,14 +308,17 @@ test('默认按华为已验证手机号匹配已验证的已有账号', async ()
 });
 
 test('未获得手机号时先等待绑定，只有跳过才创建新账号，待绑定凭据不可重放', async () => {
-  const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '', phoneNumber: '' })) });
+  const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '', phoneNumber: '' })), session_days: 7 });
   assert.equal(pending.status, 200);
   assert.equal(pending.body.binding_required, true);
   assert.equal(pending.body.phone_available, false);
   assert.equal(f.pool.users.length, 0);
-  const skipped = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', { binding_token: pending.body.binding_token });
+  const skipped = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', { binding_token: pending.body.binding_token, session_days: 14 });
   assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
   assert.equal(f.pool.users.length, 1);
+  const claims = jwt.decode(decodeURIComponent(skipped.cookie.match(/session=([^;]+)/)[1]));
+  assert.equal(claims.session_days, 7, 'skip cannot override the initial choice');
+  assert.ok(claims.exp - claims.iat >= 7 * 86400 - 1 && claims.exp - claims.iat <= 7 * 86400);
   const replay = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', { binding_token: pending.body.binding_token });
   assert.equal(replay.status, 400);
   assert.equal(f.pool.users.length, 1);
@@ -326,7 +343,10 @@ test('待绑定华为身份只能绑定已验证登录的账号', async () => {
   const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
   const password = randomSecret();
   const existing = await f.User.create({
-    username: `bind-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`, password
+    username: `bind-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`, password,
+    // This fixture needs a *verified* mailbox for a direct password login; without it the mandatory
+    // mailbox gate (correctly) intercepts the login before any session/redirect is issued.
+    emailVerified: true
   });
   const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '' })), client_id: app.id });
   assert.equal(pending.body.binding_required, true);
@@ -424,6 +444,7 @@ test('可以换取授权码交给已注册客户端，并下发 phone 声明', a
   const state = randomSecret();
   const result = await quickLogin({
     code: stage(huaweiPayload()),
+    session_days: 14,
     client_id: app.id,
     redirect_uri: app.redirectUris[0],
     scope: 'openid profile phone',
@@ -473,9 +494,13 @@ test('未申请 phone scope 时不下发手机号声明', async () => {
 });
 
 test('无 client_id 时下发会话 Cookie 并可直接访问个人资料', async () => {
-  const result = await quickLogin({ code: stage(huaweiPayload()) });
+  const result = await quickLogin({ code: stage(huaweiPayload()), session_days: 14 });
   assert.equal(result.status, 200);
   assert.match(result.cookie, /(?:^|;\s*)session=/);
+  const claims = jwt.decode(decodeURIComponent(result.cookie.match(/session=([^;]+)/)[1]));
+  assert.equal(claims.session_days, 14);
+  assert.equal(claims.session_deadline, claims.exp);
+  assert.ok(claims.exp - claims.iat >= 14 * 86400 - 1 && claims.exp - claims.iat <= 14 * 86400);
   const profile = await f.request('/api/profile', { cookie: result.cookie });
   assert.equal(profile.status, 200);
   assert.equal(profile.body.user.phoneMasked, '+86 138****8000');
@@ -490,7 +515,7 @@ test('启用验证器时返回 mfa_required，并可用响应体里的凭据（�
     recoveryCodes: JSON.stringify([crypto.createHash('sha256').update(recovery).digest('hex')])
   });
 
-  const second = await quickLogin({ code: stage(huaweiPayload({ unionID: f.pool.userIdentities[0].provider_user_id })) });
+  const second = await quickLogin({ code: stage(huaweiPayload({ unionID: f.pool.userIdentities[0].provider_user_id })), session_days: 7 });
   assert.equal(second.status, 200, JSON.stringify(second.body));
   assert.equal(second.body.mfa_required, true);
   assert.equal(second.body.factor, 'totp');
@@ -502,10 +527,11 @@ test('启用验证器时返回 mfa_required，并可用响应体里的凭据（�
   const completed = await f.request('/api/v1/auth/oauth/oidc/complete', {
     method: 'POST',
     headers: { 'X-Oidc-Pending': second.body.pending_token },
-    data: { code: recovery }
+    data: { code: recovery, session_days: 14 }
   });
   assert.equal(completed.status, 200, JSON.stringify(completed.body));
   assert.match(completed.cookie, /(?:^|;\s*)session=/);
+  assert.equal(jwt.decode(decodeURIComponent(completed.cookie.match(/session=([^;]+)/)[1])).session_days, 7);
   assert.equal((await f.request('/api/profile', { cookie: completed.cookie })).status, 200);
 });
 

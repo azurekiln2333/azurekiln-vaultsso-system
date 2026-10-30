@@ -16,6 +16,12 @@ function stage(cookie, name, proof) {
 function confirm(cookie, pending, otp) {
   return f.request(`${base}/${pending.id}/confirm`, { method: 'POST', cookie, data: { code: otp } });
 }
+// TOTP codes are window-based. Keep a multi-step assertion inside one 30s window so replay
+// behaviour cannot flip when the boundary rolls over mid-test.
+async function alignTotpWindow(minRemainingMs = 20000) {
+  const remaining = 30000 - (Date.now() % 30000);
+  if (remaining < minRemainingMs) await new Promise(resolve => setTimeout(resolve, remaining + 50));
+}
 function remove(cookie, id, proof) {
   return f.request(`${base}/${id}`, { method: 'DELETE', cookie, data: { code: proof } });
 }
@@ -42,6 +48,7 @@ test('two independent devices coexist, both authenticate, replay is per device a
   assert.equal(listed.body.authenticators.length, 2);
   assert.ok(listed.body.authenticators.every(device => !('secret' in device) && !('security_state' in device)));
   assert.ok(f.pool.userAuthenticators.every(device => device.secret.startsWith('enc:v1:')));
+  await alignTotpWindow();
   assert.equal((await f.login(user, { totp_code: code(first.secret, 1) })).status, 200);
   assert.equal((await f.login(user, { totp_code: code(first.secret, 1) })).status, 400);
   assert.equal((await f.login(user, { totp_code: code(second.secret) })).status, 200);
@@ -270,7 +277,7 @@ test('recovery regeneration accepts any active device and administrator self res
   assert.equal((await f.request('/api/account/totp', { cookie })).body.authenticators.length, 0);
 });
 
-test('removal between factor verification and final issuance cannot mint a session or native authorization code', async () => {
+test('removal between factor verification and final issuance cannot mint a session or native authorization code', { timeout: 30000 }, async () => {
   for (const native of [false, true]) {
     f.reset();
     const user = await f.user();
@@ -280,16 +287,23 @@ test('removal between factor verification and final issuance cannot mint a sessi
     const atVerifiedFactor = new Promise(resolve => { entered = resolve; });
     let unblock;
     const release = new Promise(resolve => { unblock = resolve; });
-    const original = f.pool.execute;
-    const rateKey = crypto.createHash('sha256').update(`totp:${user.id}`).digest('hex');
+    // Park *before* account-lock acquisition. Parking inside the transaction would make the removal
+    // wait on a lock the login already holds, so the removal would land after issuance and the
+    // login would (correctly) succeed; that is not the race this test is about.
+    const originalGetConnection = f.pool.getConnection;
     let armed = true;
-    f.pool.execute = async function (sql, params) {
-      if (armed && sql === 'DELETE FROM rate_limits WHERE rate_key = ?' && params[0] === rateKey) {
-        armed = false;
-        entered();
-        await release;
-      }
-      return original.call(this, sql, params);
+    f.pool.getConnection = async function () {
+      const connection = await originalGetConnection.call(this);
+      const originalQuery = connection.query.bind(connection);
+      connection.query = async function (sql, params) {
+        if (armed && /GET_LOCK/i.test(String(sql))) {
+          armed = false;
+          entered();
+          await release;
+        }
+        return originalQuery(sql, params);
+      };
+      return connection;
     };
     let oauth = {};
     if (native) {
@@ -299,60 +313,204 @@ test('removal between factor verification and final issuance cannot mint a sessi
     }
     const login = f.login(user, { ...oauth, totp_code: code(device.secret) });
     try {
-      await atVerifiedFactor;
+      await Promise.race([
+        atVerifiedFactor,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('login never reached the pre-lock boundary')), 10000))
+      ]);
       assert.equal((await remove(cookie, device.id, device.recoveryCodes[0])).status, 200);
       unblock();
       const result = await login;
-      assert.equal(result.status, 401);
-      assert.equal(result.body.error_key, 'auth.mfa.expired');
+      // The stale snapshot is taken before the account lock is acquired, so the login must be
+      // rejected by the security-state check with the exact frozen contract key.
+      assert.equal(result.status, 401, JSON.stringify(result.body));
+      assert.equal(result.body.error_key, 'auth.mfa.expired', JSON.stringify(result.body));
       assert.doesNotMatch(result.cookie, /session=/);
       assert.equal(f.pool.authCodes.length, 0);
-      assert.equal(f.pool.sessions.filter(row => !row.revoked_at).length, 1);
+      assert.equal(f.pool.sessions.filter(row => !row.revoked_at).length, 1,
+        'only the enrollment session may remain usable');
     } finally {
+      armed = false;
       unblock();
       await login;
-      f.pool.execute = original;
+      f.pool.getConnection = originalGetConnection;
     }
   }
 });
 
-test('reset after final MFA validation is rejected before pending consumption and session issuance', async () => {
+test('reset landing before the final MFA transaction denies any credential', { timeout: 30000 }, async () => {
   const user = await f.user();
   const admin = await f.user('admin');
   const adminCookie = (await f.login(admin)).cookie;
   const { cookie } = await f.login(user);
   const device = await enroll(cookie, 'Phone');
   const pending = await f.login(user);
-  const original = f.pool.execute;
-  let userReads = 0;
+
+  // Deterministic hook *before* account-lock acquisition. The completion parks immediately before
+  // it takes the authenticator account lock, so the concurrent reset always wins without ever
+  // waiting on a lock the completion holds. (The previous hook waited for a second pool-level user
+  // read that the transaction-scoped validation no longer performs, so it never fired.)
+  const originalGetConnection = f.pool.getConnection;
   let entered;
-  const atFinalValidation = new Promise(resolve => { entered = resolve; });
+  const atLock = new Promise(resolve => { entered = resolve; });
   let unblock;
   const release = new Promise(resolve => { unblock = resolve; });
-  f.pool.execute = async function (sql, params) {
-    if (sql === 'SELECT * FROM users WHERE id = ?' && params[0] === user.id && ++userReads === 2) {
-      const result = await original.call(this, sql, params);
-      entered();
-      await release;
-      return result;
-    }
-    return original.call(this, sql, params);
+  let armed = true;
+  f.pool.getConnection = async function () {
+    const connection = await originalGetConnection.call(this);
+    const originalQuery = connection.query.bind(connection);
+    connection.query = async function (sql, params) {
+      if (armed && typeof sql === 'string' && /GET_LOCK/i.test(sql)) {
+        armed = false;
+        entered();
+        await release;
+      }
+      return originalQuery(sql, params);
+    };
+    return connection;
   };
+
   const completion = f.request('/api/v1/auth/oauth/oidc/complete', {
     method: 'POST', cookie: pending.cookie, data: { code: code(device.secret) }
   });
   try {
-    await atFinalValidation;
+    // Bounded: fail loudly instead of hanging if the hook point ever moves again.
+    await Promise.race([
+      atLock,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('completion never reached the account lock')), 10000))
+    ]);
     assert.equal((await f.request(`/api/users/${user.id}/totp/reset`, { method: 'POST', cookie: adminCookie })).status, 200);
     unblock();
     const result = await completion;
-    assert.ok([400, 401].includes(result.status));
+    assert.ok([400, 401].includes(result.status), `a stale MFA snapshot must not complete: ${JSON.stringify(result.body)}`);
     assert.doesNotMatch(result.cookie, /session=/);
-    assert.equal(f.pool.sessions.filter(row => row.user_id === user.id && !row.revoked_at).length, 0);
+    assert.equal(f.pool.sessions.filter(row => row.user_id === user.id && !row.revoked_at).length, 0,
+      'no usable credential may survive a reset that landed before final issuance');
   } finally {
+    armed = false;
     unblock();
     await completion;
-    f.pool.execute = original;
+    f.pool.getConnection = originalGetConnection;
+  }
+});
+
+test('a reset after a completed MFA login revokes the credential it issued', { timeout: 30000 }, async () => {
+  const user = await f.user();
+  const admin = await f.user('admin');
+  const adminCookie = (await f.login(admin)).cookie;
+  const { cookie } = await f.login(user);
+  const device = await enroll(cookie, 'Phone');
+  const pending = await f.login(user);
+
+  const done = await f.request('/api/v1/auth/oauth/oidc/complete', {
+    method: 'POST', cookie: pending.cookie, data: { code: code(device.secret) }
+  });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal((await f.request('/api/profile', { cookie: done.cookie })).status, 200);
+
+  assert.equal((await f.request(`/api/users/${user.id}/totp/reset`, { method: 'POST', cookie: adminCookie })).status, 200);
+  assert.equal((await f.request('/api/profile', { cookie: done.cookie })).status, 401,
+    'a reset must revoke the credential issued by the preceding login');
+});
+
+// Bounded poll: always terminates, and cannot keep spinning after the test gives up.
+async function pollUntil(predicate, message, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(message);
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
+
+// Race a deferred signal against a bounded timeout without leaving a polling loop alive.
+function bounded(promise, message, timeoutMs = 10000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs))
+  ]);
+}
+
+test('a concurrent reset serialises behind the completion lock and then revokes its credential', { timeout: 30000 }, async () => {
+  const user = await f.user();
+  const admin = await f.user('admin');
+  const adminCookie = (await f.login(admin)).cookie;
+  const { cookie } = await f.login(user);
+  const device = await enroll(cookie, 'Phone');
+  const pending = await f.login(user);
+
+  // Park the completion at its final Session INSERT: at that moment it holds the authenticator
+  // account lock and its transaction is still open. This proves real lock serialisation, unlike
+  // the sequential test which only proves ordering.
+  const originalGetConnection = f.pool.getConnection;
+  let parkedConnection = null;
+  let armed = true;
+  let releaseCompletion;
+  const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
+  let signalCompletionInsert;
+  const atCompletionInsert = new Promise(resolve => { signalCompletionInsert = resolve; });
+
+  f.pool.getConnection = async function () {
+    const connection = await originalGetConnection.call(this);
+    const originalExecute = connection.execute.bind(connection);
+    connection.execute = async function (sql, params) {
+      if (armed && /INSERT\s+INTO\s+sessions/i.test(String(sql))) {
+        armed = false;
+        parkedConnection = connection;
+        signalCompletionInsert();
+        await completionGate;
+      }
+      return originalExecute(sql, params);
+    };
+    return connection;
+  };
+
+  // True only once a connection is actually queued on a named lock held by someone else.
+  const resetQueuedInWaiters = () => [...f.pool.namedLocks.values()].some(lock => lock.waiters.length > 0);
+
+  let completion = null;
+  let reset = null;
+  let resetSettled = false;
+  try {
+    completion = f.request('/api/v1/auth/oauth/oidc/complete', {
+      method: 'POST', cookie: pending.cookie, data: { code: code(device.secret) }
+    });
+    // Deferred signal resolved by the hook itself: no polling loop survives a timeout.
+    await bounded(atCompletionInsert, 'completion never reached its final session insert');
+    assert.equal(parkedConnection !== null, true, 'the completion must be parked holding the account lock');
+
+    reset = f.request(`/api/users/${user.id}/totp/reset`, { method: 'POST', cookie: adminCookie })
+      .finally(() => { resetSettled = true; });
+    // The reset connection must actually be queued in namedLocks.waiters, and the request must not
+    // have settled, before the completion is allowed to release the lock.
+    await pollUntil(resetQueuedInWaiters, 'the reset never queued behind the held account lock');
+    assert.equal(resetSettled, false, 'the reset must still be blocked while the completion holds the lock');
+    assert.equal(f.pool.userAuthenticators.length, 1,
+      'the reset must not complete while the completion holds the account lock');
+
+    releaseCompletion();
+    const done = await completion;
+    completion = null;
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    // Proving issuance from the response avoids racing the now-unblocked reset, which may revoke
+    // the session before an HTTP probe could observe it.
+    assert.match(done.cookie, /session=/, 'the completion must have issued a session credential');
+
+    const resetDone = await reset;
+    reset = null;
+    assert.equal(resetDone.status, 200, JSON.stringify(resetDone.body));
+
+    // The reset landed after issuance, so it must revoke the credential that was just minted.
+    assert.equal(f.pool.userAuthenticators.length, 0, 'the reset must remove the authenticators');
+    assert.equal((await f.request('/api/profile', { cookie: done.cookie })).status, 401,
+      'the reset must revoke the newly issued credential');
+    assert.equal(f.pool.sessions.filter(row => row.user_id === user.id && !row.revoked_at).length, 0,
+      'no usable stale credential may remain');
+  } finally {
+    armed = false;
+    releaseCompletion();
+    f.pool.getConnection = originalGetConnection;
+    // Settle every tracked request so no gate is left holding a connection.
+    if (completion) await completion.catch(() => {});
+    if (reset) await reset.catch(() => {});
   }
 });
 

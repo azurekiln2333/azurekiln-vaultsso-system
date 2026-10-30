@@ -7,6 +7,15 @@ const { chromium } = require('playwright-core');
 const { createFixture } = require('./support/fixture');
 const { totpCode } = require('./support/totp-code');
 
+// Account-first login: the primary action advances from account entry to the password step.
+async function continueToPassword(page) {
+  await page.locator('#loginForm .submit').click();
+  await page.waitForFunction(() => {
+    const field = document.getElementById('loginPassword');
+    return Boolean(field) && !field.disabled && field.getBoundingClientRect().width > 1;
+  }, null, { timeout: 15000 });
+}
+
 async function main() {
   const reservation = net.createServer();
   await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
@@ -35,11 +44,13 @@ async function main() {
       async function loginWith(code) {
         await page.goto(`${f.baseUrl}/oauth2/authorize`);
         await page.locator('#loginUsername').fill(account.username);
+        await continueToPassword(page);
         await page.locator('#loginPassword').fill(account.clearPassword);
         await page.locator('#loginForm .submit').click();
         await page.waitForURL('**/oauth2/mfa');
         await page.locator('#code').fill(code);
-        await page.locator('#submit').click();
+        // A complete authenticator code verifies automatically; only recovery codes
+        // need the manual #submit click.
         await page.waitForURL('**/profile');
         await page.waitForFunction(() => !document.getElementById('totpActionBtn').disabled);
       }

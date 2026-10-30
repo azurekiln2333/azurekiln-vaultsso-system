@@ -10,6 +10,15 @@ before(async () => { f = await createFixture(); });
 beforeEach(() => f.reset());
 after(async () => { if (f) await f.close(); });
 
+async function registrationInput() {
+  const email = `register-${crypto.randomUUID()}@example.test`;
+  const sent = await f.request('/api/email-verification/send', {
+    method: 'POST', data: { email, purpose: 'register' }
+  });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  return { email, password: randomSecret(), email_code: f.lastCode(email) };
+}
+
 test('startup creates no accounts, clients or identity providers', () => {
   assert.equal(f.pool.users.length, 0);
   assert.equal(f.pool.clients.length, 0);
@@ -43,10 +52,168 @@ test('the first public registration stays an ordinary user and ignores a forged 
     method: 'POST', data: { email, password, email_code: f.lastCode(email), role: 'admin' }
   });
   assert.equal(registered.status, 200);
+  const session = jwt.decode(decodeURIComponent(registered.cookie.match(/session=([^;]+)/)[1]));
+  assert.equal(session.session_days, 1, 'automatic registration login uses the one-day default');
+  assert.equal(session.session_deadline, session.exp);
   const profile = await f.request('/api/profile', { cookie: registered.cookie });
   assert.equal(profile.body.user.role, 'user');
   assert.equal(profile.body.user.emailVerified, true);
   assert.equal((await f.request('/api/clients', { cookie: registered.cookie })).status, 403);
+});
+
+test('registration accepts ASCII username boundaries and preserves Unicode display names', async () => {
+  for (const username of ['a', 'Z9_foo_Bar', '_', '9', 'x'.repeat(255)]) {
+    const input = await registrationInput();
+    const registered = await f.request('/oauth2/register', {
+      method: 'POST', data: { ...input, username, name: '中文显示名称' }
+    });
+    assert.equal(registered.status, 200, JSON.stringify(registered.body));
+    const profile = await f.request('/api/profile', { cookie: registered.cookie });
+    assert.equal(profile.body.user.username, username);
+    assert.equal(profile.body.user.name, '中文显示名称');
+    assert.equal(profile.body.user.emailVerified, true);
+  }
+});
+
+test('invalid registration usernames leave email proof and authorization state untouched for correction', async () => {
+  const input = await registrationInput();
+  const proof = f.pool.emailVerificationCodes[0];
+  const app = await f.client();
+  const data = {
+    ...input, client_id: app.id, redirect_uri: app.redirectUris[0], response_type: 'code', scope: 'openid',
+    nonce: randomSecret(), state: randomSecret(), code_challenge: randomSecret(), code_challenge_method: 'S256'
+  };
+  for (const username of ['中文用户名', 'Ａbc', 'bad name', ' bad', 'bad ', 'a\tb', '\nvalid', 'valid\n',
+    'valid\r', 'valid\r\n', '-', 'valid_after-fix', 'a.b', 'a+b',
+    'user@example.test', 'a/b', 'a'.repeat(256), 123, true, {}, ['valid']]) {
+    const rejected = await f.request('/oauth2/register', { method: 'POST', data: { ...data, username } });
+    assert.equal(rejected.status, 400, JSON.stringify(username));
+    assert.equal(rejected.body.error, 'invalid_request');
+    assert.equal(rejected.body.error_key, 'validation.username.invalid_format');
+    assert.match(rejected.body.error_description, /英文字母.*数字.*下划线/);
+    assert.doesNotMatch(rejected.body.error_description, /连字符/);
+    assert.equal(rejected.cookie, '');
+    for (const table of ['users', 'sessions', 'authCodes', 'accessTokens', 'refreshTokens', 'loginLogs']) {
+      assert.equal(f.pool[table].length, 0, `${table} must stay empty after rejecting a username`);
+    }
+    assert.equal(f.pool.emailVerificationCodes.length, 1);
+    assert.equal(proof.attempts, 0, 'invalid usernames must not consume an email-code attempt');
+    assert.equal(proof.consumed_at, null, 'invalid usernames must not consume valid proof');
+    assert.equal(f.mails.length, 1, 'registration must not send another email');
+  }
+  const corrected = await f.request('/oauth2/register', {
+    method: 'POST', data: { ...data, username: 'valid_after_fix', name: '保留中文昵称' }
+  });
+  assert.equal(corrected.status, 200, JSON.stringify(corrected.body));
+  assert.ok(proof.consumed_at, 'the same proof remains usable after correcting the username');
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.sessions.length, 1);
+  assert.equal(f.pool.authCodes.length, 1, 'valid registration still completes the original OAuth request');
+});
+
+test('omitted or blank registration usernames retain the ASCII email fallback', async () => {
+  for (const username of [undefined, '', ' \t ', null]) {
+    f.reset();
+    const input = await registrationInput();
+    const data = username === undefined ? input : { ...input, username };
+    const registered = await f.request('/oauth2/register', { method: 'POST', data });
+    assert.equal(registered.status, 200, JSON.stringify(registered.body));
+    assert.equal((await f.User.findByEmail(input.email)).username, input.email);
+  }
+});
+
+test('non-ASCII fallback emails cannot bypass username rules or the existing email validator', async () => {
+  for (const email of ['用户@example.test', 'user@例子.test']) {
+    for (const username of [undefined, '   ', 'Valid_User']) {
+      const rejected = await f.request('/oauth2/register', {
+        method: 'POST', data: { email, username, password: randomSecret(), email_code: '123456' }
+      });
+      assert.equal(rejected.status, 400);
+      assert.equal(rejected.body.error_key, 'validation.email.invalid', 'retain invalid-email precedence');
+      assert.equal(rejected.cookie, '');
+    }
+  }
+  assert.equal(f.pool.users.length, 0);
+  assert.equal(f.pool.sessions.length, 0);
+  assert.equal(f.pool.emailVerificationCodes.length, 0);
+  assert.equal(f.mails.length, 0);
+});
+
+test('registration switch and CAPTCHA still precede username validation without consuming email proof', async () => {
+  const data = { ...await registrationInput(), username: '中文用户名' };
+  const proof = f.pool.emailVerificationCodes[0];
+  f.pool.settings.push({ setting_key: 'registration_enabled', setting_value: 'false' });
+  const disabled = await f.request('/oauth2/register', { method: 'POST', data });
+  assert.equal(disabled.status, 403);
+  assert.equal(disabled.body.error_key, 'auth.registration.disabled');
+  f.pool.settings[0].setting_value = 'true';
+  f.pool.settings.push({ setting_key: 'captcha_register', setting_value: 'true' });
+  const missingCaptcha = await f.request('/oauth2/register', { method: 'POST', data });
+  assert.equal(missingCaptcha.status, 400);
+  assert.equal(missingCaptcha.body.error_key, 'captcha.expired');
+  const captcha = await f.request('/api/captcha');
+  const invalidUsername = await f.request('/oauth2/register', {
+    method: 'POST', data: { ...data, captcha_id: captcha.body.id, captcha_code: f.captchaAnswers.at(-1) }
+  });
+  assert.equal(invalidUsername.status, 400);
+  assert.equal(invalidUsername.body.error_key, 'validation.username.invalid_format');
+  assert.equal(proof.attempts, 0);
+  assert.equal(proof.consumed_at, null);
+  assert.equal(f.pool.users.length, 0);
+  assert.equal(f.pool.sessions.length, 0);
+});
+
+test('public configured password minimum matches registration enforcement at 12 and 16', async () => {
+  for (const minimum of [12, 16]) {
+    f.reset();
+    if (minimum === 16) f.pool.settings.push({ setting_key: 'password_min_length', setting_value: '16' });
+    for (const route of ['/api/auth/config', '/api/auth/config?surface=web']) {
+      const config = await f.request(route);
+      assert.equal(config.status, 200);
+      assert.equal(config.body.passwordMinLength, minimum);
+    }
+    const input = await registrationInput();
+    const proof = f.pool.emailVerificationCodes[0];
+    for (const length of [6, minimum - 1]) {
+      const rejected = await f.request('/oauth2/register', {
+        method: 'POST', data: { ...input, username: `policy_${minimum}`, password: `Aa1!${'x'.repeat(length - 4)}` }
+      });
+      assert.equal(rejected.status, 400);
+      assert.equal(rejected.body.error_key, 'validation.password.weak');
+      assert.equal(rejected.body.error_description, `密码长度不能少于 ${minimum} 位`);
+      assert.equal(proof.attempts, 0);
+      assert.equal(proof.consumed_at, null);
+      assert.equal(f.pool.users.length, 0);
+    }
+    const accepted = await f.request('/oauth2/register', {
+      method: 'POST', data: { ...input, username: `policy_${minimum}`, password: `Aa1!${'x'.repeat(minimum - 4)}` }
+    });
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+    assert.ok(proof.consumed_at);
+  }
+});
+
+test('registration character policy preserves legacy Unicode and hyphenated account discovery and login', async () => {
+  for (const username of [`旧账号-${crypto.randomUUID()}`, `legacy-${crypto.randomUUID()}`]) {
+    const password = randomSecret();
+    const user = await f.User.create({
+      username, email: `legacy-${crypto.randomUUID()}@example.test`,
+      password, name: '已有中文账号', emailVerified: true
+    });
+    const discovered = await f.request('/oauth2/authorize', {
+      method: 'POST', data: { discover_account: true, username: user.username }
+    });
+    assert.equal(discovered.status, 200);
+    assert.deepEqual(discovered.body, { next: 'password' });
+    const login = await f.request('/oauth2/authorize', {
+      method: 'POST', data: { username: user.username, password }
+    });
+    assert.equal(login.status, 200, JSON.stringify(login.body));
+    const profile = await f.request('/api/profile', { cookie: login.cookie });
+    assert.equal(profile.status, 200);
+    assert.equal(profile.body.user.id, user.id);
+    assert.equal(profile.body.user.username, user.username);
+  }
 });
 
 test('admin APIs and static pages reject unauthenticated and ordinary users', async () => {

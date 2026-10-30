@@ -12,7 +12,7 @@
     "check:e2e": "node scripts/check-e2e.js",
     "check": "npm run check:syntax && npm run check:e2e",
     "build:css": "tailwindcss -c tailwind.config.cjs -i styles/tailwind.css -o public/css/vaultsso-utilities.css --minify",
-    "check:browser": "node tests/browser-smoke.cjs && node tests/account-bindings-browser.cjs && node tests/auth-feedback-browser.cjs && node tests/password-mfa-browser.cjs && node tests/multi-authenticator-browser.cjs && node tests/turnstile-browser.cjs",
+    "check:browser": "node tests/browser-smoke.cjs && node tests/account-bindings-browser.cjs && node tests/auth-feedback-browser.cjs && node tests/account-first-login-browser.cjs && node tests/session-duration-browser.cjs && node tests/login-email-gate-browser.cjs && node tests/user-import-upload-browser.cjs && node tests/password-mfa-browser.cjs && node tests/multi-authenticator-browser.cjs && node tests/turnstile-browser.cjs && node tests/user-table-sort-browser.cjs && node tests/icon-font-loading-browser.cjs",
     "build:fonts": "node scripts/build-fonts.js",
     "build:deploy": "node scripts/build-deploy.js"
   },

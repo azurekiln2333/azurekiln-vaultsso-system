@@ -5,6 +5,77 @@ const net = require('node:net');
 const { chromium } = require('playwright-core');
 const { createFixture } = require('./support/fixture');
 
+// Account-first login: the primary action advances from account entry to the password step.
+async function continueToPassword(page) {
+  await page.locator('#loginForm button[type=submit]').click();
+  await page.waitForFunction(() => {
+    const field = document.querySelector('#loginForm input[name=password]');
+    return Boolean(field) && !field.disabled && field.getBoundingClientRect().width > 1;
+  }, null, { timeout: 15000 });
+}
+
+async function checkSmtpErrors(page, fixture) {
+  const endpoint = '**/api/admin/smtp/test';
+  const cases = [
+    { status: 502, contentType: 'text/html', body: '<html><title>502 Bad Gateway</title><body>nginx</body></html>', expected: /网关/ },
+    { status: 504, contentType: 'text/html', body: '<html><title>504 Gateway Timeout</title></html>', expected: /超时/ },
+    { status: 503, contentType: 'text/plain', body: 'upstream connection refused', expected: /upstream connection refused/ },
+    { status: 429, contentType: 'text/plain', body: '', expected: /过于频繁/ },
+    { status: 404, contentType: 'text/html', body: '<html>Cannot POST /api/admin/smtp/test</html>', expected: /接口不存在/ },
+    { status: 500, contentType: 'application/json', body: '{broken', expected: /服务器/ },
+    { status: 502, contentType: 'application/json', body: JSON.stringify({ error_description: { message: 'invalid shape' } }), expected: /网关/ },
+    { status: 200, contentType: 'text/html', body: '<html><body>Sign in</body></html>', expected: /响应异常/ },
+    { status: 200, contentType: 'application/json', body: '', expected: /响应异常/ },
+    { status: 200, contentType: 'application/json', body: 'null', expected: /响应异常/ },
+    { status: 200, contentType: 'application/json', body: '[]', expected: /响应异常/ }
+  ];
+  await page.locator('#testToInput').fill('smtp-errors@example.test');
+  for (const scenario of cases) {
+    const { expected, ...response } = scenario;
+    await page.route(endpoint, route => route.fulfill(response));
+    await page.locator('#testBtn').click();
+    await page.waitForFunction(() => !document.getElementById('testBtn').disabled);
+    const message = await page.locator('#statusBar').innerText();
+    assert.match(message, new RegExp(`HTTP ${scenario.status}`), 'SMTP failure retains the HTTP status');
+    assert.match(message, expected);
+    assert.doesNotMatch(message, /JSON|SyntaxError|unexpected|<html|\[object Object\]/i);
+    assert.match(await page.locator('#statusBar').getAttribute('class'), /admin-status-error/);
+    await page.unroute(endpoint);
+  }
+
+  await page.route(endpoint, route => route.abort('failed'));
+  await page.locator('#testBtn').click();
+  await page.waitForFunction(() => !document.getElementById('testBtn').disabled);
+  assert.match(await page.locator('#statusBar').innerText(), /网络请求失败/);
+  await page.unroute(endpoint);
+
+  // Exercise the actual backend error contract and a successful retry, without external SMTP.
+  fixture.failNextMail(new Error('Invalid login: 535 Authentication failed <smtp-error>'));
+  await page.locator('#testBtn').click();
+  await page.waitForFunction(() => !document.getElementById('testBtn').disabled);
+  assert.match(await page.locator('#statusBar').innerText(), /发送失败：Invalid login: 535 Authentication failed <smtp-error>/);
+  assert.equal(await page.locator('#statusBar smtp-error').count(), 0, 'SMTP errors are rendered as text');
+  await page.locator('#testBtn').click();
+  await page.waitForFunction(() => !document.getElementById('testBtn').disabled);
+  assert.match(await page.locator('#statusBar').innerText(), /测试邮件已发送到 smtp-errors@example.test/);
+  assert.match(await page.locator('#statusBar').getAttribute('class'), /admin-status-success/);
+
+  // HTML authentication failures must be handled before attempting to parse the body.
+  await page.route('**/oauth2/authorize', route => route.fulfill({ contentType: 'text/html', body: 'Please sign in' }));
+  await page.route(endpoint, route => route.fulfill({ status: 401, contentType: 'text/html', body: '<html>Unauthorized</html>' }));
+  await page.locator('#testBtn').click();
+  await page.waitForURL('**/oauth2/authorize');
+  await page.unroute(endpoint);
+  await page.unroute('**/oauth2/authorize');
+  await page.goto(`${fixture.baseUrl}/smtp.html`);
+  await page.locator('#statusBar.admin-status-info').waitFor();
+  await page.locator('#testToInput').fill('smtp-errors@example.test');
+  await page.route(endpoint, route => route.fulfill({ status: 403, contentType: 'text/html', body: '<html>Forbidden</html>' }));
+  await page.locator('#testBtn').click();
+  await page.waitForURL('**/oauth2/error?error=access_denied');
+  await page.unroute(endpoint);
+}
+
 async function main() {
   const reservation = net.createServer();
   await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
@@ -35,6 +106,7 @@ async function main() {
     });
     await page.goto(`${f.baseUrl}/oauth2/authorize`);
     await page.locator('#loginForm input[name=username]').fill(admin.username);
+    await continueToPassword(page);
     await page.locator('#loginForm input[name=password]').fill(admin.clearPassword);
     await page.locator('#loginForm button[type=submit]').click();
     await page.waitForURL('**/profile');
@@ -65,6 +137,7 @@ async function main() {
     assert.equal(await page.locator('#hostInput').inputValue(), 'smtp.browser.test');
     assert.equal(await page.locator('#passwordInput').inputValue(), '');
     assert.match(await page.locator('#passwordHint').innerText(), /已保存密码/);
+    await checkSmtpErrors(page, f);
     assert.deepEqual(errors, [], 'All browser modules should execute without errors');
     assert.deepEqual(blockedScripts, [], 'Application scripts must be compatible with the production CSP');
 
@@ -73,12 +146,12 @@ async function main() {
     await page.goto(`${f.baseUrl}/oauth2/authorize`);
     assert.equal(await page.locator('#loginForm [data-captcha-group]').isVisible(), false);
     await page.locator('#loginForm input[name=username]').fill(admin.username);
+    await continueToPassword(page);
     await page.locator('#loginForm input[name=password]').fill(admin.clearPassword);
     await page.locator('#loginForm button[type=submit]').click();
     await page.locator('#loginForm [data-captcha-box] img').waitFor();
     const image = await page.locator('#loginForm [data-captcha-box] img').getAttribute('src');
     assert.ok(image.startsWith('data:image/png;base64,'));
-    await page.locator('#loginForm input[name=username]').fill(admin.username);
     await page.locator('#loginForm input[name=password]').fill(admin.clearPassword);
     await page.locator('#loginForm input[name=captcha_code]').fill(f.captchaAnswers.at(-1));
     await page.locator('#loginForm button[type=submit]').click();
