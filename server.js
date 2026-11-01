@@ -2552,6 +2552,23 @@ function buildHuaweiProfile(identity, config) {
   };
 }
 
+// 实名认证口径：没有华为已核验手机号的华为账号不得创建、绑定本地账号。
+const HUAWEI_VERIFIED_PHONE_REQUIRED = '请使用已绑定手机号的华为账号';
+const HUAWEI_VERIFIED_PHONE_REQUIRED_ERROR = 'huawei_verified_phone_required';
+
+function hasVerifiedHuaweiPhone(identity) {
+  return Boolean(identity && identity.phoneVerified && identity.phone && identity.phone.e164);
+}
+
+// Link/create paths are rejected exactly the same way so a caller learns nothing extra about
+// whether the identity is already bound.
+function respondHuaweiVerifiedPhoneRequired(res, status = 403) {
+  return res.status(status).json({
+    error: HUAWEI_VERIFIED_PHONE_REQUIRED_ERROR,
+    error_description: HUAWEI_VERIFIED_PHONE_REQUIRED
+  });
+}
+
 // 手机号只做绑定，不静默覆盖：本地已有号码且不一致时保留本地值并记录冲突。
 async function applyHuaweiPhone(user, identity) {
   const phone = identity.phone;
@@ -2702,6 +2719,8 @@ async function resolveHuaweiUser(identity, config, linkUserId, connection, setti
   }
 
   if (!settings.allowCreate) return { pending: true };
+  // 一键登录路径的建号闸门：拿不到已核验手机号一律不建号。
+  if (!hasVerifiedHuaweiPhone(identity)) throw new Error(HUAWEI_VERIFIED_PHONE_REQUIRED);
   if (!settings.registrationEnabled) throw new Error('Registration is disabled');
 
   const digest = crypto.createHash('sha256').update(primaryId).digest('hex');
@@ -2891,6 +2910,10 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
   if (!identity.openId && !identity.unionId) {
     return res.status(400).json({ error: 'invalid_grant', error_description: '华为账号未返回用户标识' });
   }
+  // 绑定/建号都必须建立在华为已核验手机号之上，先于任何账号写入或待绑定凭据签发。
+  if ((linkIntent || !mergeIntent) && !hasVerifiedHuaweiPhone(identity)) {
+    return respondHuaweiVerifiedPhoneRequired(res);
+  }
 
   if (mergeIntent) {
     try {
@@ -2925,6 +2948,7 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
   try {
     result = await findOrCreateHuaweiUser(identity, config, linkIntent ? currentUser.id : '', false);
   } catch (error) {
+    if (error.message === HUAWEI_VERIFIED_PHONE_REQUIRED) return respondHuaweiVerifiedPhoneRequired(res);
     return res.status(400).json({ error: 'invalid_request', error_description: error.message });
   }
 
@@ -2951,12 +2975,18 @@ app.post(HUAWEI_SKIP_PATH, asyncHandler(async (req, res) => {
   if (!entry) return res.status(400).json({ error: 'invalid_grant', error_description: '华为绑定请求已过期，请重新登录' });
   if (entry.inProgress) return res.status(409).json({ error: 'conflict', error_description: '请求正在处理' });
   if (normalizeText(req.body.client_id) !== entry.clientId) return res.status(403).json({ error: 'forbidden', error_description: '登录客户端不一致' });
+  // 旧版待绑定凭据可能缺少手机号；跳过只用于创建新账号，因此同样要求已核验手机号。
+  if (!hasVerifiedHuaweiPhone(entry.identity)) {
+    pendingHuaweiBindings.delete(token);
+    return respondHuaweiVerifiedPhoneRequired(res);
+  }
   entry.inProgress = true;
   try {
     let result;
     try {
       result = await findOrCreateHuaweiUser(entry.identity, entry.config);
     } catch (error) {
+      if (error.message === HUAWEI_VERIFIED_PHONE_REQUIRED) return respondHuaweiVerifiedPhoneRequired(res);
       return res.status(400).json({ error: 'invalid_request', error_description: error.message });
     }
     pendingHuaweiBindings.delete(token);
@@ -2980,12 +3010,18 @@ app.post(HUAWEI_BIND_PATH, asyncHandler(async (req, res) => {
       || new Date(tokenData.expires_at) <= new Date() || !tokenData.scopes.includes('openid')) {
     return res.status(401).json({ error: 'invalid_token', error_description: '请重新验证已有账号' });
   }
+  // 绑定已有账号同样要求华为返回已核验手机号，与建号口径保持一致。
+  if (!hasVerifiedHuaweiPhone(entry.identity)) {
+    pendingHuaweiBindings.delete(token);
+    return respondHuaweiVerifiedPhoneRequired(res);
+  }
   entry.inProgress = true;
   try {
     let result;
     try {
       result = await findOrCreateHuaweiUser(entry.identity, entry.config, tokenData.user_id, false);
     } catch (error) {
+      if (error.message === HUAWEI_VERIFIED_PHONE_REQUIRED) return respondHuaweiVerifiedPhoneRequired(res);
       return res.status(409).json({ error: 'conflict', error_description: error.message });
     }
     if (result.user.id !== tokenData.user_id) return res.status(409).json({ error: 'conflict', error_description: '华为账号已绑定其他用户' });
@@ -6090,4 +6126,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { bootstrap };
+module.exports = { bootstrap, __pendingHuaweiBindings: pendingHuaweiBindings };
