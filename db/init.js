@@ -103,6 +103,9 @@ CREATE TABLE IF NOT EXISTS login_logs (
   username VARCHAR(255) NOT NULL,
   user_id VARCHAR(36) NULL,
   ip VARCHAR(64),
+  source_port INT NULL,
+  platform VARCHAR(64) DEFAULT NULL,
+  login_type VARCHAR(32) DEFAULT NULL,
   user_agent VARCHAR(255),
   result VARCHAR(32) NOT NULL,
   detail VARCHAR(255),
@@ -287,7 +290,7 @@ const CREATE_CAPTCHA_TABLE = `CREATE TABLE IF NOT EXISTS captcha_challenges (
 ) ENGINE=InnoDB`;
 
 async function ensureUsersRoleColumn(connection) {
-  const [columns] = await connection.query('SHOW COLUMNS FROM users LIKE ?', ['role']);
+  const [columns] = await connection.execute('SHOW COLUMNS FROM users LIKE ?', ['role']);
   if (columns.length > 0) {
     return;
   }
@@ -299,7 +302,9 @@ async function ensureUsersRoleColumn(connection) {
 }
 
 async function ensureColumn(connection, tableName, columnName, definition, afterColumn) {
-  const [columns] = await connection.query(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [columnName]);
+  // 必须用 execute（预处理语句）让 mysql2 真正代入 LIKE ?，否则 query() 会把 "?" 原样发出，
+  // 每次都返回空结果，迁移在每次启动时重复执行。
+  const [columns] = await connection.execute(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [columnName]);
   if (columns.length > 0) {
     return;
   }
@@ -311,7 +316,7 @@ async function ensureColumn(connection, tableName, columnName, definition, after
 
 // 唯一索引必须显式存在，否则手机号与第二身份标识可能写入重复值。
 async function ensureIndex(connection, tableName, indexName, definition) {
-  const [rows] = await connection.query(`SHOW INDEX FROM ${tableName} WHERE Key_name = ?`, [indexName]);
+  const [rows] = await connection.execute(`SHOW INDEX FROM ${tableName} WHERE Key_name = ?`, [indexName]);
   if (rows && rows.length > 0) {
     return;
   }
@@ -378,6 +383,10 @@ async function initDatabase({ initializeSchema = false } = {}) {
     await ensureColumn(connection, 'sessions', 'token', 'token VARCHAR(128) NOT NULL', 'user_id');
     await ensureColumn(connection, 'sessions', 'revoked_at', 'revoked_at TIMESTAMP NULL DEFAULT NULL', 'user_agent');
     await ensureColumn(connection, 'login_logs', 'detail', 'detail VARCHAR(255)', 'result');
+    // 合规字段：源端口、登录平台（client_id 或 web）、登录类型。迁移必须幂等，重复执行不报错。
+    await ensureColumn(connection, 'login_logs', 'source_port', 'source_port INT NULL', 'ip');
+    await ensureColumn(connection, 'login_logs', 'platform', 'platform VARCHAR(64) DEFAULT NULL', 'source_port');
+    await ensureColumn(connection, 'login_logs', 'login_type', 'login_type VARCHAR(32) DEFAULT NULL', 'platform');
     await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');
     await ensureColumn(connection, 'users', 'credits', 'credits INT NOT NULL DEFAULT 0', 'banned');
     await ensureColumn(connection, 'users', 'last_login_ip', 'last_login_ip VARCHAR(64) DEFAULT NULL', 'credits');
