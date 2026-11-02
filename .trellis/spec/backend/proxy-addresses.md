@@ -90,9 +90,11 @@ limits or change stored user/session/log IPs when proxy trust is disabled.
 
 ## 7. Wrong vs Correct
 Wrong: `trust proxy=true`; `X-Real-IP` read without source verification; `X-Real-Port` read from any
-peer; `connection.query('SHOW COLUMNS ... LIKE ?')` in migrations (mysql2 does not interpolate
-`query()` placeholders, so the column probe always returns empty and the migration re-runs).
+peer; a native prepared `SHOW COLUMNS ... LIKE ?` column probe, whose `LIKE` syntax requires a
+literal pattern rather than a parameter marker.
 
 Correct: explicit trusted proxy addresses and Express chain traversal; `execute()` for every
-placeholder-bearing `SHOW ...`/DDL probe; source port read only through `readRequestSource`;
-upstream proxy handles any CDN trust.
+column probe using
+`SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`
+with `[tableName, columnName]` as values, matching `columnExists` in `db/init.js`; source port read
+only through `readRequestSource`; upstream proxy handles any CDN trust.
