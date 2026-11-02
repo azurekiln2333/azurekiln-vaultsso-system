@@ -2,12 +2,14 @@
 
 ## 1. Scope / Trigger
 
-Applies to public registration and the existing public password-policy projection. Restrict explicit new registration usernames at the registration boundary, while keeping existing/imported Unicode identifiers, provider-created accounts and Unicode display names compatible. New-password guidance must follow the server configuration rather than promise six characters.
+Applies to public registration and the existing public password-policy projection. Restrict explicit new registration usernames at the registration boundary, while keeping existing/imported Unicode identifiers, provider-created accounts and Unicode display names compatible. New-password guidance must follow the server configuration rather than promise six characters. The QFLI client policy below additionally closes every email-based new-account path for one client family only.
 
 ## 2. Signatures
 
-- `GET /api/auth/config` (also `?surface=web`) returns the existing `passwordMinLength` JSON number alongside authentication settings.
+- `GET /api/auth/config` (also `?surface=web`) returns the existing `passwordMinLength` JSON number alongside authentication settings, plus `registrationEnabled` and a new `registrationDisabledReason` string (`'oauth_only'` or `''`). The login page forwards its OAuth `client_id` as a query parameter so the server can apply the client-scoped policy.
 - `POST /oauth2/register` accepts the existing `username?`, `name?`, `email`, `password`, `confirm_password?`, `email_code`/`verification_code`, CAPTCHA and OAuth fields. This policy adds no endpoint or request field.
+- `POST /api/email-verification/send` keeps its existing body and semantics; a registration-purpose request from a QFLI client is refused before any code is minted or mail is sent.
+- `isQfliClient(candidate)` is exported from `services/qfli-integration.js` and accepts a `client_id` string or a client record with an `id`. It is the single source of truth for the QFLI client family.
 - `getPasswordMinLength()` reads `password_min_length` with a 12-character floor. Supported administrator values and `PASSWORD_MIN_LENGTH` are integers from 12 through 64; the environment fallback is 12.
 - `VaultI18n.passwordGuidance(rawMinimum)` returns localized numeric guidance for raw integers 12–64 and neutral new-password guidance otherwise.
 
@@ -23,6 +25,19 @@ The server remains authoritative for password length, common-password, optional 
 
 Known legacy length error keys must preserve readable server descriptions containing the actual minimum. Without a readable description, use neutral localized text rather than a guessed number or unresolved interpolation token. Keep zh/en/zh-TW text and affected page/shared-script cache references synchronized.
 
+### Client-scoped email registration closure (QFLI)
+
+A QFLI client is any client whose `client_id` begins with `qfli`, case-insensitively (`isQfliClient`). For those clients, new accounts may only be created through a Huawei account; every path that can create a new account from an email address is closed:
+
+- `POST /oauth2/register` returns `403 { error: 'forbidden', error_key: 'auth.registration.oauth_only' }` before CAPTCHA consumption, email-proof verification/attempt counting and any account/session/code creation.
+- `POST /api/email-verification/send` with `purpose: 'register'` returns the same 403 before the code row is created or mail is sent. The check runs before the existing duplicate-email branch so it cannot be used to enumerate registered addresses. Account-bound `password_reset` sends, login-gate codes and email-change codes are unchanged.
+- OIDC/passwordless provider callbacks (`findOrCreateOidcUser`) refuse to create a new account when the escalation context is a QFLI client or the provider configuration's own `clientId` is one. The gateway client context comes from the `client_id` query parameter on `/api/v1/auth/oauth/oidc/login`, persisted in the signed state cookie; the provider's configured `clientId` is a fallback so a misconfigured QFLI provider cannot silently email-sign-up users. Existing identities may still be matched and linked normally.
+- `GET /api/auth/config` reports `registrationEnabled: false` and `registrationDisabledReason: 'oauth_only'`; the login page hides the registration tab, blocks `setMode('register')`, and shows the localized `auth.registration.oauth_only` notice.
+
+Client identification reads `client_id` from the request body, the `client_id` query parameter, and HTTP Basic client authentication. A value matches when either the literal string or the stored client record carries the prefix. Requests with no client context, and requests for any other client, keep exactly the previous behavior. The policy is orthogonal to the administrator's global `registration_enabled` switch: that switch still applies globally and is reported with an empty `registrationDisabledReason`.
+
+Do not move this rule into `User.create`, the import path, Huawei quick-login account creation or credential login: Huawei account creation remains the sanctioned path for QFLI clients.
+
 ## 4. Validation & Error Matrix
 
 | Condition | Result / side effects |
@@ -37,12 +52,20 @@ Known legacy length error keys must preserve readable server descriptions contai
 | Valid config 12 or 16, including after language change | Matching numeric guidance before submit on every new-password surface |
 | Stored/imported Unicode or hyphenated username used for discovery/login | Existing authentication semantics; new registration rule does not apply |
 | Registration typing/paste/committed IME includes unsupported characters | Browser keeps only ASCII letters/digits/underscore, up to 255; unfinished composition is untouched |
+| QFLI client posts to `/oauth2/register` (body, query or Basic `client_id`) | 403 `invalid_request`-free `forbidden`/`auth.registration.oauth_only`; no CAPTCHA consumed, no proof attempt, no user/session/code/log |
+| QFLI client requests a `register` email code | 403 `auth.registration.oauth_only` before code creation or mail delivery; duplicate-email check not reached |
+| QFLI client triggers OIDC callback for an unknown subject | Redirect with `oidc_error=login_failed`; no user or identity created |
+| Other client or no `client_id` | Unchanged behavior on every path above |
+| QFLI client asks `/api/auth/config` | `registrationEnabled: false`, `registrationDisabledReason: 'oauth_only'`; other config fields untouched |
+| QFLI client with an existing bound identity signs in via OIDC | Existing account is matched and logged in; only creation is blocked |
 
 ## 5. Good / Base / Bad Cases
 
-- Good: `Alice_1_test` registers with display name `中文显示名`; a Chinese or hyphenated explicit API username fails before consuming proof, and correcting it permits reuse of the same valid email code.
+- Good: an `Alice_1_test` registration with display name `中文显示名`; a Chinese or hyphenated explicit API username fails before consuming proof, and correcting it permits reuse of the same valid email code.
 - Base: an absent username defaults to `alice@example.com`; explicitly supplying that same email-shaped username fails the new character rule.
 - Bad: trim `"alice\n"` and accept it, put the rule in a shared model, or hard-code another password minimum in a template.
+- Good (client policy): a QFLI client registration attempt is refused with `auth.registration.oauth_only` while a parallel request for another client still completes normally with the same email proof untouched.
+- Bad (client policy): rejecting registration only in `POST /oauth2/register` while `POST /api/email-verification/send` still mails codes, or keying the rule on a client display name rather than `client_id`.
 
 ## 6. Tests Required
 
@@ -50,6 +73,8 @@ Known legacy length error keys must preserve readable server descriptions contai
 - `tests/i18n.test.js`: supported locale interpolation, 12/16/64 and malformed raw minimums, neutral legacy strings, readable dynamic server errors and localized username rules.
 - `tests/auth-feedback-browser.cjs`: real settings 12/16 at desktop/mobile, all four new-password surfaces, three-language rerender, min-minus-one server rejection, active username typing/paste/caret/replacement/deletion/length filtering, controlled composition and no submit during composition, strict raw bypass blocked without a POST, and real ASCII registration with Unicode display name. Verify login preserves email, Unicode and old hyphenated identifiers. Separate dispatched composition probes and delayed/failed/malformed transport simulations from actual OS IME and real configured-policy cases.
 - Full syntax, API and browser gates preserve imports, external providers, password login, mailbox/MFA ordering, OAuth continuation and mobile CAPTCHA geometry. Use isolated fixtures and captured mail rather than production accounts.
+- `tests/qfli-registration.test.js`: `isQfliClient` boundary/case-sensitivity and record form; QFLI registration-code refusal with zero mail and zero code rows including upper-case ids and Basic auth; `/oauth2/register` refusal before CAPTCHA/proof consumption with no user/session/code/log; unchanged registration for another client and for no client; `/api/auth/config` reporting for QFLI, upper-case QFLI, a prefixed client record, another client, anonymous, and the global switch; OIDC callback refusal for a QFLI client versus successful creation for another client and anonymous; existing-identity login still allowed.
+- `tests/auth-feedback-browser.cjs` (`checkQfliRegistrationEntry`): real `/oauth2/authorize` requests for anonymous, QFLI and unrelated clients at desktop and mobile widths; assert the hidden tab, the collapsed register card, the visible `auth.registration.oauth_only` notice and that a forced `setMode('register')` falls back to the login card, while other clients still open registration.
 
 ## 7. Wrong vs Correct
 
@@ -60,3 +85,7 @@ Correct: preserve the raw supplied username, allow only the intentional blank fa
 Wrong: show “At least 6 characters” or replace it with an unconditional “12”.
 
 Correct: render `passwordGuidance(config.passwordMinLength)` after loading and language changes, with a neutral localized prompt whenever the effective value is unknown.
+
+Wrong: close QFLI email signups only at the visible form, or compare a client's display `name`/`providerName`.
+
+Correct: keep the single `isQfliClient` predicate in `services/qfli-integration.js`, apply it at every account-creation boundary (`/oauth2/register`, the register email-code send, OIDC account creation) and at `/api/auth/config`, and leave every non-QFLI request path byte-for-byte unchanged.

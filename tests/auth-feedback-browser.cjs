@@ -15,6 +15,7 @@ async function continueToPassword(page) {
 }
 
 const POLICY_ARTIFACTS = path.resolve(__dirname, '..', '.artifacts', 'registration-policy');
+const QFLI_ARTIFACTS = path.resolve(__dirname, '..', '.artifacts', 'qfli-registration');
 const USERNAME_ARTIFACTS = path.resolve(__dirname, '..', '.artifacts', 'username-input');
 const POLICY_LANGUAGES = [
   { language: 'zh', hint: minimum => `至少 ${minimum} 位`, neutral: '请输入新密码', invalid: '用户名只能使用' },
@@ -246,6 +247,59 @@ async function checkUsernameEditing(browser, fixture) {
     }
   }
   fs.writeFileSync(path.join(USERNAME_ARTIFACTS, 'browser-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
+}
+
+async function checkQfliRegistrationEntry(browser, fixture) {
+  fs.mkdirSync(QFLI_ARTIFACTS, { recursive: true });
+  const evidence = [];
+  const unrelated = 'unrelated-partner-app';
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    for (const { clientId, expectHidden } of [
+      { clientId: null, expectHidden: false },
+      { clientId: 'QfliStudio-Gateway', expectHidden: true },
+      { clientId: unrelated, expectHidden: false }
+    ]) {
+      fixture.reset();
+      if (clientId) {
+        await fixture.Client.create({
+          id: clientId, name: 'Browser policy client', secret: require('node:crypto').randomBytes(32).toString('base64url'),
+          redirectUris: ['https://client.example.test/callback'], scopes: ['openid', 'profile', 'email']
+        });
+      }
+      const { context, page, errors } = await openPolicyContext(browser, fixture, viewport);
+      try {
+        const query = clientId
+          ? `?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent('https://client.example.test/callback')}&response_type=code&scope=openid&code_challenge=${'A'.repeat(43)}&code_challenge_method=S256`
+          : '';
+        const configResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/config');
+        await page.goto(`${fixture.baseUrl}/oauth2/authorize${query}`);
+        assert.equal((await (await configResponse).json()).registrationDisabledReason, expectHidden ? 'oauth_only' : '');
+        await page.locator('#authRegion').waitFor({ state: 'visible' });
+        await page.waitForFunction(() => window.VaultI18n && document.querySelector('[data-mode="register"]'));
+        await page.waitForFunction(hidden => document.querySelector('[data-mode="register"]').hidden === hidden, expectHidden);
+        const registerCard = page.locator('[data-card="register"]');
+        assert.equal((await registerCard.getAttribute('class'))?.includes('hidden'), true, 'the register card stays collapsed until selected');
+        assert.equal(await page.locator('#oauthOnlyRegistrationNotice').isVisible(), expectHidden);
+        if (expectHidden) {
+          // A direct attempt to open the registration card must fall back to the login card.
+          await page.evaluate(() => { document.querySelector('[data-mode="register"]').hidden = false; document.querySelector('[data-mode="register"]').click(); });
+          await page.waitForFunction(() => document.querySelector('[data-mode="login"]').classList.contains('active'));
+          assert.equal((await registerCard.getAttribute('class'))?.includes('hidden'), true);
+          assert.match(await page.locator('#oauthOnlyRegistrationNotice').innerText(), /华为账号/);
+        } else {
+          // The unchanged behavior still lets an anonymous or unrelated client open registration.
+          await page.locator('[data-mode="register"]').click();
+          await page.locator('#registerForm').waitFor({ state: 'visible' });
+        }
+        await page.screenshot({ path: path.join(QFLI_ARTIFACTS, `qfli-${expectHidden ? 'on' : 'off'}-${viewport.width}.png`), animations: 'disabled' });
+        assert.deepEqual(errors, []);
+        evidence.push({ clientId: clientId || 'anonymous', hidden: expectHidden, viewport: viewport.width });
+      } finally {
+        await context.close();
+      }
+    }
+  }
+  fs.writeFileSync(path.join(QFLI_ARTIFACTS, 'browser-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
 }
 
 async function checkRegistrationPolicy(browser, fixture) {
@@ -512,8 +566,9 @@ async function main() {
       await context.close();
     }
     await checkUsernameEditing(browser, fixture);
+    await checkQfliRegistrationEntry(browser, fixture);
     await checkRegistrationPolicy(browser, fixture);
-    console.log('Authentication feedback browser checks passed: existing feedback and configured password guidance; desktop/mobile username typing, real clipboard paste, selection/caret/deletion/length, dispatched IME composition, strict raw submit guards, optional email fallback, legacy login values; three-language username feedback and real ASCII registration; neutral delayed/failed/malformed config');
+    console.log('Authentication feedback browser checks passed: existing feedback and configured password guidance; desktop/mobile username typing, real clipboard paste, selection/caret/deletion/length, dispatched IME composition, strict raw submit guards, optional email fallback, legacy login values; three-language username feedback and real ASCII registration; QFLI-only hidden registration entry; neutral delayed/failed/malformed config');
   } finally {
     if (browser) await browser.close();
     await fixture.close();

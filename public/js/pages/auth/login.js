@@ -220,7 +220,11 @@ const i18n = window.VaultI18n;
       authConfig.passwordMinLength = null;
       renderPasswordGuidance();
       try {
-        const response = await fetch('/api/auth/config?surface=web');
+        const configUrl = new URL('/api/auth/config', window.location.origin);
+        configUrl.searchParams.set('surface', 'web');
+        // 让服务端能按客户端判定注册策略（如 QFLI 客户端只能经华为账号建号）。
+        if (oauthParams.client_id) configUrl.searchParams.set('client_id', oauthParams.client_id);
+        const response = await fetch(configUrl.toString());
         if (response.ok) Object.assign(authConfig, await response.json());
       } catch (error) {
         console.error('Load auth config failed:', error);
@@ -237,7 +241,12 @@ const i18n = window.VaultI18n;
       const registerTab = tabButtons.find(button => button.dataset.mode === 'register');
       if (registerTab && !authConfig.registrationEnabled) {
         registerTab.hidden = true;
+        if (registerTab.classList.contains('active')) setMode('login');
+        const next = registerTab.nextElementSibling;
+        if (next) next.hidden = true;
       }
+      const oauthOnlyNotice = document.getElementById('oauthOnlyRegistrationNotice');
+      if (oauthOnlyNotice) oauthOnlyNotice.hidden = authConfig.registrationDisabledReason !== 'oauth_only';
     }
 
     function getClientLabel() {
@@ -426,6 +435,8 @@ const i18n = window.VaultI18n;
     }
 
     function setMode(mode) {
+      // 邮箱注册入口被关闭（如 QFLI 客户端只能经华为账号建号）时不得停留在注册卡片。
+      if (mode === 'register' && !authConfig.registrationEnabled) mode = 'login';
       modeRevision += 1;
       tabButtons.forEach(function (button) {
         button.classList.toggle('active', button.dataset.mode === mode);

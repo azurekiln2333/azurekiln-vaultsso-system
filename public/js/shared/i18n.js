@@ -450,6 +450,7 @@
       'auth.account_banned': '账户已被封禁，请联系管理员',
       'auth.locked': '登录失败次数过多，请稍后再试',
       'auth.registration.disabled': '系统已关闭注册，请联系管理员',
+      'auth.registration.oauth_only': '本应用不支持邮箱注册，请使用已绑定手机号的华为账号登录',
       'auth.login_code.sent': '验证码已发送，请查收邮箱',
       'auth.login_code.label': '邮箱验证码',
       'auth.login_code.placeholder': '6 位邮箱验证码',
@@ -982,6 +983,7 @@
       'auth.account_banned': 'This account has been banned. Contact an administrator.',
       'auth.locked': 'Too many failed attempts. Try again later.',
       'auth.registration.disabled': 'Registration is disabled. Contact an administrator.',
+      'auth.registration.oauth_only': 'This application does not support email registration. Sign in with a Huawei account that has a verified phone number.',
       'auth.login_code.sent': 'Verification code sent. Check your inbox.',
       'auth.login_code.label': 'Email verification code',
       'auth.login_code.placeholder': '6-digit email code',
@@ -1070,6 +1072,7 @@
 
   translations['zh-TW'] = {
     ...translations.zh,
+    'auth.registration.oauth_only': '本應用不支援信箱註冊，請使用已綁定手機號的華為帳號登入',
     'auth.session.duration_label': '保持登入',
     'auth.session.days_1': '1 天',
     'auth.session.days_7': '7 天',
