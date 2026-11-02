@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { withActiveAccount } = require('../services/account-write');
 
 class EmailVerificationCodeModel {
   constructor(pool) {
@@ -6,14 +7,16 @@ class EmailVerificationCodeModel {
   }
 
   async create(codeData) {
-    const id = crypto.randomUUID();
-    await this.pool.execute(
-      `INSERT INTO email_verification_codes (id, email, user_id, purpose, code_hash, expires_at, pending_context)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, codeData.email, codeData.userId || null, codeData.purpose, codeData.codeHash, codeData.expiresAt,
-        codeData.pendingContext == null ? null : JSON.stringify(codeData.pendingContext)]
-    );
-    return this.findById(id);
+    return withActiveAccount(this.pool, codeData.userId, async database => {
+      const id = crypto.randomUUID();
+      await database.execute(
+        `INSERT INTO email_verification_codes (id, email, user_id, purpose, code_hash, expires_at, pending_context)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, codeData.email, codeData.userId || null, codeData.purpose, codeData.codeHash, codeData.expiresAt,
+          codeData.pendingContext == null ? null : JSON.stringify(codeData.pendingContext)]
+      );
+      return new EmailVerificationCodeModel(database).findById(id);
+    });
   }
 
   async findById(id) {

@@ -841,7 +841,7 @@ test('华为绑定手机号时并发用户编辑不会被旧的空号码快照�
   const execute = f.pool.execute.bind(f.pool);
   let raced = false;
   f.pool.execute = async (sql, params) => {
-    if (/WHERE id = \? AND phone_e164 IS NULL/i.test(sql) && !raced) {
+    if (/AND phone_e164 IS NULL/i.test(sql) && !raced) {
       raced = true;
       await f.User.update(first.body.user.id, { phoneCountryCode: '86', phoneNumber: '13900139000', phoneVerified: false });
     }

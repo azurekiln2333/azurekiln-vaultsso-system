@@ -52,6 +52,12 @@ class MemoryConnection {
   }
 
   async query(sql, params = []) {
+    if (normalizeSql(sql).toLowerCase() === 'select get_lock(?, 0) as acquired') {
+      const lock = this.pool.namedLocks.get(params[0]);
+      if (lock && lock.owner !== this) return [[{ acquired: 0 }], []];
+      if (!lock) this.pool.namedLocks.set(params[0], { owner: this, waiters: [] });
+      return [[{ acquired: 1 }], []];
+    }
     if (normalizeSql(sql).toLowerCase() === 'select get_lock(?, 10) as acquired') {
       let lock = this.pool.namedLocks.get(params[0]);
       if (!lock) {
@@ -143,6 +149,36 @@ class MemoryPool {
   async execute(sql, params = []) {
     const normalized = normalizeSql(sql);
     const lower = normalized.toLowerCase();
+
+    if ((lower.startsWith('update users ') || lower.startsWith('delete from users ')) && lower.includes(" and status <> 'deleted'")) {
+      const beforeId = normalized.slice(0, lower.indexOf('where id = ?'));
+      const idIndex = (beforeId.match(/\?/g) || []).length;
+      if (this.users.some(row => row.id === params[idIndex] && row.status === 'deleted')) {
+        return [{ affectedRows: 0 }, []];
+      }
+      return MemoryPool.prototype.execute.call(this, normalized.replace(" AND status <> 'deleted'", ''), params);
+    }
+
+    const eraseDeletion = lower.match(/^delete from (sessions|user_identities|user_authenticators|user_app_usage) where user_id = \?$/);
+    if (eraseDeletion) {
+      const tables = { sessions: this.sessions, user_identities: this.userIdentities,
+        user_authenticators: this.userAuthenticators, user_app_usage: this.userAppUsage };
+      return [this.deleteRows(tables[eraseDeletion[1]], row => row.user_id === params[0]), []];
+    }
+    if (lower === 'delete from email_verification_codes where user_id = ? or email = ?') {
+      return [this.deleteRows(this.emailVerificationCodes, row => row.user_id === params[0] || likeValue(row.email, params[1])), []];
+    }
+    if (lower === 'update login_logs set username = ?, user_id = ?, user_agent = ?, detail = ? where user_id = ? or (user_id is null and username in (?, ?))') {
+      return [this.updateRows(this.loginLogs, row => row.user_id === params[4]
+        || (row.user_id == null && (likeValue(row.username, params[5]) || likeValue(row.username, params[6]))), row => {
+        [row.username, row.user_id, row.user_agent, row.detail] = params;
+      }), []];
+    }
+    if (lower === "update login_logs set detail = ? where result = ? and (detail in (?, ?, ?, ?, ?, ?, ?) or detail like ? escape '!')") {
+      const prefix = params.at(-1).slice(0, -1).replace(/!([!%_])/g, '$1');
+      return [this.updateRows(this.loginLogs, row => row.result === params[1]
+        && (params.slice(2, -1).includes(row.detail) || String(row.detail).startsWith(prefix)), row => { row.detail = params[0]; }), []];
+    }
 
     if (lower === 'select * from users where id = ? for update') {
       return [this.users.filter(row => row.id === params[0]).map(clone), []];
@@ -372,6 +408,8 @@ class MemoryPool {
         description,
         email_verified: Boolean(emailVerified),
         banned: Boolean(banned),
+        status: 'active',
+        deleted_at: null,
         totp_secret: null,
         totp_enabled: false,
         totp_last_counter: -1,

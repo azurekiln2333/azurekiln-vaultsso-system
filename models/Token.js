@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { withActiveAccount } = require('../services/account-write');
 
 class TokenModel {
   constructor(pool) {
@@ -13,15 +14,17 @@ class TokenModel {
   }
 
   async createAccessToken(data) {
-    const id = data.id || crypto.randomUUID();
-    
-    await this.pool.execute(
-      `INSERT INTO access_tokens (id, token, user_id, client_id, scopes, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, this.hashToken(data.token), data.userId, data.clientId, JSON.stringify(data.scopes), data.expiresAt]
-    );
-    
-    return this.findAccessTokenById(id);
+    return withActiveAccount(this.pool, data.userId, async database => {
+      const id = data.id || crypto.randomUUID();
+
+      await database.execute(
+        `INSERT INTO access_tokens (id, token, user_id, client_id, scopes, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, this.hashToken(data.token), data.userId, data.clientId, JSON.stringify(data.scopes), data.expiresAt]
+      );
+
+      return new TokenModel(database).findAccessTokenById(id);
+    });
   }
 
   async findAccessTokenById(id) {
@@ -29,9 +32,9 @@ class TokenModel {
       'SELECT * FROM access_tokens WHERE id = ?',
       [id]
     );
-    
+
     if (!rows[0]) return null;
-    
+
     return {
       ...rows[0],
       scopes: JSON.parse(rows[0].scopes)
@@ -43,9 +46,9 @@ class TokenModel {
       'SELECT * FROM access_tokens WHERE token = ?',
       [this.hashToken(token)]
     );
-    
+
     if (!rows[0]) return null;
-    
+
     return {
       ...rows[0],
       scopes: JSON.parse(rows[0].scopes)
@@ -57,7 +60,7 @@ class TokenModel {
       'SELECT * FROM access_tokens WHERE user_id = ? ORDER BY created_at DESC',
       [userId]
     );
-    
+
     return rows.map(row => ({
       ...row,
       scopes: JSON.parse(row.scopes)
@@ -72,7 +75,7 @@ class TokenModel {
        LEFT JOIN clients c ON at.client_id = c.id
        ORDER BY at.created_at DESC`
     );
-    
+
     return rows.map(row => ({
       ...row,
       scopes: JSON.parse(row.scopes)
@@ -90,15 +93,17 @@ class TokenModel {
   }
 
   async createRefreshToken(data) {
-    const id = data.id || crypto.randomUUID();
-    
-    await this.pool.execute(
-      `INSERT INTO refresh_tokens (id, token, user_id, client_id, scopes, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, this.hashToken(data.token), data.userId, data.clientId, JSON.stringify(data.scopes || []), data.expiresAt]
-    );
-    
-    return this.findRefreshTokenById(id);
+    return withActiveAccount(this.pool, data.userId, async database => {
+      const id = data.id || crypto.randomUUID();
+
+      await database.execute(
+        `INSERT INTO refresh_tokens (id, token, user_id, client_id, scopes, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, this.hashToken(data.token), data.userId, data.clientId, JSON.stringify(data.scopes || []), data.expiresAt]
+      );
+
+      return new TokenModel(database).findRefreshTokenById(id);
+    });
   }
 
   async findRefreshTokenById(id) {
@@ -106,7 +111,7 @@ class TokenModel {
       'SELECT * FROM refresh_tokens WHERE id = ?',
       [id]
     );
-    
+
     if (!rows[0]) return null;
 
     return {
@@ -120,7 +125,7 @@ class TokenModel {
       'SELECT * FROM refresh_tokens WHERE token = ?',
       [this.hashToken(token)]
     );
-    
+
     if (!rows[0]) return null;
 
     return {
@@ -140,25 +145,27 @@ class TokenModel {
   }
 
   async createAuthCode(data) {
-    const code = data.code || crypto.randomUUID();
-    
-    await this.pool.execute(
-      `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        code,
-        data.userId,
-        data.clientId,
-        data.redirectUri,
-        JSON.stringify(data.scopes),
-        data.codeChallenge || null,
-        data.codeChallengeMethod || null,
-        data.nonce || null,
-        data.expiresAt
-      ]
-    );
-    
-    return this.findAuthCode(code);
+    return withActiveAccount(this.pool, data.userId, async database => {
+      const code = data.code || crypto.randomUUID();
+
+      await database.execute(
+        `INSERT INTO auth_codes (code, user_id, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          code,
+          data.userId,
+          data.clientId,
+          data.redirectUri,
+          JSON.stringify(data.scopes),
+          data.codeChallenge || null,
+          data.codeChallengeMethod || null,
+          data.nonce || null,
+          data.expiresAt
+        ]
+      );
+
+      return new TokenModel(database).findAuthCode(code);
+    });
   }
 
   async findAuthCode(code) {
@@ -166,9 +173,9 @@ class TokenModel {
       'SELECT * FROM auth_codes WHERE code = ?',
       [code]
     );
-    
+
     if (!rows[0]) return null;
-    
+
     return {
       ...rows[0],
       scopes: JSON.parse(rows[0].scopes)
@@ -200,24 +207,24 @@ class TokenModel {
 
   async cleanExpiredTokens() {
     const now = new Date();
-    
+
     const [accessResult] = await this.pool.execute(
       'DELETE FROM access_tokens WHERE expires_at < ?',
       [now]
     );
-    
+
     const [refreshResult] = await this.pool.execute(
       'DELETE FROM refresh_tokens WHERE expires_at < ?',
       [now]
     );
-    
+
     const [authCodeResult] = await this.pool.execute(
       'DELETE FROM auth_codes WHERE expires_at < ?',
       [now]
     );
-    
+
     console.log(`🧹 Cleaned expired tokens: ${accessResult.affectedRows} access, ${refreshResult.affectedRows} refresh, ${authCodeResult.affectedRows} auth codes`);
-    
+
     return {
       accessTokens: accessResult.affectedRows,
       refreshTokens: refreshResult.affectedRows,

@@ -17,6 +17,7 @@ test('normal database startup only reads schema metadata; explicit initializatio
         if (sql.startsWith('SHOW COLUMNS FROM clients') && params[0] === 'require_pkce') return [[]];
         if (sql.startsWith('SHOW COLUMNS FROM oidc_providers') && params[0] === 'huawei_union_scope') return [[]];
         if (sql.startsWith('SHOW COLUMNS FROM email_verification_codes') && params[0] === 'pending_context') return [[]];
+        if (sql.startsWith('SHOW COLUMNS FROM users') && ['status', 'deleted_at'].includes(params[0])) return [[]];
         if (sql.startsWith('SHOW COLUMNS')) return [[{ Field: 'present' }]];
         return [{ affectedRows: 0 }];
       },
@@ -38,7 +39,11 @@ test('normal database startup only reads schema metadata; explicit initializatio
     assert.ok(statements.some(sql => /CREATE TABLE IF NOT EXISTS captcha_challenges/i.test(sql)));
     assert.ok(statements.some(sql => /CREATE TABLE IF NOT EXISTS clients[\s\S]*require_pkce BOOLEAN NOT NULL DEFAULT TRUE/i.test(sql)));
     assert.ok(statements.some(sql => /ALTER TABLE clients ADD COLUMN require_pkce BOOLEAN NOT NULL DEFAULT TRUE AFTER is_active/i.test(sql)));
-    assert.equal(SCHEMA_VERSION, 7);
+    assert.equal(SCHEMA_VERSION, 8);
+    assert.ok(statements.some(sql => /CREATE TABLE IF NOT EXISTS users[\s\S]*status VARCHAR\(16\) NOT NULL DEFAULT 'active'[\s\S]*deleted_at DATETIME\(3\) DEFAULT NULL/i.test(sql)));
+    assert.ok(statements.some(sql => /ALTER TABLE users ADD COLUMN status VARCHAR\(16\) NOT NULL DEFAULT 'active'/i.test(sql)));
+    assert.ok(statements.some(sql => /ALTER TABLE users ADD COLUMN deleted_at DATETIME\(3\) DEFAULT NULL/i.test(sql)));
+    assert.ok(statements.some(sql => /ALTER TABLE login_logs MODIFY detail VARCHAR\(1024\)/i.test(sql)));
     assert.ok(statements.some(sql => /CREATE TABLE IF NOT EXISTS user_authenticators[\s\S]*secret VARCHAR\(255\)[\s\S]*FOREIGN KEY \(user_id\) REFERENCES users\(id\) ON DELETE CASCADE/i.test(sql)));
     assert.ok(statements.some(sql => /CREATE TABLE IF NOT EXISTS users[\s\S]*totp_revision BIGINT NOT NULL DEFAULT 0/i.test(sql)));
     const usageCreate = statements.find(sql => /CREATE TABLE IF NOT EXISTS user_app_usage/i.test(sql));

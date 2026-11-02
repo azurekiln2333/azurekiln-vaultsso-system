@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { withActiveAccount } = require('../services/account-write');
 
 class SessionModel {
   constructor(pool) {
@@ -6,13 +7,15 @@ class SessionModel {
   }
 
   async create({ userId, token, ip = '', userAgent = '', expiresAt }) {
-    const id = crypto.randomUUID();
-    await this.pool.execute(
-      `INSERT INTO sessions (id, user_id, token, ip_address, user_agent, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, userId, token, String(ip || '').slice(0, 45), String(userAgent || '').slice(0, 255), new Date(expiresAt)]
-    );
-    return this.findById(id);
+    return withActiveAccount(this.pool, userId, async database => {
+      const id = crypto.randomUUID();
+      await database.execute(
+        `INSERT INTO sessions (id, user_id, token, ip_address, user_agent, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, userId, token, String(ip || '').slice(0, 45), String(userAgent || '').slice(0, 255), new Date(expiresAt)]
+      );
+      return new SessionModel(database).findById(id);
+    });
   }
 
   async findById(id) {

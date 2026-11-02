@@ -1,7 +1,48 @@
+const { eraseAccount, AccountErasureError } = require('./account-erasure');
+
+function isQfliClient(clientOrId) {
+  const id = typeof clientOrId === 'string' ? clientOrId : clientOrId?.id;
+  return typeof id === 'string' && /^qfli/i.test(id);
+}
+
 module.exports = function installQfliIntegration({
   app, asyncHandler, authenticateClient, validateToken, getModels,
   isClientActive, isUserBanned, scopedUserClaims,
+  getPool, getClientIp, secret,
 }) {
+  app.post('/oauth2/account/erase', asyncHandler(async (req, res) => {
+    req.body ||= {};
+    const client = await authenticateClient(req, res);
+    if (!client) return;
+    if (!isQfliClient(client)) {
+      return res.status(403).json({ error: 'access_denied', error_description: 'Only QFLI clients may erase accounts' });
+    }
+    if (!client.scopes.includes('qfli_account_erase')) {
+      return res.status(403).json({ error: 'insufficient_scope', error_description: 'The qfli_account_erase scope is required' });
+    }
+    const { RateLimit } = getModels();
+    const rate = await RateLimit.consume(`account-erase:client:${client.id}`, 30, 60 * 1000);
+    if (!rate.allowed) {
+      res.set('Retry-After', String(rate.retryAfter));
+      return res.status(429).json({ error: 'rate_limited', error_description: 'Too many account erasure requests' });
+    }
+    const { user_id: userId, reason, request_id: requestId } = req.body;
+    if (typeof userId !== 'string' || userId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+        || (reason !== undefined && (typeof reason !== 'string' || reason.length > 255))
+        || (requestId !== undefined && (typeof requestId !== 'string' || requestId.length > 64))) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'A valid user_id and bounded string reason/request_id are required' });
+    }
+    try {
+      res.json(await eraseAccount({ pool: getPool(), secret, userId: userId.toLowerCase(), clientId: client.id,
+        requestId: requestId || '', ip: getClientIp(req) }));
+    } catch (error) {
+      if (error instanceof AccountErasureError) {
+        return res.status(error.status).json({ error: error.code, error_description: error.message });
+      }
+      throw error;
+    }
+  }));
+
   async function accessUser(req, res) {
     const { Token, Client, User } = getModels();
     const header = req.headers.authorization || '';
@@ -67,3 +108,5 @@ module.exports = function installQfliIntegration({
     res.json({ ...scopedUserClaims(user, ['profile']), description: user.description || '' });
   }));
 };
+
+module.exports.isQfliClient = isQfliClient;
