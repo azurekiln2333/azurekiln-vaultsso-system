@@ -50,6 +50,7 @@ node -e "const fs=require('node:fs'); fs.mkdirSync('keys',{recursive:true}); con
 proxy_pass http://127.0.0.1:3146;
 proxy_set_header Host $host;
 proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Real-Port $remote_port;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
@@ -57,6 +58,50 @@ proxy_set_header X-Forwarded-Proto $scheme;
 IP 记录使用可信代理链中的客户端地址；客户端伪造的更早转发地址不会覆盖紧邻本机代理的来源地址。若 Nginx 前还有 CDN，需在 Nginx 配置该 CDN 的可信来源和真实 IP 头。Docker/远程代理需明确填写实际代理地址。历史记录中的 `127.0.0.1` 无法恢复，配置生效后新登录记录会使用真实 IP。
 
 SMTP 未配置或发送失败时，邮件验证流程返回错误。SMTP 管理页保存后立即生效，重启后从 JSON 配置文件恢复。后台保存的 SMTP 和 Turnstile 设置优先于 `.env`；默认写入 `data/admin-settings.json`，可通过 `ADMIN_SETTINGS_FILE` 指向部署期间保留的可写路径。请备份该文件和 `JWT_SECRET`，并限制服务账号以外的读取权限；修改 `JWT_SECRET` 后，已保存的凭据无法解密。
+
+### Docker Compose 部署
+
+容器是另一种发布方式，原有 ZIP 流程继续保留。镜像使用 Node 24、多阶段安装生产依赖，并包含 `vendor/` 的审核 SDK；以 `node` 用户（UID/GID `1000:1000`）运行。健康检查访问现有 OIDC 发现接口，启动时仍检查密钥、数据库连接和结构版本；健康状态不代表持续验证数据库、SMTP 或外部身份提供方。
+
+生产使用 `docker-compose.yaml` 拉取镜像。本地源码构建使用独立可运行的 `docker-compose.build.yaml`，其网关更新标签为 `false`，Watchtower 位于默认不启用的 `auto-update` profile。始终显式传 `-f`，避免目录中旧的 `compose.yaml` 或 override 被自动选中。
+
+1. 在新的专用部署目录放置 Compose 文件，复制 `.env.example` 为 `.env`。现有服务迁移时复制原 `.env`、签名私钥和 `data/admin-settings.json`，保持 `JWT_SECRET`、公开域名和签名密钥不变；不要覆盖旧目录。预先创建 `keys/`、`data/`、`public/assets/`，将现有字体图标复制到 `public/assets/`，包括 `vaultsso-fonts.css` 和它引用的字体文件。绑定路径缺失会使启动失败。
+2. `.env` 和 `keys/` 挂载为只读，`public/assets/` 只读，`data/` 可写。让容器用户 `1000:1000` 能读取 `.env`、私钥和资源，并拥有新目录中的 `data/`；建议 `.env`、私钥为 `0600`，`data/` 为 `0700`。在 Linux 上只对这份新部署副本设置权限，避免影响原服务或其他应用。容器中的签名路径可写成 `keys/oidc-private.pem`，CA 文件也可放在 `keys/`；Compose 固定后台设置路径为 `/app/data/admin-settings.json`。
+3. 将 `GATEWAY_IMAGE` 改成实际发布的 GHCR/CNB 镜像，例如 `ghcr.io/<owner>/<repo>:main` 或 `docker.cnb.cool/<namespace>/<repo>:main`。发布的固定版本、提交标签或 digest 可用于受控升级和回退。不同安装使用不同 `COMPOSE_PROJECT_NAME`；以 `.env` 中的该值为准，不另外用不匹配的 `-p`。宿主机默认仅发布 `127.0.0.1:3146`，可用 `GATEWAY_PORT` 选择并行验证端口，容器内部固定为 `3146`。
+4. MySQL 为外部服务。容器里的 `127.0.0.1` 是容器自身，需要可达的数据库 DNS/IP；使用宿主机 MySQL 时须由运维提供可达地址、监听和访问控制。非 loopback 生产数据库必须 `DB_TLS=true`，私有 CA 设置 `DB_TLS_CA_FILE=keys/mysql-ca.pem`，证书中的主机名必须匹配；不要关闭证书校验。容器也必须能访问 SMTP、审核服务和身份提供方；原来指向宿主机 loopback 的服务地址需重新确认。
+5. 宝塔/Nginx 继续在宿主机反代到发布端口，并保留上面的全部转发头，特别是 `X-Real-IP` 和 `X-Real-Port`。容器看到的 Nginx socket peer 通常是 Docker bridge 的宿主机网关，已不再是 `127.0.0.1`。通过 `docker network inspect` 核对项目网络网关，并结合实际请求来源确认后，将 `TRUST_PROXY` 配成该具体地址的 `/32`（IPv6 用 `/128`）。不要照抄某个 `172.x` 地址、信任整个私网或设置 `true`。再验证登录记录中的 IP 和源端口；IP 仍由 Express 可信代理链解析。
+
+以下命令供运维在准备好上述挂载和配置后执行。先在无生产流量的端口验证；使用迁移账号执行 `init-db` 前备份数据库，完成后恢复应用账号配置。`check:config` 仅做静态检查，`init-db` 会改数据库。容器启动不会自动迁移。
+
+```sh
+# 生产镜像：先拉取，再做静态配置检查
+docker compose -f docker-compose.yaml pull gateway
+docker compose -f docker-compose.yaml run --rm --no-deps gateway npm run check:config
+# 仅在已备份并切换为专用迁移账号后执行
+docker compose -f docker-compose.yaml run --rm --no-deps gateway npm run init-db
+# 恢复应用数据库账号后，先只启动网关
+docker compose -f docker-compose.yaml up -d --wait gateway
+docker compose -f docker-compose.yaml ps
+curl --fail http://127.0.0.1:3146/.well-known/openid-configuration
+
+# 本地构建：不启用 Watchtower，同样需要可用配置、密钥、资源和外部 MySQL
+docker compose -f docker-compose.build.yaml build
+docker compose -f docker-compose.build.yaml up -d --wait gateway
+```
+
+并行验证可先设置未占用的 `GATEWAY_PORT`，验证公开发现文档、JWKS、字体、登录/MFA、刷新令牌和审计 IP/端口后，再安排只切换本网关的 Nginx upstream（或停止旧进程、释放原端口）。保留旧进程配置与部署目录供回退。回退时先停止本网关的 Watchtower，将 Nginx 切回旧服务，或将 `GATEWAY_IMAGE` 改回先前记录的镜像 digest 并重建本网关；涉及结构迁移时按数据库备份与兼容性计划回退，不能只退镜像。
+
+生产 Watchtower 固定为 `nickfedor/watchtower:1.23.2`，默认每 `WATCHTOWER_POLL_INTERVAL=600` 秒检查一次。它同时按启用标签、项目 scope 和网关容器名筛选，仅更新该项目网关，自身标签为 `false`。完成手动切换和检查后，运维可执行 `docker compose -f docker-compose.yaml up -d watchtower` 启用更新。数据库结构变化的版本需要先停止 Watchtower、完成备份和显式迁移，再安排镜像更新。Watchtower 不会替你应用 `.env`、挂载或 Compose 修改；修改后执行 `docker compose -f docker-compose.yaml up -d --force-recreate --wait gateway`，本地构建则将文件名换成 `docker-compose.build.yaml`。应用只在启动时读取 `.env`，文件被原子替换后旧容器还可能持有旧挂载，因此不能依赖普通 `up -d` 自动刷新。
+
+公开镜像无需拉取凭据。私有镜像需要宿主机 `docker login`，Watchtower 还需通过运维专用 override 将正确的 Docker `config.json` 只读挂载到它的 `/config.json`；仅宿主机登录不足以让 Watchtower 读取凭据。使用 override 时需在相关命令中显式同时传入两个文件，例如 `docker compose -f docker-compose.yaml -f docker-compose.private.yaml up -d --force-recreate watchtower`；显式指定 `-f` 后不会自动加载该 override。不要把登录文件、令牌或真实 `.env` 提交到仓库。Docker socket 只挂给本项目 Watchtower。
+
+### 镜像 CI 配置
+
+GitHub Actions 对分支 push、`v*` 标签和 PR 执行共享检查脚本（`npm ci`、`npm run check`）。只有检查成功的 `main` push 和 `v*` tag push 才向 `ghcr.io/<owner>/<repo>` 推送镜像；仓库路径转为小写。使用内置 `GITHUB_TOKEN` 的 `packages: write` 权限，无需另存 PAT；若组织限制 Packages 发布，需由管理员开放，并按需要设置 package 的可见性和仓库访问权。PR 不发布镜像。
+
+CNB 在 `main` push 和 `v*` tag push 中依次检查、构建、推送。请先在 CNB 创建或镜像同步自己的仓库，启用云构建与 Docker 制品库，并核实该仓库有发布权限。默认使用 `CNB_DOCKER_REGISTRY`、`CNB_REPO_SLUG_LOWERCASE` 和平台短期 `CNB_TOKEN` 鉴权，不需要手填长期 token；自定义目标可在 CNB 仓库配置 `CNB_IMAGE`、`CNB_REGISTRY`、`CNB_REGISTRY_USER` 和机密 `CNB_REGISTRY_PASSWORD`，切勿写入 YAML。`main` 发布 `main`、`latest` 和提交标签；版本标签发布同名版本与提交标签，稳定的 `vMAJOR.MINOR.PATCH` 才更新 `latest`，预发布不更新 `latest`。两个平台独立构建，同一提交的镜像 digest 可能不同。
+
+首次合并这些配置后，后续 push/tag 才会按规则触发流水线；在启用服务器自动更新前，先确认自己的目标镜像已发布，并将 `GATEWAY_IMAGE` 指向正确仓库与渠道。完整维护契约见 [.trellis/spec/backend/deployment.md](.trellis/spec/backend/deployment.md)。
 
 ## 升级现有部署
 
