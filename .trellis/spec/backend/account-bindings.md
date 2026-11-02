@@ -8,7 +8,7 @@ Phone editing crosses profile/admin forms, authenticated API routes, identity ve
 - `PUT /api/users/:id`: administrator phone update.
 - `POST /api/admin/oidc`: optional `huaweiUnionScope` provider configuration.
 - `POST /api/v1/auth/oauth/huawei/quick-login`: trusted server-side Huawei identity exchange.
-- `POST /api/v1/auth/oauth/huawei/bind` and `/skip`: explicit decision after a pending, unbound identity; pending binding/MFA responses are not final login data.
+- `POST /api/v1/auth/oauth/huawei/bind` and `/skip`: explicit decision after a pending, unbound identity; pending binding/MFA responses are not final login data. Both require a Huawei-verified phone for the same exchange.
 - `POST /api/v1/auth/oauth/huawei/quick-login` with `intent: "merge"`: merge an accidentally created, disposable Huawei source account into a freshly authenticated existing account.
 - `GET /api/admin/account-bindings`: administrator-only safe projection.
 - `oidc_providers.huawei_union_scope VARCHAR(128) COLLATE utf8mb4_bin NOT NULL DEFAULT ''` was introduced in schema version 4. Current schema version 7 also persists MFA continuation, user application usage and multiple authenticators. Existing deployments must run `npm run init-db` before startup.
@@ -26,6 +26,20 @@ The bindings endpoint returns `{ accounts: [{ user: { id, username, name, email 
 
 Use sorted MySQL named locks on held connections for identity aliases and scope+UnionID. Resolve/create identities within a transaction on that connection; release locks/connections in `finally`. Huawei phone binding/verification must condition writes on the currently stored phone so a concurrent profile edit cannot be overwritten or incorrectly verified.
 
+### Verified Huawei phone is mandatory
+
+The disclosed identity model is phone verification: Huawei quick login must yield a verified phone. `hasVerifiedHuaweiPhone(identity)` is the single predicate: `identity.phoneVerified === true` and `identity.phone.e164` non-empty. `phoneNumberValid` false, a masked or partial number, or no number at all does not satisfy it.
+
+Every path that creates an account or records a new identity rejects on that predicate with HTTP 403, `error: 'huawei_verified_phone_required'`, `error_description: '请使用已绑定手机号的华为账号'` (`HUAWEI_VERIFIED_PHONE_REQUIRED`), and does so **before** any user row, `user_identities` row, pending binding token, login log or session is written:
+
+1. `quick-login` with `intent: "link"` and plain quick-login (no intent). The check runs immediately after identity parsing, so no `binding_required` token is ever minted for a phone-less identity.
+2. `quick-login` creation, backed by `resolveHuaweiUser` throwing the same fixed message before `User.create`.
+3. `/huawei/skip` and `/huawei/bind`, which additionally delete the pending token so a legacy token issued before this rule cannot be replayed. This matters for tokens minted by a pre-change build and still inside the five-minute window.
+
+Identity records already stored without a phone stay inspectable but can no longer authenticate: a returning phone-less identity is rejected by the same predicate before the match is used, so the response does not reveal whether the identity is already bound. `intent: "merge"` is deliberately exempt: it only moves an existing source identity into a freshly authenticated target and cannot mint a new identity.
+
+The rejection is not a login attempt outcome and is not written to `login_logs`; monitoring counts it as a refused pre-authentication request.
+
 ## 4. Validation & Error Matrix
 | Condition | Result |
 | --- | --- |
@@ -38,16 +52,21 @@ Use sorted MySQL named locks on held connections for identity aliases and scope+
 | Same scope/UnionID maps to different users | Reject Huawei login; preserve bindings |
 | A bound provider key is reused with a different client ID | Reject; use a new provider configuration |
 | Huawei-reported phone belongs to another user | Preserve login and identity, report phone conflict, do not merge |
+| Huawei returns no phone, an unverified phone, or only a masked/partial number | 403 `huawei_verified_phone_required` with the fixed message; no account, identity, pending token, login log or session written |
+| Legacy pending token or stored identity without a verified phone | Same 403 on quick-login, `/bind` and `/skip`; pending token consumed |
 
 ## 5. Good / Base / Bad Cases
 - Good: two configured apps in `company-a` return the same UnionID and different OpenIDs; one local account has two binding records.
 - Base: scope empty or no UnionID; login stays within its own app.
 - Bad: two historical local users already own app bindings for one UnionID; enabling a common scope does not merge them.
+- Phone-required good: a Huawei account with a bound phone creates or resumes its local account normally after the phone is verified.
+- Phone-required base: an account already bound to that phone signs in; the phone is written by `applyHuaweiPhone` as before.
+- Phone-required bad: an account with no Huawei phone gets `binding_required`, and neither `/skip` nor `/bind` creates or attaches anything.
 - Phone: `+65` with national `65123456` stays `+6565123456`; it must not become `+65123456`.
 
 ## 6. Tests Required
 - `tests/phone-api.test.js`: both write routes, format/uniqueness, unchanged verification, change/unbind, reauthentication, authorization and credential revocation.
-- `tests/huawei.test.js`: multiple apps, separate scopes, OpenID-only fallback/upgrade, conflicts, concurrent first logins, transactional rollback, competing phone edits and safe admin projection.
+- `tests/huawei.test.js`: multiple apps, separate scopes, OpenID-only fallback/upgrade, conflicts, concurrent first logins, transactional rollback, competing phone edits and safe admin projection. It must also cover the phone requirement: quick login refused for missing, unverified and masked-only numbers; `intent: "link"` refused without writing an identity; a stored phone-less identity refused without a login log; legacy pending tokens injected into the exported `__pendingHuaweiBindings` cache refused by both `/skip` and `/bind`, with a verified-phone pending token proving the same paths still work.
 - `tests/schema.test.js`: schema version, create and migration statements.
 - `npm run check:browser`: saves/reloads/unbinds, navigation/search and desktop/mobile screenshots.
 - Browser regression must save the currently signed-in administrator's full form, then reload and verify the phone. Editing another user alone misses self-session revocation bugs. Version changed phone scripts and required styles/translations in the referencing HTML to avoid old cached handlers.
@@ -56,6 +75,10 @@ Use sorted MySQL named locks on held connections for identity aliases and scope+
 
 ## 7. Wrong vs Correct
 Wrong: merge any matching `UnionID` globally, keep one mutable OpenID for all apps, or verify a phone from a stale user snapshot.
+
+Wrong: treat "no phone" as a decision point and let `/skip` create the account anyway; or run the phone check only inside account creation, which leaves `/bind` and legacy pending tokens able to attach identities.
+
+Correct: check one shared predicate at every entry — quick login, link intent, account creation, `/skip` and `/bind` — before any write, and delete the pending token on rejection.
 
 Correct: establish explicit provider scope, keep each app's identity, reject conflicting mappings, and condition Huawei phone writes on the current database value.
 

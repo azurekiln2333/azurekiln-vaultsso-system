@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 const jwt = require('jsonwebtoken');
 const { createFixture, randomSecret } = require('./support/fixture');
+const serverModule = require('../server');
 const OidcProviderModel = require('../models/OidcProvider');
 const ClientModel = require('../models/Client');
 const huawei = require('../services/huawei');
@@ -47,6 +48,9 @@ beforeEach(async () => {
   codes = new Map();
   upstreamCalls = [];
   acceptedClientIds = new Set([clientId]);
+  // The pending binding cache is process state, not fixture state; a leaked token would make an
+  // earlier test's decision affect a later one.
+  serverModule.__pendingHuaweiBindings.clear();
   await new OidcProviderModel(f.pool).upsert({
     providerKey: 'huawei', providerName: '华为账号', providerType: 'huawei_quicklogin',
     enabled: true, clientId, clientSecret, tokenUrl: huaweiEndpoint,
@@ -104,7 +108,6 @@ async function quickLogin(body, headers = {}) {
     ...body, code: undefined, binding_token: result.body.binding_token
   }, headers);
 }
-
 function huaweiPayload(overrides = {}) {
   return {
     openID: `open-${crypto.randomUUID()}`,
@@ -207,7 +210,7 @@ test('官方 openId/unionId/phoneNumber 字段匹配已验证手机号并自动�
   assert.equal(f.pool.userIdentities[0].provider_secondary_id, 'official-app-open');
 });
 
-test('官方 phoneNumberValid=0 不自动关联已有账号', async () => {
+test('官方 phoneNumberValid=0 不自动关联已有账号，且不再建号', async () => {
   const existing = await f.User.create({
     username: `unverified-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`,
     password: randomSecret(), phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true
@@ -217,12 +220,12 @@ test('官方 phoneNumberValid=0 不自动关联已有账号', async () => {
     openId: 'unverified-open', unionId: 'unverified-union',
     purePhoneNumber: '13800138000', phoneCountryCode: '0086', phoneNumberValid: 0
   }) });
-  assert.equal(result.status, 200, JSON.stringify(result.body));
-  assert.notEqual(result.body.user.id, existing.id);
-  assert.equal(result.body.phone, null);
-  assert.equal(result.body.phoneStatus, 'unverified');
-  assert.equal(result.body.user.phoneE164, '');
-  assert.equal(f.pool.userIdentities[0].user_id, result.body.user.id);
+  // 未核验号码既不能认领已有账号，也不能作为新建账号的依据。
+  assert.equal(result.status, 403, JSON.stringify(result.body));
+  assert.equal(result.body.error, 'huawei_verified_phone_required');
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.users[0].id, existing.id);
+  assert.equal(f.pool.userIdentities.length, 0);
 });
 
 test('HTTP 200 中的华为业务错误不会建立账号且不泄露原始报文', async () => {
@@ -307,25 +310,80 @@ test('默认按华为已验证手机号匹配已验证的已有账号', async ()
   assert.equal(f.pool.users.length, 1);
 });
 
-test('未获得手机号时先等待绑定，只有跳过才创建新账号，待绑定凭据不可重放', async () => {
+test('未获得手机号时不签发待绑定凭据，也不创建账号', async () => {
   const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '', phoneNumber: '' })), session_days: 7 });
-  assert.equal(pending.status, 200);
-  assert.equal(pending.body.binding_required, true);
-  assert.equal(pending.body.phone_available, false);
+  assert.equal(pending.status, 403);
+  assert.equal(pending.body.error, 'huawei_verified_phone_required');
+  assert.equal(pending.body.error_description, '请使用已绑定手机号的华为账号');
+  assert.equal(pending.body.binding_token, undefined);
   assert.equal(f.pool.users.length, 0);
-  const skipped = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', { binding_token: pending.body.binding_token, session_days: 14 });
-  assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
+  assert.equal(f.pool.sessions.length, 0);
+  assert.doesNotMatch(pending.cookie, /(?:^|;\s*)session=/);
+});
+
+const PHONE_REJECTED = '请使用已绑定手机号的华为账号';
+
+for (const [label, payload] of [
+  ['华为未返回任何号码', () => huaweiPayload({ purePhoneNumber: '', phoneNumber: '', loginMobileNumber: '' })],
+  ['华为返回未核验号码', () => huaweiPayload({ phoneNumberValid: 0 })],
+  ['华为只返回掩码号码', () => huaweiPayload({ purePhoneNumber: '138****8000', phoneNumber: '', loginMobileNumber: '138****8000' })]
+]) {
+  test(`快速登录被拒绝：${label}`, async () => {
+    const result = await quickLoginRaw({ code: stage(payload()) });
+    assert.equal(result.status, 403, JSON.stringify(result.body));
+    assert.equal(result.body.error, 'huawei_verified_phone_required');
+    assert.equal(result.body.error_description, PHONE_REJECTED);
+    assert.equal(result.body.binding_required, undefined);
+    assert.equal(result.body.binding_token, undefined);
+    assert.doesNotMatch(JSON.stringify(result.body), /138\*\*\*\*8000|13800138000/);
+    assert.equal(f.pool.users.length, 0);
+    assert.equal(f.pool.userIdentities.length, 0);
+    assert.equal(f.pool.sessions.length, 0);
+  });
+}
+
+test('没有已核验手机号时 link intent 不会绑定到已登录账号', async () => {
+  const target = await f.user();
+  const signedIn = await f.login(target);
+  assert.equal(signedIn.status, 200, JSON.stringify(signedIn.body));
+  const usersBefore = f.pool.users.length;
+  const identitiesBefore = f.pool.userIdentities.length;
+  const result = await quickLoginRaw({ intent: 'link', code: stage(noVerifiedPhone()) }, { Cookie: signedIn.cookie });
+  assert.equal(result.status, 403, JSON.stringify(result.body));
+  assert.equal(result.body.error, 'huawei_verified_phone_required');
+  assert.equal(result.body.error_description, PHONE_REJECTED);
+  assert.equal(f.pool.userIdentities.length, identitiesBefore);
+  assert.equal(f.pool.users.length, usersBefore);
+});
+
+test('未返回手机号的华为身份即使已存在也不会被登录', async () => {
+  // 历史数据：整改前允许无手机号建号，这里手工构造该绑定，验证整改后不能继续登录。
+  const legacy = await f.User.create({
+    username: `legacy-huawei-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@users.invalid`, password: ''
+  });
+  f.pool.userIdentities.push({
+    id: crypto.randomUUID(), user_id: legacy.id, provider: 'huawei',
+    provider_user_id: 'legacy-no-phone-union', provider_secondary_id: 'legacy-no-phone-open',
+    provider_username: legacy.username, display_name: '', avatar: '', email: '',
+    profile: JSON.stringify({ provider: 'huawei_quicklogin', openID: 'legacy-no-phone-open',
+      unionID: 'legacy-no-phone-union', clientId, providerName: '华为账号', huaweiUnionScope: '' }),
+    created_at: new Date(), updated_at: new Date()
+  });
+  const loginLogsBefore = f.pool.loginLogs.length;
+  const result = await quickLoginRaw({ code: stage(huaweiPayload({
+    unionID: 'legacy-no-phone-union', openID: 'legacy-no-phone-open',
+    purePhoneNumber: '', phoneNumber: '', loginMobileNumber: ''
+  })) });
+  assert.equal(result.status, 403, JSON.stringify(result.body));
+  assert.equal(result.body.error, 'huawei_verified_phone_required');
+  assert.equal(result.body.error_description, PHONE_REJECTED);
+  assert.doesNotMatch(result.cookie, /(?:^|;\s*)session=/);
   assert.equal(f.pool.users.length, 1);
-  const claims = jwt.decode(decodeURIComponent(skipped.cookie.match(/session=([^;]+)/)[1]));
-  assert.equal(claims.session_days, 7, 'skip cannot override the initial choice');
-  assert.ok(claims.exp - claims.iat >= 7 * 86400 - 1 && claims.exp - claims.iat <= 7 * 86400);
-  const replay = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', { binding_token: pending.body.binding_token });
-  assert.equal(replay.status, 400);
-  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.loginLogs.length, loginLogsBefore, 'rejected login must not be logged as success');
 });
 
 test('过期的华为待绑定凭据不能创建账号', async () => {
-  const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '' })) });
+  const pending = await quickLoginRaw({ code: stage(huaweiPayload()) });
   assert.equal(pending.body.binding_required, true);
   const now = Date.now;
   const issuedAt = now();
@@ -339,6 +397,84 @@ test('过期的华为待绑定凭据不能创建账号', async () => {
   }
 });
 
+// 历史数据：待绑定凭据在整改前可能在华为未返回手机号时签发。skip/bind 都必须在写入前拒绝这类身份，
+// 即使绕过快速登录的闸门直接命中待绑定缓存。
+async function signInExistingAccount(app) {
+  const password = randomSecret();
+  const existing = await f.User.create({
+    username: `bind-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`, password,
+    emailVerified: true
+  });
+  const verifier = randomSecret();
+  const authorized = await f.request('/oauth2/authorize', {
+    method: 'POST', data: {
+      username: existing.username, password, client_id: app.id,
+      redirect_uri: app.redirectUris[0], response_type: 'code', scope: 'openid profile',
+      state: randomSecret(), code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256'
+    }
+  });
+  assert.equal(authorized.status, 200, JSON.stringify(authorized.body));
+  const exchanged = await f.exchange(app, {
+    code: new URL(authorized.body.redirect).searchParams.get('code'), verifier
+  });
+  assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
+  return { existing, token: exchanged.body.access_token };
+}
+
+test('skip 与 bind 对没有已核验手机号的历史待绑定凭据一律拒绝', async () => {
+  const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
+  const { existing, token: accessToken } = await signInExistingAccount(app);
+
+  const pendingCache = serverModule.__pendingHuaweiBindings;
+  assert.ok(pendingCache instanceof Map, 'test hook for the pending binding cache must be exported');
+  const baseEntry = () => ({
+    identity: {
+      openId: `legacy-open-${crypto.randomUUID()}`, unionId: '',
+      phone: null, phoneVerified: false, displayName: '历史华为用户'
+    },
+    config: { providerKey: 'huawei', providerName: '华为账号', huaweiUnionScope: '', clientId },
+    clientId: app.id, sessionDays: 1, createdAt: Date.now(), inProgress: false
+  });
+
+  const usersBefore = f.pool.users.length;
+  const identitiesBefore = f.pool.userIdentities.length;
+  const sessionsBefore = f.pool.sessions.length;
+
+  for (const [path, body, headers] of [
+    ['/api/v1/auth/oauth/huawei/skip', { client_id: app.id }, {}],
+    ['/api/v1/auth/oauth/huawei/bind', {}, { Authorization: `Bearer ${accessToken}` }]
+  ]) {
+    const token = randomSecret();
+    pendingCache.set(token, baseEntry());
+    const rejected = await huaweiRequest(path, { binding_token: token, ...body }, headers);
+    assert.equal(rejected.status, 403, path + ' ' + JSON.stringify(rejected.body));
+    assert.equal(rejected.body.error, 'huawei_verified_phone_required', path);
+    assert.equal(rejected.body.error_description, PHONE_REJECTED, path);
+    assert.doesNotMatch(rejected.cookie, /(?:^|;\s*)session=/, path);
+    assert.equal(pendingCache.has(token), false, path + ' must consume the rejected token');
+  }
+
+  assert.equal(f.pool.users.length, usersBefore);
+  assert.equal(f.pool.userIdentities.length, identitiesBefore);
+  assert.equal(f.pool.sessions.length, sessionsBefore);
+
+  // 带华为已核验手机号的待绑定凭据仍然可用：绑定不受影响。
+  const verifiedToken = randomSecret();
+  pendingCache.set(verifiedToken, {
+    ...baseEntry(),
+    identity: { openId: `verified-open-${crypto.randomUUID()}`, unionId: '',
+      phone: { e164: '+8613800138000', countryCode: '86', nationalNumber: '13800138000' },
+      phoneVerified: true, displayName: '华为用户' }
+  });
+  const bound = await huaweiRequest('/api/v1/auth/oauth/huawei/bind', { binding_token: verifiedToken },
+    { Authorization: `Bearer ${accessToken}` });
+  assert.equal(bound.status, 200, JSON.stringify(bound.body));
+  assert.equal(bound.body.linked, true);
+  assert.equal(f.pool.userIdentities.length, identitiesBefore + 1);
+  assert.equal(f.pool.userIdentities.at(-1).user_id, existing.id);
+});
+
 test('待绑定华为身份只能绑定已验证登录的账号', async () => {
   const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
   const password = randomSecret();
@@ -348,7 +484,7 @@ test('待绑定华为身份只能绑定已验证登录的账号', async () => {
     // mailbox gate (correctly) intercepts the login before any session/redirect is issued.
     emailVerified: true
   });
-  const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '' })), client_id: app.id });
+  const pending = await quickLoginRaw({ code: stage(huaweiPayload()), client_id: app.id });
   assert.equal(pending.body.binding_required, true);
   assert.equal(f.pool.users.length, 1);
   const unauthorized = await huaweiRequest('/api/v1/auth/oauth/huawei/bind', { binding_token: pending.body.binding_token });
@@ -535,13 +671,13 @@ test('启用验证器时返回 mfa_required，并可用响应体里的凭据（�
   assert.equal((await f.request('/api/profile', { cookie: completed.cookie })).status, 200);
 });
 
-test('华为未返回手机号时仍可登录，只是不写手机号', async () => {
+test('华为未返回手机号时不再建号', async () => {
   const result = await quickLogin({
     code: stage(huaweiPayload({ purePhoneNumber: '', phoneCountryCode: '', loginMobileNumber: '', loginMobileValid: '' }))
   });
-  assert.equal(result.status, 200);
-  assert.equal(result.body.user.phoneE164, '');
-  assert.equal(f.pool.users[0].phone_number, null);
+  assert.equal(result.status, 403);
+  assert.equal(result.body.error, 'huawei_verified_phone_required');
+  assert.equal(f.pool.users.length, 0);
 });
 
 test('无效或已使用的授权码被拒绝，且不泄露上游报文', async () => {
@@ -599,7 +735,20 @@ async function configureApp(providerKey, huaweiUnionScope = '', overrides = {}) 
   });
 }
 
-function noPhone(overrides = {}) {
+// 整改后建号/绑定必须建立在已核验手机号上，因此这些身份用例统一带上华为已验证号码，
+// 以便继续覆盖跨 App、UnionID 和并发锁的语义（手机号闸门另有专门用例覆盖）。
+// `distinctPhone()` 给需要多个独立账号的用例分配不同号码，避开手机号自动关联。
+function huaweiIdentity(overrides = {}) {
+  return huaweiPayload({ ...overrides });
+}
+
+let distinctPhoneCounter = 0;
+function distinctPhone() {
+  distinctPhoneCounter += 1;
+  return { purePhoneNumber: String(13800000000 + distinctPhoneCounter), phoneCountryCode: '0086' };
+}
+
+function noVerifiedPhone(overrides = {}) {
   return huaweiPayload({ purePhoneNumber: '', phoneCountryCode: '', loginMobileNumber: '', ...overrides });
 }
 
@@ -612,7 +761,7 @@ test('fresh existing-account login merges a disposable Huawei account across App
   })) });
   assert.equal(sourceLogin.status, 200, JSON.stringify(sourceLogin.body));
   const sourceId = sourceLogin.body.user.id;
-  const secondApp = await quickLogin({ provider: 'huawei-two', code: stage(noPhone({
+  const secondApp = await quickLogin({ provider: 'huawei-two', code: stage(huaweiIdentity({
     unionID, openID: 'merge-app-two'
   })) });
   assert.equal(secondApp.body.user.id, sourceId);
@@ -639,7 +788,7 @@ test('fresh existing-account login merges a disposable Huawei account across App
   assert.equal(f.pool.userAppUsage[0].user_id, target.id);
   assert.equal((await f.request('/api/profile', { cookie: signedIn.cookie })).status, 200);
 
-  const later = await quickLogin({ provider: 'huawei-two', code: stage(noPhone({ unionID, openID: 'merge-app-two' })) });
+  const later = await quickLogin({ provider: 'huawei-two', code: stage(huaweiIdentity({ unionID, openID: 'merge-app-two' })) });
   assert.equal(later.body.user.id, target.id);
   assert.equal(f.pool.users.length, 1);
 });
@@ -658,10 +807,11 @@ test('merge refuses a stale target session before consuming the fresh Huawei cod
 
 test('merge persists a verified phone first returned by the fresh Huawei code', async () => {
   const unionID = `merge-phone-${crypto.randomUUID()}`;
-  const sourceLogin = await quickLogin({ code: stage(noPhone({ unionID, openID: 'merge-phone-open' })) });
+  const sourceLogin = await quickLogin({ code: stage(huaweiIdentity({ unionID, openID: 'merge-phone-open' })) });
   assert.equal(sourceLogin.status, 200);
-  assert.equal(sourceLogin.body.user.phoneE164, '');
   const sourceId = sourceLogin.body.user.id;
+  await f.User.update(sourceId, { phoneCountryCode: '', phoneNumber: '', phoneVerified: false });
+  assert.equal((await f.User.findById(sourceId)).phone_e164, null);
   const target = await f.user();
   const signedIn = await f.login(target);
   const merged = await quickLoginRaw({ intent: 'merge', authorizationCode: stage(huaweiPayload({
@@ -677,7 +827,7 @@ test('merge persists a verified phone first returned by the fresh Huawei code', 
 
 test('merge refuses a target session revoked after the Huawei exchange', async () => {
   const unionID = `merge-session-${crypto.randomUUID()}`;
-  const sourceLogin = await quickLogin({ code: stage(noPhone({ unionID, openID: 'merge-session-open' })) });
+  const sourceLogin = await quickLogin({ code: stage(huaweiIdentity({ unionID, openID: 'merge-session-open' })) });
   const target = await f.user();
   const signedIn = await f.login(target);
   const execute = f.pool.execute.bind(f.pool);
@@ -690,7 +840,7 @@ test('merge refuses a target session revoked after the Huawei exchange', async (
     return execute(sql, params);
   };
   try {
-    const merged = await quickLoginRaw({ intent: 'merge', authorizationCode: stage(noPhone({
+    const merged = await quickLoginRaw({ intent: 'merge', authorizationCode: stage(huaweiIdentity({
       unionID, openID: 'merge-session-open'
     })) }, { Cookie: signedIn.cookie });
     assert.equal(revoked, true);
@@ -704,8 +854,8 @@ test('同主体多个 App 用 UnionID 关联一个用户，并分别保留 OpenI
   await configureApp('huawei', 'company-one');
   await configureApp('huawei-two', 'company-one');
   const unionID = randomSecret();
-  const first = await quickLogin({ provider: 'huawei', code: stage(noPhone({ unionID, openID: 'open-app-one' })) });
-  const second = await quickLogin({ provider: 'huawei-two', code: stage(noPhone({ unionID, openID: 'open-app-two' })) });
+  const first = await quickLogin({ provider: 'huawei', code: stage(huaweiIdentity({ unionID, openID: 'open-app-one' })) });
+  const second = await quickLogin({ provider: 'huawei-two', code: stage(huaweiIdentity({ unionID, openID: 'open-app-two' })) });
   assert.equal(first.status, 200, JSON.stringify(first.body));
   assert.equal(second.status, 200, JSON.stringify(second.body));
   assert.equal(second.body.user.id, first.body.user.id);
@@ -723,13 +873,13 @@ test('不同主体、未设主体和仅 OpenID 的 App 不跨提供方关联', a
   await configureApp('huawei-four');
   const unionID = randomSecret();
   for (const provider of ['huawei', 'huawei-two', 'huawei-three', 'huawei-four']) {
-    const result = await quickLogin({ provider, code: stage(noPhone({ unionID })) });
+    const result = await quickLogin({ provider, code: stage(huaweiIdentity({ unionID, ...distinctPhone() })) });
     assert.equal(result.status, 200, JSON.stringify(result.body));
   }
   await configureApp('huawei-open-one', 'company-one');
   await configureApp('huawei-open-two', 'company-one');
   for (const provider of ['huawei-open-one', 'huawei-open-two']) {
-    const result = await quickLogin({ provider, code: stage(noPhone({ unionID: '', openID: 'same-open-without-union' })) });
+    const result = await quickLogin({ provider, code: stage(huaweiIdentity({ unionID: '', openID: 'same-open-without-union', ...distinctPhone() })) });
     assert.equal(result.status, 200, JSON.stringify(result.body));
   }
   assert.equal(f.pool.users.length, 6);
@@ -739,7 +889,7 @@ test('同主体不同 App 并发首次登录只创建一个用户', async () => 
   await configureApp('huawei', 'company-one');
   await configureApp('huawei-two', 'company-one');
   const unionID = randomSecret();
-  const results = await Promise.all(['huawei', 'huawei-two'].map(provider => quickLogin({ provider, code: stage(noPhone({ unionID })) })));
+  const results = await Promise.all(['huawei', 'huawei-two'].map(provider => quickLogin({ provider, code: stage(huaweiIdentity({ unionID })) })));
   results.forEach(result => assert.equal(result.status, 200, JSON.stringify(result.body)));
   assert.equal(results[0].body.user.id, results[1].body.user.id);
   assert.equal(f.pool.users.length, 1);
@@ -749,24 +899,24 @@ test('同主体不同 App 并发首次登录只创建一个用户', async () => 
 
 test('显式设主体后可关联旧空分组绑定，只有 OpenID 的旧记录不会被当成 UnionID', async () => {
   const unionID = randomSecret();
-  const first = await quickLogin({ code: stage(noPhone({ unionID })) });
+  const first = await quickLogin({ code: stage(huaweiIdentity({ unionID })) });
   assert.equal(first.status, 200);
   await configureApp('huawei', 'company-one');
   await configureApp('huawei-two', 'company-one');
-  const second = await quickLogin({ provider: 'huawei-two', code: stage(noPhone({ unionID })) });
+  const second = await quickLogin({ provider: 'huawei-two', code: stage(huaweiIdentity({ unionID })) });
   assert.equal(second.status, 200, JSON.stringify(second.body));
   assert.equal(second.body.user.id, first.body.user.id);
   await configureApp('huawei-open', 'company-one');
-  const third = await quickLogin({ provider: 'huawei-open', code: stage(noPhone({ unionID: '', openID: 'open-only' })) });
+  const third = await quickLogin({ provider: 'huawei-open', code: stage(huaweiIdentity({ unionID: '', openID: 'open-only', ...distinctPhone() })) });
   await configureApp('huawei-other', 'company-one');
-  const fourth = await quickLogin({ provider: 'huawei-other', code: stage(noPhone({ unionID: 'open-only' })) });
+  const fourth = await quickLogin({ provider: 'huawei-other', code: stage(huaweiIdentity({ unionID: 'open-only', ...distinctPhone() })) });
   assert.equal(third.status, 200);
   assert.equal(fourth.status, 200);
   assert.notEqual(fourth.body.user.id, third.body.user.id);
 });
 
 test('同一 App 同时首次登录不会产生重复用户或孤立用户', async () => {
-  const identity = noPhone();
+  const identity = huaweiIdentity();
   const results = await Promise.all([1, 2].map(() => quickLogin({ code: stage(identity) })));
   results.forEach(result => assert.equal(result.status, 200, JSON.stringify(result.body)));
   assert.equal(f.pool.users.length, 1);
@@ -783,7 +933,7 @@ test('绑定写入失败会回滚新用户，同时保留另一个并发登录�
     const execute = connection.execute.bind(connection);
     connection.execute = async (sql, params) => {
       if (/^INSERT INTO user_identities/i.test(sql) && params[2] === 'huawei') {
-        otherResult = await quickLogin({ provider: 'huawei-two', code: stage(noPhone({ unionID: 'committed-union' })) });
+        otherResult = await quickLogin({ provider: 'huawei-two', code: stage(huaweiIdentity({ unionID: 'committed-union' })) });
         throw new Error('Simulated identity storage failure');
       }
       return execute(sql, params);
@@ -791,7 +941,7 @@ test('绑定写入失败会回滚新用户，同时保留另一个并发登录�
     return connection;
   };
   try {
-    const failed = await quickLogin({ provider: 'huawei', code: stage(noPhone({ unionID: 'rolled-back-union' })) });
+    const failed = await quickLogin({ provider: 'huawei', code: stage(huaweiIdentity({ unionID: 'rolled-back-union' })) });
     assert.equal(failed.status, 400);
     assert.equal(otherResult.status, 200, JSON.stringify(otherResult.body));
     assert.equal(f.pool.users.length, 1);
@@ -836,8 +986,10 @@ test('华为回传手机号在绑定时发生唯一键竞争，保留账号登�
 
 test('华为绑定手机号时并发用户编辑不会被旧的空号码快照覆盖', async () => {
   const identity = { unionID: 'binding-race-union', openID: 'binding-race-open' };
-  const first = await quickLogin({ code: stage(noPhone(identity)) });
+  const first = await quickLogin({ code: stage(huaweiIdentity(identity)) });
   assert.equal(first.status, 200);
+  // 该用例要覆盖“本地号码为空时并发写入”的条件分支，所以先解开首次登录绑定的号码。
+  await f.User.update(first.body.user.id, { phoneCountryCode: '', phoneNumber: '', phoneVerified: false });
   const execute = f.pool.execute.bind(f.pool);
   let raced = false;
   f.pool.execute = async (sql, params) => {
@@ -860,7 +1012,7 @@ test('华为绑定手机号时并发用户编辑不会被旧的空号码快照�
 
 test('华为验证手机号时并发用户换号不会使新号码被错误验证', async () => {
   const identity = { unionID: 'verification-race-union', openID: 'verification-race-open' };
-  const first = await quickLogin({ code: stage(noPhone(identity)) });
+  const first = await quickLogin({ code: stage(huaweiIdentity(identity)) });
   assert.equal(first.status, 200);
   await f.User.update(first.body.user.id, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: false });
   const execute = f.pool.execute.bind(f.pool);
@@ -886,7 +1038,7 @@ test('华为验证手机号时并发用户换号不会使新号码被错误验�
 
 test('已有华为绑定可验证相同的本地未验证号码', async () => {
   const identity = { unionID: 'verify-same-union', openID: 'verify-same-open' };
-  const first = await quickLogin({ code: stage(noPhone(identity)) });
+  const first = await quickLogin({ code: stage(huaweiIdentity(identity)) });
   assert.equal(first.status, 200);
   await f.User.update(first.body.user.id, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: false });
   const verified = await quickLogin({ code: stage(huaweiPayload(identity)) });
@@ -898,11 +1050,11 @@ test('已有华为绑定可验证相同的本地未验证号码', async () => {
 });
 
 test('主标识和 OpenID 映射到不同用户时拒绝登录', async () => {
-  const first = await quickLogin({ code: stage(noPhone({ unionID: 'union-one', openID: 'open-one' })) });
-  const second = await quickLogin({ code: stage(noPhone({ unionID: 'union-two', openID: 'open-two' })) });
+  const first = await quickLogin({ code: stage(huaweiIdentity({ unionID: 'union-one', openID: 'open-one', ...distinctPhone() })) });
+  const second = await quickLogin({ code: stage(huaweiIdentity({ unionID: 'union-two', openID: 'open-two', ...distinctPhone() })) });
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
-  const conflict = await quickLogin({ code: stage(noPhone({ unionID: 'union-one', openID: 'open-two' })) });
+  const conflict = await quickLogin({ code: stage(huaweiIdentity({ unionID: 'union-one', openID: 'open-two' })) });
   assert.equal(conflict.status, 400);
   assert.equal(f.pool.users.length, 2);
   assert.equal(f.pool.userIdentities.length, 2);
@@ -914,20 +1066,20 @@ test('历史重复 UnionID 在设同主体后报冲突，禁用 App 也参与检
   await configureApp('huawei-two');
   const unionID = randomSecret();
   for (const provider of ['huawei', 'huawei-two']) {
-    assert.equal((await quickLogin({ provider, code: stage(noPhone({ unionID })) })).status, 200);
+    assert.equal((await quickLogin({ provider, code: stage(huaweiIdentity({ unionID, ...distinctPhone() })) })).status, 200);
   }
   // The admin now explicitly asserts a common subject for previously independent apps.
   await configureApp('huawei', 'company-one');
   await configureApp('huawei-two', 'company-one', { enabled: false });
-  const conflict = await quickLogin({ provider: 'huawei', code: stage(noPhone({ unionID })) });
+  const conflict = await quickLogin({ provider: 'huawei', code: stage(huaweiIdentity({ unionID })) });
   assert.equal(conflict.status, 400);
   assert.match(conflict.body.error_description, /UnionID/);
   assert.equal(f.pool.users.length, 2);
 });
 
 test('OpenID-only 老绑定补充 UnionID 后仍保留原本地账号', async () => {
-  const first = await quickLogin({ code: stage(noPhone({ unionID: '', openID: 'legacy-open' })) });
-  const second = await quickLogin({ code: stage(noPhone({ unionID: 'new-union', openID: 'legacy-open' })) });
+  const first = await quickLogin({ code: stage(huaweiIdentity({ unionID: '', openID: 'legacy-open' })) });
+  const second = await quickLogin({ code: stage(huaweiIdentity({ unionID: 'new-union', openID: 'legacy-open' })) });
   assert.equal(first.status, 200);
   assert.equal(second.status, 200, JSON.stringify(second.body));
   assert.equal(first.body.user.id, second.body.user.id);
@@ -936,8 +1088,8 @@ test('OpenID-only 老绑定补充 UnionID 后仍保留原本地账号', async ()
 });
 
 test('已绑定 UnionID 的 App 后续只返回 OpenID 时仍使用原账号', async () => {
-  const first = await quickLogin({ code: stage(noPhone({ unionID: 'existing-union', openID: 'existing-open' })) });
-  const second = await quickLogin({ code: stage(noPhone({ unionID: '', openID: 'existing-open' })) });
+  const first = await quickLogin({ code: stage(huaweiIdentity({ unionID: 'existing-union', openID: 'existing-open' })) });
+  const second = await quickLogin({ code: stage(huaweiIdentity({ unionID: '', openID: 'existing-open' })) });
   assert.equal(first.status, 200);
   assert.equal(second.status, 200, JSON.stringify(second.body));
   assert.equal(second.body.user.id, first.body.user.id);
@@ -948,11 +1100,11 @@ test('已绑定 UnionID 的 App 后续只返回 OpenID 时仍使用原账号', a
 
 test('复用 Provider key 更换 Client ID 必须拒绝，原 App 的标识不被覆盖', async () => {
   const unionID = randomSecret();
-  assert.equal((await quickLogin({ code: stage(noPhone({ unionID, openID: 'original-open' })) })).status, 200);
+  assert.equal((await quickLogin({ code: stage(huaweiIdentity({ unionID, openID: 'original-open' })) })).status, 200);
   const changedClient = `${clientId}-changed`;
   acceptedClientIds.add(changedClient);
   await configureApp('huawei', '', { clientId: changedClient });
-  const conflict = await quickLogin({ code: stage(noPhone({ unionID, openID: 'changed-open' })) });
+  const conflict = await quickLogin({ code: stage(huaweiIdentity({ unionID, openID: 'changed-open' })) });
   assert.equal(conflict.status, 400);
   assert.match(conflict.body.error_description, /Provider key/);
   assert.equal(f.pool.userIdentities[0].provider_secondary_id, 'original-open');
@@ -973,7 +1125,7 @@ test('账号应用绑定数据和静态页面仅管理员可访问，配置移�
   await configureApp('huawei-two', 'company-one');
   const unionID = randomSecret();
   for (const provider of ['huawei', 'huawei-two']) {
-    assert.equal((await quickLogin({ provider, code: stage(noPhone({ unionID })) })).status, 200);
+    assert.equal((await quickLogin({ provider, code: stage(huaweiIdentity({ unionID })) })).status, 200);
   }
   const identity = f.pool.userIdentities[0];
   identity.profile = JSON.stringify({ ...JSON.parse(identity.profile), access_token: 'must-not-leak', raw: { secret: 'must-not-leak' } });
