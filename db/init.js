@@ -291,9 +291,8 @@ const CREATE_CAPTCHA_TABLE = `CREATE TABLE IF NOT EXISTS captcha_challenges (
   INDEX idx_captcha_expiry (expires_at)
 ) ENGINE=InnoDB`;
 
-// MySQL 不接受 `SHOW COLUMNS ... LIKE ?` 里的占位符（无论 query 还是 execute，预处理后都是
-// ER_PARSE_ERROR: syntax error near '?'），所以直接查 information_schema。写成字面量能绕过，
-// 但表名/列名会进 SQL 文本；走参数化查询既可读又不需要拼接标识符。
+// 原生预处理 execute() 不支持 `SHOW COLUMNS ... LIKE ?` 中的参数标记，LIKE 语法要求字面量。
+// 列存在性统一查询 information_schema，表名/列名作为参数值，避免拼接 SQL 标识符。
 async function columnExists(connection, tableName, columnName) {
   const [rows] = await connection.execute(
     'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
