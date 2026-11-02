@@ -1,0 +1,17 @@
+main:
+  push: &verify-build-push
+    - name: verify-build-push
+      docker:
+        image: cnbcool/default-dev-env:latest
+      services:
+        - docker
+      stages:
+        - name: verify-backend
+          image: node:24-bookworm
+          script: bash scripts/ci-backend.sh
+        # Sequential stages: a failed check prevents both build and publish.
+        - name: build-and-push-image
+          script: bash scripts/ci-publish-cnb.sh
+
+"v*":
+  tag_push: *verify-build-push
