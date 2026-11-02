@@ -25,7 +25,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [User Applications](./user-applications.md) | Durable app usage and personal/admin app lists | Defined |
 | [Multiple Authenticators](./multiple-authenticators.md) | Independent TOTP devices, lifecycle locks and final credential issuance | Defined |
 | [User Import](./user-import.md) | Direct file uploads, scoped body limits and per-row duplicate results | Defined |
-| [Registration Policy](./registration-policy.md) | Registration-only ASCII usernames, proof boundaries and configured password guidance | Defined |
+| [Registration Policy](./registration-policy.md) | Registration-only ASCII usernames, proof boundaries, configured password guidance and QFLI email-registration closure | Defined |
 | [Session Duration](./session-duration.md) | Fixed 1/7/14-day browser login, continuation, legacy caps and credential replacement | Defined |
 
 ---

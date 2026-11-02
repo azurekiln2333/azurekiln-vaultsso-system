@@ -33,6 +33,7 @@ const phoneNumbers = require('./services/phone');
 const huawei = require('./services/huawei');
 const { mergeHuaweiAccount, AccountMergeError } = require('./services/account-merge');
 const { mergeOidcAccount } = require('./services/oidc-account-merge');
+const { isQfliClient } = require('./services/qfli-integration');
 const QRCode = require('qrcode');
 const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail, sendBehaviorAlertEmail } = require('./services/email');
 
@@ -366,13 +367,17 @@ app.get('/api/captcha', asyncHandler(async function captchaChallenge(req, res) {
 
 app.get('/api/auth/config', asyncHandler(async (req, res) => {
   const webTurnstile = req.query.surface === 'web' && Boolean(turnstileSettings.siteKey);
+  // QFLI 客户端只能经华为账号建号：前端据此隐藏邮箱注册入口，并展示对应提示。
+  // 判定发生在配置读取阶段，不涉及任何用户数据或副作用。
+  const oauthOnlyRegistration = await isQfliRegistrationRequest(req);
   res.json({
     captchaLogin: await isSettingEnabled('captcha_login'),
     captchaRegister: await isSettingEnabled('captcha_register'),
     captchaProvider: webTurnstile ? 'turnstile' : 'image',
     turnstileSiteKey: webTurnstile ? turnstileSettings.siteKey : '',
     loginEmailCode: await isSettingEnabled('login_email_code'),
-    registrationEnabled: await isSettingEnabled('registration_enabled'),
+    registrationEnabled: oauthOnlyRegistration ? false : await isSettingEnabled('registration_enabled'),
+    registrationDisabledReason: oauthOnlyRegistration ? 'oauth_only' : '',
     passwordMinLength: await getPasswordMinLength()
   });
 }));
@@ -1001,7 +1006,7 @@ async function fetchOidcUserinfo(config, endpoints, accessToken) {
   return fetchJson(endpoints.userinfoUrl, { headers });
 }
 
-async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFIG) {
+async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFIG, clientContextId = '') {
   const provider = normalizeText(config.providerKey).toLowerCase();
   const providerUserId = normalizeText(claims.id);
   const providerSecondaryId = normalizeText(claims.secondaryId);
@@ -1061,6 +1066,10 @@ async function findOrCreateOidcUser(claims, linkUserId = '', config = OIDC_CONFI
   }
 
   if (!await isSettingEnabled('registration_enabled')) throw new Error('Registration is disabled');
+  // QFLI 客户端的新账号只能通过华为账号创建，OIDC 邮箱建号路径同样关闭。
+  if (await rejectsQfliOidcAccountCreation(config, clientContextId)) {
+    throw new Error('该应用不支持邮箱注册，请使用已绑定手机号的华为账号登录');
+  }
 
   const localEmail = email && isValidEmail(email) && emailVerified
     ? email
@@ -2370,7 +2379,9 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
     linkSessionId: linkIntent ? req.authSession.id : '',
     mergeUserId: mergeIntent ? currentUser.id : '',
     mergeSessionId: mergeIntent ? req.authSession.id : '',
-    provider: config.providerKey
+    provider: config.providerKey,
+    // 发起登录时所属的网关客户端，供回调建号时的注册策略判断使用。
+    clientId: normalizeText(req.query.client_id)
   };
   const authorizeParams = {
     response_type: 'code',
@@ -2497,7 +2508,7 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
       }
       return res.redirect(appendQuery('/profile', { account_merged: '1' }));
     }
-    const user = await findOrCreateOidcUser(claims, cookieState.linkUserId, config);
+    const user = await findOrCreateOidcUser(claims, cookieState.linkUserId, config, cookieState.clientId);
     if (isUserBanned(user)) {
       return res.redirect(oidcErrorRedirect(cookieState, '账户已被封禁，请联系管理员'));
     }
@@ -2522,6 +2533,46 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
     return res.redirect(oidcErrorRedirect(cookieState, error.message));
   }
 }));
+
+// ── 注册策略：QFLI 客户端关闭邮箱开放注册 ──────────────────────────
+// 只对 client_id 以 qfli 开头（大小写不敏感）的客户端生效，其新账号只能通过华为账号创建。
+// 其它客户端与不带 client_id 的场景保持原有注册行为。
+const QFLI_REGISTRATION_DISABLED_ERROR = {
+  error: 'forbidden',
+  error_key: 'auth.registration.oauth_only',
+  error_description: '该应用不支持邮箱注册，请使用已绑定手机号的华为账号登录'
+};
+
+// 只判断请求是否属于 QFLI 客户端，不做任何副作用。client_id 可能是 JWT audience，
+// 所以字符串前缀与已登记的客户端记录都要检查。
+async function isQfliRegistrationRequest(req, body) {
+  const requestBody = body || req.body || {};
+  const clientIds = [normalizeText(requestBody.client_id), normalizeText(req.query.client_id)];
+  const authorization = normalizeText(req.headers.authorization);
+  if (/^Basic /i.test(authorization)) clientIds.push(parseClientCredentials(req).clientId);
+  for (const clientId of clientIds) {
+    if (!clientId) continue;
+    if (isQfliClient(clientId) || isQfliClient(await Client.findById(clientId))) return true;
+  }
+  return false;
+}
+
+// 只处理“注册验证码”发信：在生成验证码、发信，以及“邮箱已被注册”检查之前就拒绝。
+async function rejectQfliEmailRegistration(req, res, purpose) {
+  if (purpose !== EMAIL_PURPOSE_REGISTER) return false;
+  if (!await isQfliRegistrationRequest(req)) return false;
+  res.status(403).json(QFLI_REGISTRATION_DISABLED_ERROR);
+  return true;
+}
+
+// OIDC（含华为等通用 OIDC 提供方）为未知主体建新账号前调用：客户端上下文可以是发起登录时
+// 携带的 client_id、Cookie 里的客户端上下文，或提供方配置中的 clientId。
+async function rejectsQfliOidcAccountCreation(providerConfig, clientId) {
+  const contextClientId = normalizeText(clientId);
+  if (isQfliClient(contextClientId) || isQfliClient(providerConfig?.clientId)) return true;
+  if (!contextClientId) return false;
+  return isQfliClient(await Client.findById(contextClientId));
+}
 
 // ── 华为账号一键登录 ─────────────────────────────────────────────
 // 原生 App 从华为 SDK 拿到 authorization code 后直接 POST 本接口，
@@ -3659,6 +3710,11 @@ app.post('/api/email-verification/send', asyncHandler(async (req, res) => {
     });
   }
 
+  // QFLI 客户端不能通过邮箱建新账号：注册验证码请求在发信、生成验证码之前就拒绝，
+  // 并且早于“邮箱已被注册”检查，避免用它枚举已注册邮箱。
+  // 账号绑定型的首次设密码验证码（hasUsernameField）属于已有账号流程，不受此限制。
+  if (await rejectQfliEmailRegistration(req, res, hasUsernameField ? EMAIL_PURPOSE_PASSWORD_RESET : normalizeEmailPurpose(body.purpose) || EMAIL_PURPOSE_REGISTER)) return;
+
   // Account-bound first-password code. Field presence selects this variant, so an
   // empty or overlong username is a readable 400 instead of silently falling back
   // to the legacy email branch. The server derives the destination from the stored
@@ -3794,6 +3850,12 @@ app.post('/oauth2/register', asyncHandler(async (req, res) => {
       error_key: 'auth.registration.disabled',
       error_description: '系统已关闭注册，请联系管理员'
     });
+  }
+
+  // QFLI 客户端只能经华为账号建号。必须早于 CAPTCHA 消费、邮箱验证码尝试计数和建号，
+  // 让被拒的请求不消耗任何一次性凭据。
+  if (await isQfliRegistrationRequest(req)) {
+    return res.status(403).json(QFLI_REGISTRATION_DISABLED_ERROR);
   }
 
   if (await isSettingEnabled('captcha_register')) {

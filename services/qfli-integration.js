@@ -1,3 +1,13 @@
+// QFLIStudio+ 客户端标识：client_id 以 qfli 开头，大小写不敏感。
+// 只接受字符串形式的 client_id 或带 id 的客户端记录，其余一律返回 false，
+// 保证“无客户端”场景与其它客户端的行为不受任何影响。
+const QFLI_CLIENT_PREFIX = 'qfli';
+
+function isQfliClient(candidate) {
+  const id = typeof candidate === 'string' ? candidate : candidate?.id;
+  return typeof id === 'string' && id.trim().toLowerCase().startsWith(QFLI_CLIENT_PREFIX);
+}
+
 module.exports = function installQfliIntegration({
   app, asyncHandler, authenticateClient, validateToken, getModels,
   isClientActive, isUserBanned, scopedUserClaims,
@@ -67,3 +77,6 @@ module.exports = function installQfliIntegration({
     res.json({ ...scopedUserClaims(user, ['profile']), description: user.description || '' });
   }));
 };
+
+module.exports.isQfliClient = isQfliClient;
+module.exports.QFLI_CLIENT_PREFIX = QFLI_CLIENT_PREFIX;
