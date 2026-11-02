@@ -1,0 +1,22 @@
+# Standalone local build: docker compose -f docker-compose.build.yaml build
+name: "${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}"
+
+services:
+  gateway:
+    extends:
+      file: docker-compose.yaml
+      service: gateway
+    image: azurekiln-oauth2:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+  watchtower:
+    extends:
+      file: docker-compose.yaml
+      service: watchtower
+    # Inactive unless an operator explicitly opts into this profile.
+    profiles: [auto-update]

@@ -7,3 +7,11 @@
 # picking either side (task state lives in task.json, not index.md). See
 # .trellis/spec/cli/backend/directory-structure.md for details.
 .trellis/workspace/*/journal-*.md merge=union
+
+# Containers and Unix CI runners require stable LF line endings.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.node-version text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

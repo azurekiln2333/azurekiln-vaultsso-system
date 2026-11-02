@@ -1,0 +1,70 @@
+name: "${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}"
+
+services:
+  gateway:
+    image: "${GATEWAY_IMAGE:-docker.cnb.cool/azurekiln/azurekiln-oauth2:latest}"
+    container_name: "${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}-gateway"
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    environment:
+      # Deployment .env is mounted below and loaded by the application itself.
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3146"
+      ADMIN_SETTINGS_FILE: /app/data/admin-settings.json
+    ports:
+      - "${GATEWAY_BIND_HOST:-127.0.0.1}:${GATEWAY_PORT:-3146}:3146"
+    volumes:
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./keys
+        target: /app/keys
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./public/assets
+        target: /app/public/assets
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data
+        target: /app/data
+        bind:
+          create_host_path: false
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.scope: "${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  watchtower:
+    image: nickfedor/watchtower:1.23.2
+    restart: unless-stopped
+    # Target only this gateway, in addition to label opt-in and project scope.
+    command: ["${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}-gateway"]
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_SCOPE: "${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}"
+      WATCHTOWER_POLL_INTERVAL: "${WATCHTOWER_POLL_INTERVAL:-600}"
+      WATCHTOWER_CLEANUP: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+      com.centurylinklabs.watchtower.scope: "${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
