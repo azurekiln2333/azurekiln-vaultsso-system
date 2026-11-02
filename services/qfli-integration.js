@@ -1,6 +1,9 @@
+const { eraseAccount, AccountErasureError } = require('./account-erasure');
+
 // QFLIStudio+ 客户端标识：client_id 以 qfli 开头，大小写不敏感。
 // 只接受字符串形式的 client_id 或带 id 的客户端记录，其余一律返回 false，
 // 保证“无客户端”场景与其它客户端的行为不受任何影响。
+// 注册限制（任务2）与账号注销（任务4）共用这一个判定。
 const QFLI_CLIENT_PREFIX = 'qfli';
 
 function isQfliClient(candidate) {
@@ -11,7 +14,41 @@ function isQfliClient(candidate) {
 module.exports = function installQfliIntegration({
   app, asyncHandler, authenticateClient, validateToken, getModels,
   isClientActive, isUserBanned, scopedUserClaims,
+  getPool, getClientIp, secret,
 }) {
+  app.post('/oauth2/account/erase', asyncHandler(async (req, res) => {
+    req.body ||= {};
+    const client = await authenticateClient(req, res);
+    if (!client) return;
+    if (!isQfliClient(client)) {
+      return res.status(403).json({ error: 'access_denied', error_description: 'Only QFLI clients may erase accounts' });
+    }
+    if (!client.scopes.includes('qfli_account_erase')) {
+      return res.status(403).json({ error: 'insufficient_scope', error_description: 'The qfli_account_erase scope is required' });
+    }
+    const { RateLimit } = getModels();
+    const rate = await RateLimit.consume(`account-erase:client:${client.id}`, 30, 60 * 1000);
+    if (!rate.allowed) {
+      res.set('Retry-After', String(rate.retryAfter));
+      return res.status(429).json({ error: 'rate_limited', error_description: 'Too many account erasure requests' });
+    }
+    const { user_id: userId, reason, request_id: requestId } = req.body;
+    if (typeof userId !== 'string' || userId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+        || (reason !== undefined && (typeof reason !== 'string' || reason.length > 255))
+        || (requestId !== undefined && (typeof requestId !== 'string' || requestId.length > 64))) {
+      return res.status(400).json({ error: 'invalid_request', error_description: 'A valid user_id and bounded string reason/request_id are required' });
+    }
+    try {
+      res.json(await eraseAccount({ pool: getPool(), secret, userId: userId.toLowerCase(), clientId: client.id,
+        requestId: requestId || '', ip: getClientIp(req) }));
+    } catch (error) {
+      if (error instanceof AccountErasureError) {
+        return res.status(error.status).json({ error: error.code, error_description: error.message });
+      }
+      throw error;
+    }
+  }));
+
   async function accessUser(req, res) {
     const { Token, Client, User } = getModels();
     const header = req.headers.authorization || '';

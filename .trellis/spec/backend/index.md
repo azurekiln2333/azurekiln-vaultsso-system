@@ -27,6 +27,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [User Import](./user-import.md) | Direct file uploads, scoped body limits and per-row duplicate results | Defined |
 | [Registration Policy](./registration-policy.md) | Registration-only ASCII usernames, proof boundaries, configured password guidance and QFLI email-registration closure | Defined |
 | [Session Duration](./session-duration.md) | Fixed 1/7/14-day browser login, continuation, legacy caps and credential replacement | Defined |
+| [Account Erasure](./account-erasure.md) | QFLI service-client erasure, permanent tombstones, atomic revocation and pseudonymized retained logs | Defined |
 
 ---
 

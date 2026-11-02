@@ -35,6 +35,7 @@ const huawei = require('./services/huawei');
 const { mergeHuaweiAccount, AccountMergeError } = require('./services/account-merge');
 const { mergeOidcAccount } = require('./services/oidc-account-merge');
 const { isQfliClient } = require('./services/qfli-integration');
+const { erasedLogUserId } = require('./services/account-erasure');
 const QRCode = require('qrcode');
 const { sendVerificationEmail, getSmtpSettings, applySmtpSettings, sendTestEmail, sendLoginAlertEmail, sendBehaviorAlertEmail } = require('./services/email');
 
@@ -74,7 +75,8 @@ setInterval(() => {
 }, 60000).unref();
 // 这些端点由原生 App / 服务端直接调用，不经过浏览器，因此按机器调用校验来源。
 const OIDC_EMAIL_SEND_PATH = '/api/v1/auth/oauth/oidc/email/send';
-const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete', OIDC_EMAIL_SEND_PATH]);
+const ACCOUNT_ERASE_PATH = '/oauth2/account/erase';
+const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete', OIDC_EMAIL_SEND_PATH, ACCOUNT_ERASE_PATH]);
 
 let User;
 let Authenticator;
@@ -142,7 +144,7 @@ function normalizeGuardPath(path) {
 }
 
 // Browser-origin guarded OAuth entry points (compared against a normalised path).
-const BROWSER_GUARD_PATHS = new Set(['/oauth2/authorize', '/oauth2/register']);
+const BROWSER_GUARD_PATHS = new Set(['/oauth2/authorize', '/oauth2/register', ACCOUNT_ERASE_PATH]);
 
 app.use(function requestBoundary(req, res, next) {
     const origin = req.get('origin');
@@ -155,11 +157,11 @@ app.use(function requestBoundary(req, res, next) {
     const guardPath = normalizeGuardPath(req.path);
     const browserEndpoint = isUserImportRequest(req) || guardPath.startsWith('/api/')
       || BROWSER_GUARD_PATHS.has(guardPath);
-    const allowed = MACHINE_ENDPOINTS.has(guardPath)
+    const allowed = guardPath === ACCOUNT_ERASE_PATH && origin && origin !== PUBLIC_BASE_URL ? false : MACHINE_ENDPOINTS.has(guardPath)
       ? isMachineClientRequest(req)
       : isSameOriginBrowserRequest(req);
     if (unsafe && browserEndpoint && !allowed) {
-      return res.status(403).json({ error: 'forbidden', error_description: 'A same-origin browser request is required' });
+      return res.status(403).json({ error: guardPath === ACCOUNT_ERASE_PATH ? 'access_denied' : 'forbidden', error_description: 'A same-origin browser request is required' });
     }
     if (guardPath.startsWith('/api/') || guardPath.startsWith('/oauth2/') || req.cookies.session) {
       res.setHeader('Cache-Control', 'no-store');
@@ -184,14 +186,14 @@ app.use(asyncHandler(async function limitRequests(req, res, next) {
       || guardPath === normalizeGuardPath(OIDC_CALLBACK_PATH) || (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
       && (guardPath.startsWith('/api/') || guardPath.startsWith('/oauth2/')));
     if (!isSensitive) return next();
-    const category = isCaptcha ? 'captcha'
+    const category = guardPath === ACCOUNT_ERASE_PATH ? 'account-erase' : isCaptcha ? 'captcha'
       : (guardPath === '/api/email-verification/send' || guardPath === OIDC_EMAIL_SEND_PATH) ? 'mail'
       : 'auth';
     const limit = category === 'mail' ? 10 : category === 'captcha' ? 30 : 120;
     const result = await RateLimit.consume(`http:${category}:${getClientIp(req)}`, limit, 60 * 1000);
     if (!result.allowed) {
       res.setHeader('Retry-After', String(result.retryAfter));
-      return res.status(429).json({ error: 'too_many_requests', error_description: 'Too many requests; try again later' });
+      return res.status(429).json({ error: guardPath === ACCOUNT_ERASE_PATH ? 'rate_limited' : 'too_many_requests', error_description: 'Too many requests; try again later' });
     }
     next();
   }));
@@ -465,17 +467,24 @@ async function recordLoginLog({ username, userId = null, req, result, detail = '
   platform, loginType }) {
   try {
     const source = getClientSource(req);
-    await new LoginLogModel(database).create({
-      username: username || '-',
-      userId,
-      ip: String(source.ip || '').slice(0, 64),
-      sourcePort: source.port,
-      platform: platform || resolveLoginPlatform(req, username),
-      loginType: loginType || resolveLoginType(result, detail),
-      userAgent: req.headers['user-agent'] || '',
-      result,
-      detail
-    });
+    const write = async (current, connection) => {
+      const deleted = current?.status === 'deleted';
+      return new LoginLogModel(connection).create({
+        username: deleted ? 'deleted_user' : username || '-',
+        userId: deleted ? erasedLogUserId(JWT_SECRET, current.id) : userId,
+        ip: String(source.ip || '').slice(0, 64),
+        sourcePort: source.port,
+        platform: platform || resolveLoginPlatform(req, username),
+        loginType: loginType || resolveLoginType(result, detail),
+        userAgent: deleted ? '' : req.headers['user-agent'] || '',
+        result,
+        detail: deleted ? '' : detail
+      });
+    };
+    // Transactional callers already own the lifecycle lock. Other user-bound events acquire it
+    // before reading status and inserting, so an in-flight login cannot reidentify an erased log.
+    if (userId && database === pool) await Authenticator.withUser(userId, async (current, _a, _u, connection) => write(current, connection));
+    else await write(userId ? await new UserModel(database).findById(userId) : null, database);
   } catch (error) {
     console.error('Failed to write login log:', error.message);
   }
@@ -1715,7 +1724,7 @@ function isAdminUser(user) {
 }
 
 function isUserBanned(user) {
-  return Boolean(user && (user.banned ?? user.is_banned));
+  return Boolean(user && (user.status === 'deleted' || (user.banned ?? user.is_banned)));
 }
 
 function isClientActive(client) {
@@ -2240,7 +2249,7 @@ async function verifyEmailCodeWith(codes, { email, purpose, code, userId }) {
   return { ok: true, record };
 }
 
-async function generateAccessToken(userId, clientId, scopes) {
+async function generateAccessToken(userId, clientId, scopes, database = pool) {
   const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
   const token = signingKeys.sign({
@@ -2255,7 +2264,7 @@ async function generateAccessToken(userId, clientId, scopes) {
     exp: Math.floor(expiresAt.getTime() / 1000)
   });
 
-  await Token.createAccessToken({
+  await new TokenModel(database).createAccessToken({
     id: tokenId,
     token,
     userId,
@@ -2267,7 +2276,7 @@ async function generateAccessToken(userId, clientId, scopes) {
   return token;
 }
 
-async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profile', 'email']) {
+async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profile', 'email'], database = pool) {
   const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
   const token = jwt.sign({
@@ -2280,7 +2289,7 @@ async function generateRefreshToken(userId, clientId, scopes = ['openid', 'profi
     exp: Math.floor(expiresAt.getTime() / 1000)
   }, JWT_SECRET, { algorithm: 'HS256' });
 
-  await Token.createRefreshToken({
+  await new TokenModel(database).createRefreshToken({
     id: tokenId,
     token,
     userId,
@@ -4548,54 +4557,35 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    const user = await User.findById(authCodeData.user_id);
-    if (!user) {
-      return res.status(400).json({
-        error: 'invalid_grant',
-        error_key: 'auth.user_not_found',
-        error_description: 'Authorization code user no longer exists'
-      });
-    }
-
-    if (isUserBanned(user)) {
-      return res.status(403).json({
-        error: 'account_banned',
-        error_key: 'auth.account_banned',
-        error_description: '账户已被封禁，请联系管理员'
-      });
-    }
-
-    if (!await Token.consumeAuthCode(code)) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Authorization code has already been used' });
-    }
-
-    const accessToken = await generateAccessToken(authCodeData.user_id, clientId, authCodeData.scopes);
-    const newRefreshToken = authCodeData.scopes.includes('offline_access')
-      ? await generateRefreshToken(authCodeData.user_id, clientId, authCodeData.scopes)
-      : '';
-
-    const responseBody = {
-      access_token: accessToken,
-      token_type: 'Bearer',
-      expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-      scope: authCodeData.scopes.join(' ')
-    };
-
-    if (authCodeData.scopes.includes('openid')) {
-      responseBody.id_token = signingKeys.sign({
-        ...scopedUserClaims(user, authCodeData.scopes),
-        ...(authCodeData.nonce ? { nonce: authCodeData.nonce } : {}),
-        aud: clientId, iss: PUBLIC_BASE_URL, iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor((Date.now() + ACCESS_TOKEN_TTL_MS) / 1000)
-      });
-    }
-
-    if (newRefreshToken) {
-      responseBody.refresh_token = newRefreshToken;
-    }
-
-    await UserAppUsage.record(user.id, client);
-    return res.json(responseBody);
+    const issued = await Authenticator.withUser(authCodeData.user_id, async (user, _a, _u, connection) => {
+      const tokens = new TokenModel(connection);
+      const currentCode = await tokens.findAuthCode(code);
+      if (!currentCode || !user || user.status === 'deleted') {
+        return { status: 400, body: { error: 'invalid_grant', error_description: 'Authorization code user no longer exists' } };
+      }
+      if (isUserBanned(user)) {
+        return { status: 403, body: { error: 'account_banned', error_key: 'auth.account_banned', error_description: '账户已被封禁，请联系管理员' } };
+      }
+      if (!await tokens.consumeAuthCode(code)) {
+        return { status: 400, body: { error: 'invalid_grant', error_description: 'Authorization code has already been used' } };
+      }
+      const accessToken = await generateAccessToken(user.id, clientId, currentCode.scopes, connection);
+      const refresh = currentCode.scopes.includes('offline_access')
+        ? await generateRefreshToken(user.id, clientId, currentCode.scopes, connection) : '';
+      const body = { access_token: accessToken, token_type: 'Bearer',
+        expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000), scope: currentCode.scopes.join(' ') };
+      if (currentCode.scopes.includes('openid')) {
+        body.id_token = signingKeys.sign({
+          ...scopedUserClaims(user, currentCode.scopes), ...(currentCode.nonce ? { nonce: currentCode.nonce } : {}),
+          aud: clientId, iss: PUBLIC_BASE_URL, iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor((Date.now() + ACCESS_TOKEN_TTL_MS) / 1000)
+        });
+      }
+      if (refresh) body.refresh_token = refresh;
+      await new UserAppUsageModel(connection).record(user.id, client);
+      return { status: 200, body };
+    });
+    return res.status(issued.status).json(issued.body);
   }
 
   if (grantType === 'refresh_token') {
@@ -4626,34 +4616,30 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
       });
     }
 
-    const refreshUser = await User.findById(decoded.sub);
-    if (!refreshUser || isUserBanned(refreshUser)) {
-      return res.status(403).json({
-        error: 'account_banned',
-        error_key: 'auth.account_banned',
-        error_description: '账户已被封禁，请联系管理员'
-      });
-    }
-
-    const originalScopes = Array.isArray(refreshTokenData.scopes) ? refreshTokenData.scopes : [];
-    const refreshedScopes = scopeParam ? parseRequestedScopes(scopeParam, []) : originalScopes;
-    if (findUnsupportedScopes(refreshedScopes, originalScopes).length || findUnsupportedScopes(refreshedScopes, client.scopes).length) {
-      return res.status(400).json({ error: 'invalid_scope', error_description: 'Refresh scopes may only narrow the original authorization' });
-    }
-    if (!await Token.consumeRefreshToken(decoded.jti)) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Refresh token has already been used' });
-    }
-    const accessToken = await generateAccessToken(decoded.sub, clientId, refreshedScopes);
-    const replacementRefreshToken = await generateRefreshToken(decoded.sub, clientId, refreshedScopes);
-
-    await UserAppUsage.record(refreshUser.id, client);
-    return res.json({
-      access_token: accessToken,
-      refresh_token: replacementRefreshToken,
-      token_type: 'Bearer',
-      expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-      scope: refreshedScopes.join(' ')
+    const issued = await Authenticator.withUser(decoded.sub, async (user, _a, _u, connection) => {
+      const tokens = new TokenModel(connection);
+      const currentToken = await tokens.findRefreshTokenById(decoded.jti);
+      if (!tokens.matchesToken(currentToken, refreshToken) || !user || user.status === 'deleted') {
+        return { status: 400, body: { error: 'invalid_grant', error_description: 'Refresh token expired' } };
+      }
+      if (isUserBanned(user)) {
+        return { status: 403, body: { error: 'account_banned', error_key: 'auth.account_banned', error_description: '账户已被封禁，请联系管理员' } };
+      }
+      const originalScopes = Array.isArray(currentToken.scopes) ? currentToken.scopes : [];
+      const scopes = scopeParam ? parseRequestedScopes(scopeParam, []) : originalScopes;
+      if (findUnsupportedScopes(scopes, originalScopes).length || findUnsupportedScopes(scopes, client.scopes).length) {
+        return { status: 400, body: { error: 'invalid_scope', error_description: 'Refresh scopes may only narrow the original authorization' } };
+      }
+      if (!await tokens.consumeRefreshToken(decoded.jti)) {
+        return { status: 400, body: { error: 'invalid_grant', error_description: 'Refresh token has already been used' } };
+      }
+      const access = await generateAccessToken(user.id, clientId, scopes, connection);
+      const refresh = await generateRefreshToken(user.id, clientId, scopes, connection);
+      await new UserAppUsageModel(connection).record(user.id, client);
+      return { status: 200, body: { access_token: access, refresh_token: refresh, token_type: 'Bearer',
+        expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000), scope: scopes.join(' ') } };
     });
+    return res.status(issued.status).json(issued.body);
   }
 
   if (grantType === 'client_credentials') {
@@ -4687,8 +4673,9 @@ app.post('/oauth2/token', asyncHandler(async (req, res) => {
 }));
 
 require('./services/qfli-integration')({
-  app, asyncHandler, authenticateClient, validateToken, getModels: () => ({ Token, Client, User }),
+  app, asyncHandler, authenticateClient, validateToken, getModels: () => ({ Token, Client, User, RateLimit }),
   isClientActive, isUserBanned, scopedUserClaims,
+  getPool: () => pool, getClientIp, secret: JWT_SECRET,
 });
 
 app.get('/oauth2/userinfo', asyncHandler(async (req, res) => {
@@ -4880,7 +4867,7 @@ app.post('/api/users/:id/revoke-sessions', asyncHandler(async (req, res) => {
 
   await Session.revokeAllForUser(target.id);
   await Token.revokeByUser(target.id);
-  await recordAdminLog({ admin, req, action: 'revoke_sessions', detail: target.username });
+  await recordAdminLog({ admin, req, action: 'revoke_sessions', detail: `target:${erasedLogUserId(JWT_SECRET, target.id)}` });
   res.json({ message_key: 'users.sessions_revoked', message: '已强制该用户退出所有设备' });
 }));
 
@@ -5293,7 +5280,7 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
     await Session.revokeAllForUser(userId, target.id === admin.id ? req.authSession.id : null);
     await Token.revokeByUser(userId);
   }
-  await recordAdminLog({ admin, req, action: 'update_user', detail: `${target.username} -> ${Object.keys(updates).join(',')}` });
+  await recordAdminLog({ admin, req, action: 'update_user', detail: `target:${erasedLogUserId(JWT_SECRET, target.id)} -> ${Object.keys(updates).join(',')}` });
   const identities = await ExternalIdentity.findByUserId(userId);
   res.json({ user: { ...serializeUser(updated), identities: ExternalIdentity.serializeMany(identities) } });
 }));
@@ -5330,7 +5317,7 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
   }
 
   await User.delete(userId);
-  await recordAdminLog({ admin, req, action: 'delete_user', detail: target.username });
+  await recordAdminLog({ admin, req, action: 'delete_user', detail: `target:${erasedLogUserId(JWT_SECRET, target.id)}` });
   res.status(204).send();
 }));
 
@@ -5825,7 +5812,7 @@ app.post('/api/users/:id/totp/reset', asyncHandler(async (req, res) => {
     user = await users.update(user.id, { totpSecret: null, totpEnabled: false, recoveryCodes: null });
     await authenticatorSecurityChanged(user, authenticators, users, connection, user.id === admin.id ? req.authSession.id : null);
   });
-  await recordAdminLog({ admin, req, action: 'reset_totp', detail: target.username });
+  await recordAdminLog({ admin, req, action: 'reset_totp', detail: `target:${erasedLogUserId(JWT_SECRET, target.id)}` });
   res.json({ message_key: 'users.totp.reset', message: '已重置该用户的验证器绑定' });
 }));
 
@@ -6161,6 +6148,14 @@ app.get('/', (req, res) => {
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
+  if (normalizeGuardPath(req.path) === ACCOUNT_ERASE_PATH) {
+    const invalid = err.status === 400 || err.status === 413;
+    if (!invalid) console.error('Account erasure request failed:', err.code || err.name);
+    return res.status(invalid ? 400 : 500).json({
+      error: invalid ? 'invalid_request' : 'server_error',
+      error_description: invalid ? 'Invalid account erasure request' : 'Account erasure failed; retry the same request'
+    });
+  }
   if (err instanceof AccountTransactionAbort) return res.status(err.status).json(err.body);
   if (err.code === 'PHONE_UPDATE_NOT_PERSISTED') {
     console.error('Request failed:', err.code);

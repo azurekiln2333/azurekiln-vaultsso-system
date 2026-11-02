@@ -230,7 +230,7 @@ class UserModel {
     
     values.push(id);
     await this.pool.execute(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = ?`,
+      `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND status <> 'deleted'`,
       values
     );
     
@@ -249,7 +249,7 @@ class UserModel {
   async updatePassword(id, newPassword) {
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     await this.pool.execute(
-      'UPDATE users SET password = ? WHERE id = ?',
+      "UPDATE users SET password = ? WHERE id = ? AND status <> 'deleted'",
       [hashedPassword, id]
     );
     return true;
@@ -263,7 +263,7 @@ class UserModel {
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     const [result] = await this.pool.execute(
       `UPDATE users SET password = ?, email_verified = ?
-       WHERE id = ? AND email = ? AND (password IS NULL OR password = '')`,
+       WHERE id = ? AND status <> 'deleted' AND email = ? AND (password IS NULL OR password = '')`,
       [hashedPassword, true, id, verifiedEmail]
     );
     return result.affectedRows === 1;
@@ -274,7 +274,7 @@ class UserModel {
   async bindEmailIfUnchanged(id, expectedEmail, newEmail) {
     const [result] = await this.pool.execute(
       `UPDATE users SET email = ?, email_verified = ?
-       WHERE id = ? AND email = ?`,
+       WHERE id = ? AND status <> 'deleted' AND email = ?`,
       [newEmail, true, id, expectedEmail]
     );
     return result.affectedRows === 1;
@@ -285,7 +285,7 @@ class UserModel {
   async markEmailVerifiedIfUnchanged(id, expectedEmail) {
     const [result] = await this.pool.execute(
       `UPDATE users SET email_verified = ?
-       WHERE id = ? AND email = ? AND (email_verified = FALSE OR email_verified IS NULL)`,
+       WHERE id = ? AND status <> 'deleted' AND email = ? AND (email_verified = FALSE OR email_verified IS NULL)`,
       [true, id, expectedEmail]
     );
     return result.affectedRows === 1;
@@ -296,7 +296,7 @@ class UserModel {
     if (!normalized) throw new Error('Invalid phone number');
     const [result] = await this.pool.execute(
       `UPDATE users SET phone_country_code = ?, phone_number = ?, phone_verified = ?, phone_verified_at = ?
-       WHERE id = ? AND phone_e164 IS NULL`,
+       WHERE id = ? AND status <> 'deleted' AND phone_e164 IS NULL`,
       [normalized.countryCode, normalized.nationalNumber, Boolean(verified), verified ? new Date() : null, id]
     );
     return result.affectedRows === 1;
@@ -304,7 +304,7 @@ class UserModel {
 
   async verifyPhoneIfUnchanged(id, phoneE164) {
     const [result] = await this.pool.execute(
-      'UPDATE users SET phone_verified = TRUE, phone_verified_at = ? WHERE id = ? AND phone_e164 = ? AND phone_verified = FALSE',
+      "UPDATE users SET phone_verified = TRUE, phone_verified_at = ? WHERE id = ? AND status <> 'deleted' AND phone_e164 = ? AND phone_verified = FALSE",
       [new Date(), id, phoneE164]
     );
     return result.affectedRows === 1;
@@ -316,7 +316,7 @@ class UserModel {
 
   async consumeTotpCounter(id, counter) {
     const [result] = await this.pool.execute(
-      'UPDATE users SET totp_last_counter = ? WHERE id = ? AND totp_last_counter < ?',
+      "UPDATE users SET totp_last_counter = ? WHERE id = ? AND status <> 'deleted' AND totp_last_counter < ?",
       [counter, id, counter]
     );
     return result.affectedRows === 1;
@@ -324,14 +324,14 @@ class UserModel {
 
   async stageTotpSecret(id, secret) {
     const [result] = await this.pool.execute(
-      'UPDATE users SET totp_secret = ?, totp_last_counter = -1 WHERE id = ? AND totp_enabled = FALSE', [secret, id]
+      "UPDATE users SET totp_secret = ?, totp_last_counter = -1 WHERE id = ? AND status <> 'deleted' AND totp_enabled = FALSE", [secret, id]
     );
     return result.affectedRows === 1;
   }
 
   async enableTotp(id, secret, recoveryCodes) {
     const [result] = await this.pool.execute(
-      'UPDATE users SET totp_enabled = TRUE, recovery_codes = ? WHERE id = ? AND totp_secret = ? AND totp_enabled = FALSE',
+      "UPDATE users SET totp_enabled = TRUE, recovery_codes = ? WHERE id = ? AND status <> 'deleted' AND totp_secret = ? AND totp_enabled = FALSE",
       [recoveryCodes, id, secret]
     );
     return result.affectedRows === 1;
@@ -339,14 +339,14 @@ class UserModel {
 
   async consumeRecoveryCode(id, previous, next) {
     const [result] = await this.pool.execute(
-      'UPDATE users SET recovery_codes = ? WHERE id = ? AND recovery_codes = ?',
+      "UPDATE users SET recovery_codes = ? WHERE id = ? AND status <> 'deleted' AND recovery_codes = ?",
       [next, id, previous]
     );
     return result.affectedRows === 1;
   }
 
   async delete(id) {
-    await this.pool.execute('DELETE FROM users WHERE id = ?', [id]);
+    await this.pool.execute("DELETE FROM users WHERE id = ? AND status <> 'deleted'", [id]);
     return true;
   }
 }

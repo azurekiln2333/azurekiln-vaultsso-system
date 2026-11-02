@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
   description TEXT,
   email_verified BOOLEAN DEFAULT FALSE,
   banned BOOLEAN NOT NULL DEFAULT FALSE,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  deleted_at DATETIME(3) DEFAULT NULL,
   totp_secret VARCHAR(255) DEFAULT NULL,
   totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   totp_last_counter BIGINT NOT NULL DEFAULT -1,
@@ -108,7 +110,7 @@ CREATE TABLE IF NOT EXISTS login_logs (
   login_type VARCHAR(32) DEFAULT NULL,
   user_agent VARCHAR(255),
   result VARCHAR(32) NOT NULL,
-  detail VARCHAR(255),
+  detail VARCHAR(1024),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_login_logs_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -272,7 +274,7 @@ CREATE TABLE IF NOT EXISTS user_identities (
 
 let pool = null;
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const CREATE_SCHEMA_METADATA_TABLE = `CREATE TABLE IF NOT EXISTS schema_metadata (
   id TINYINT PRIMARY KEY, version INT NOT NULL
 ) ENGINE=InnoDB`;
@@ -374,6 +376,8 @@ async function initDatabase({ initializeSchema = false } = {}) {
     await ensureColumn(connection, 'clients', 'require_pkce', 'require_pkce BOOLEAN NOT NULL DEFAULT TRUE', 'is_active');
     await ensureColumn(connection, 'email_verification_codes', 'pending_context', 'pending_context JSON DEFAULT NULL', 'code_hash');
     await ensureColumn(connection, 'users', 'banned', 'banned BOOLEAN NOT NULL DEFAULT FALSE', 'email_verified');
+    await ensureColumn(connection, 'users', 'status', "status VARCHAR(16) NOT NULL DEFAULT 'active'", 'banned');
+    await ensureColumn(connection, 'users', 'deleted_at', 'deleted_at DATETIME(3) DEFAULT NULL', 'status');
     await ensureColumn(connection, 'users', 'totp_secret', 'totp_secret VARCHAR(64) DEFAULT NULL', 'banned');
     await ensureColumn(connection, 'users', 'totp_enabled', 'totp_enabled BOOLEAN NOT NULL DEFAULT FALSE', 'totp_secret');
     await ensureColumn(connection, 'users', 'totp_last_counter', 'totp_last_counter BIGINT NOT NULL DEFAULT -1', 'totp_enabled');
@@ -387,6 +391,8 @@ async function initDatabase({ initializeSchema = false } = {}) {
     await ensureColumn(connection, 'login_logs', 'source_port', 'source_port INT NULL', 'ip');
     await ensureColumn(connection, 'login_logs', 'platform', 'platform VARCHAR(64) DEFAULT NULL', 'source_port');
     await ensureColumn(connection, 'login_logs', 'login_type', 'login_type VARCHAR(32) DEFAULT NULL', 'platform');
+    // 注销审计需要记录更长且可匿名的 detail。MODIFY 是幂等的，重复执行无副作用。
+    await connection.query('ALTER TABLE login_logs MODIFY detail VARCHAR(1024)');
     await ensureColumn(connection, 'users', 'description', 'description TEXT', 'avatar');
     await ensureColumn(connection, 'users', 'credits', 'credits INT NOT NULL DEFAULT 0', 'banned');
     await ensureColumn(connection, 'users', 'last_login_ip', 'last_login_ip VARCHAR(64) DEFAULT NULL', 'credits');

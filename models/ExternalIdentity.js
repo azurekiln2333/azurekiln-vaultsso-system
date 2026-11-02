@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { withActiveAccount } = require('../services/account-write');
 
 function normalize(value) {
   return String(value || '').trim();
@@ -38,25 +39,27 @@ class ExternalIdentityModel {
   }
 
   async create(identityData) {
-    const id = crypto.randomUUID();
-    await this.pool.execute(
-      `INSERT INTO user_identities
-       (id, user_id, provider, provider_user_id, provider_secondary_id, provider_username, display_name, avatar, email, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        normalize(identityData.userId),
-        normalize(identityData.provider).toLowerCase(),
-        normalize(identityData.providerUserId),
-        normalize(identityData.providerSecondaryId) || null,
-        normalize(identityData.providerUsername),
-        normalize(identityData.displayName),
-        normalize(identityData.avatar),
-        normalize(identityData.email).toLowerCase(),
-        JSON.stringify(identityData.profile || {})
-      ]
-    );
-    return this.findById(id);
+    return withActiveAccount(this.pool, identityData.userId, async database => {
+      const id = crypto.randomUUID();
+      await database.execute(
+        `INSERT INTO user_identities
+         (id, user_id, provider, provider_user_id, provider_secondary_id, provider_username, display_name, avatar, email, profile)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          normalize(identityData.userId),
+          normalize(identityData.provider).toLowerCase(),
+          normalize(identityData.providerUserId),
+          normalize(identityData.providerSecondaryId) || null,
+          normalize(identityData.providerUsername),
+          normalize(identityData.displayName),
+          normalize(identityData.avatar),
+          normalize(identityData.email).toLowerCase(),
+          JSON.stringify(identityData.profile || {})
+        ]
+      );
+      return new ExternalIdentityModel(database).findById(id);
+    });
   }
 
   async findById(id) {
