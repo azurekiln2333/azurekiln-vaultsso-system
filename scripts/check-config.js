@@ -2,10 +2,13 @@ const fs = require('node:fs');
 const { PROJECT_ROOT, loadProjectEnvironment, resolveProjectPath } = require('../config/environment');
 const { readRuntimeConfig, validateDatabaseEnvironment } = require('../config/runtime');
 const { loadSigningKeys } = require('../services/signing');
+const { readModerationConfig, isModerationSdkAvailable } = require('../services/moderation');
 
 function checkConfiguration({ env = process.env, projectRoot = PROJECT_ROOT } = {}) {
   const loaded = loadProjectEnvironment({ env, projectRoot });
   const errors = [];
+  let moderationConfigured = false;
+  try { moderationConfigured = readModerationConfig(env).configured; } catch (error) { errors.push(error.message); }
   try {
     const runtime = readRuntimeConfig(env);
     if (runtime.nodeEnv === 'test') errors.push('NODE_ENV=test is reserved for the isolated test runner');
@@ -34,6 +37,8 @@ function checkConfiguration({ env = process.env, projectRoot = PROJECT_ROOT } = 
     envFileStatus: loaded.skipped ? 'skipped for tests' : loaded.exists ? 'found' : 'not found',
     jwtSecretSource: loaded.sources.JWT_SECRET || 'not configured',
     jwtSecretBytes: Buffer.byteLength(String(env.JWT_SECRET || '')),
+    moderationConfigured,
+    moderationSdkAvailable: isModerationSdkAvailable(),
     errors
   };
 }
@@ -42,6 +47,7 @@ function formatReport(report) {
   return [
     `.env: ${report.envFile} (${report.envFileStatus})`,
     `JWT_SECRET source: ${report.jwtSecretSource}; length: ${report.jwtSecretBytes} bytes; value hidden`,
+    `Moderation: ${report.moderationConfigured ? 'configured' : 'not configured'}; SDK ${report.moderationSdkAvailable ? 'installed' : 'not installed'}. Nickname/description changes require a configured SDK and approval. No remote moderation request was made.`,
     ...(report.jwtSecretSource === 'environment'
       ? ['The service/process environment takes priority over .env, including an empty JWT_SECRET. Update the panel/PM2/systemd setting if it is stale.'] : []),
     ...report.errors.map(message => `ERROR: ${message}`),

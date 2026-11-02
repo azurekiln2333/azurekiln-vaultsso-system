@@ -27,6 +27,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [User Import](./user-import.md) | Direct file uploads, scoped body limits and per-row duplicate results | Defined |
 | [Registration Policy](./registration-policy.md) | Registration-only ASCII usernames, proof boundaries and configured password guidance | Defined |
 | [Session Duration](./session-duration.md) | Fixed 1/7/14-day browser login, continuation, legacy caps and credential replacement | Defined |
+| [Profile Moderation](./moderation.md) | SDK boundary for profile text, safe failures and disabled manual avatar input | Defined |
 
 ---
 

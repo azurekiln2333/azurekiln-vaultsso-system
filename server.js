@@ -31,6 +31,7 @@ const { verifyTurnstile } = require('./services/turnstile');
 const { generateSecret, matchingTotpCounter, buildOtpauthUri } = require('./services/totp');
 const phoneNumbers = require('./services/phone');
 const huawei = require('./services/huawei');
+const moderation = require('./services/moderation');
 const { mergeHuaweiAccount, AccountMergeError } = require('./services/account-merge');
 const { mergeOidcAccount } = require('./services/oidc-account-merge');
 const QRCode = require('qrcode');
@@ -4162,7 +4163,6 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
   let nextName = currentUser.name;
   let nextUsername = currentUser.username;
   let nextEmail = currentUser.email;
-  let nextAvatar = currentUser.avatar || '';
   let nextDescription = currentUser.description || '';
 
   if (hasName) {
@@ -4195,6 +4195,31 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
       });
     }
   }
+
+  // Avatar uploads/URLs are not supported. Older profile forms may still submit
+  // the unchanged provider avatar, but cannot replace it through this endpoint.
+  if (hasAvatar && normalizeText(req.body.avatar) !== (currentUser.avatar || '')) {
+    return res.status(400).json({ error: 'avatar_upload_disabled', error_description: '暂不支持修改头像' });
+  }
+
+  if (hasDescription) {
+    const nextBio = String(req.body.description ?? '').trim();
+    if (nextBio.length > 500) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_key: 'profile.description.too_long',
+        error_description: '个人简介不能超过 500 字'
+      });
+    }
+    nextDescription = nextBio;
+  }
+
+  // Review the exact normalized text before mailbox proofs, mail delivery,
+  // password writes or credential revocation can have any side effects.
+  await moderation.assertProfileUpdates(currentUser, {
+    ...(hasName ? { name: nextName } : {}),
+    ...(hasDescription ? { description: nextDescription } : {})
+  });
 
   if (hasEmail) {
     const normalizedEmail = normalizeEmail(req.body.email);
@@ -4262,22 +4287,6 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
     nextEmail = normalizedEmail;
   }
 
-  if (hasAvatar) {
-    nextAvatar = normalizeText(req.body.avatar);
-  }
-
-  if (hasDescription) {
-    const nextBio = String(req.body.description ?? '').trim();
-    if (nextBio.length > 500) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        error_key: 'profile.description.too_long',
-        error_description: '个人简介不能超过 500 字'
-      });
-    }
-    nextDescription = nextBio;
-  }
-
   const { usernameConflict, emailConflict } = await findUserConflicts({
     username: nextUsername,
     email: nextEmail,
@@ -4332,7 +4341,6 @@ app.put('/api/profile', asyncHandler(async (req, res) => {
     name: nextName,
     username: nextUsername,
     email: nextEmail,
-    avatar: nextAvatar,
     description: nextDescription,
     ...phoneUpdate.updates
   });
@@ -6019,6 +6027,9 @@ app.get('/', (req, res) => {
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   if (err instanceof AccountTransactionAbort) return res.status(err.status).json(err.body);
+  if (err instanceof moderation.ModerationError) {
+    return res.status(err.status).json({ error: err.code, error_description: err.message });
+  }
   if (err.code === 'PHONE_UPDATE_NOT_PERSISTED') {
     console.error('Request failed:', err.code);
     return res.status(500).json({

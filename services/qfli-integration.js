@@ -1,3 +1,5 @@
+const moderation = require('./moderation');
+
 module.exports = function installQfliIntegration({
   app, asyncHandler, authenticateClient, validateToken, getModels,
   isClientActive, isUserBanned, scopedUserClaims,
@@ -48,6 +50,7 @@ module.exports = function installQfliIntegration({
       }
       updates.description = input.description;
     }
+    await moderation.assertProfileUpdates(authenticated.user, updates);
     await User.update(authenticated.user.id, updates);
     const user = await User.findById(authenticated.user.id);
     res.json({ ...scopedUserClaims(user, authenticated.scopes), description: user.description || '' });

@@ -109,3 +109,24 @@ test('Turnstile requires a complete key pair and keeps the secret in runtime con
   assert.equal(runtime.turnstileSiteKey, 'site-key');
   assert.equal(runtime.turnstileSecretKey, 'secret-key');
 });
+
+test('preflight reports moderation configuration separately from SDK readiness and never reveals credentials', t => {
+  const key = crypto.randomBytes(32).toString('hex');
+  const root = fixture(t);
+  const env = {
+    NODE_ENV: 'development', JWT_SECRET: crypto.randomBytes(48).toString('base64url'),
+    PUBLIC_BASE_URL: 'http://localhost:3146', MODERATION_BASE_URL: 'https://moderation.example.test', MODERATION_APP_ID: 'isolated-gateway-test', MODERATION_API_KEY: key
+  };
+  const configured = checkConfiguration({ env, projectRoot: root });
+  assert.equal(configured.moderationConfigured, true);
+  assert.ok(!formatReport(configured).includes(key));
+  assert.match(formatReport(configured), /Moderation: configured; SDK (?:installed|not installed)/);
+  assert.match(formatReport(configured), /No remote moderation request was made/);
+  const absent = checkConfiguration({ env: { ...env, MODERATION_BASE_URL: '', MODERATION_APP_ID: '', MODERATION_API_KEY: '' }, projectRoot: root });
+  assert.equal(absent.moderationConfigured, false);
+  assert.ok(!absent.errors.some(message => /MODERATION_/.test(message)));
+  assert.match(formatReport(absent), /Moderation: not configured/);
+  const incomplete = checkConfiguration({ env: { ...env, MODERATION_BASE_URL: '' }, projectRoot: root });
+  assert.ok(incomplete.errors.some(message => /must be configured together/.test(message)));
+  assert.ok(!formatReport(incomplete).includes(key));
+});
