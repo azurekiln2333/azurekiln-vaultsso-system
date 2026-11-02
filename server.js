@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const { readRuntimeConfig } = require('./config/runtime');
+const { readRequestSource } = require('./services/request-source');
 const { loadSigningKeys } = require('./services/signing');
 const { verifyClientSecret } = require('./services/client-secrets');
 const { createSecretCipher } = require('./services/secret-storage');
@@ -234,6 +235,41 @@ function getClientIp(req) {
   return String(req.ip || req.socket?.remoteAddress || '').slice(0, 64);
 }
 
+// 源端口只用于合规留痕：可信反代给的 X-Real-Port，否则是 socket 真实对端端口。
+function getClientSource(req) {
+  return readRequestSource(req, RUNTIME.trustedProxies);
+}
+
+function getClientSourcePort(req) {
+  return getClientSource(req).port;
+}
+
+// 登录平台 = 发起方应用（client_id），浏览器网页端登录记为 web。
+function resolveLoginPlatform(req, username) {
+  const candidates = [
+    req.body?.client_id,
+    req.query?.client_id,
+    typeof username === 'string' && username.startsWith('oauth-client:') ? username.slice('oauth-client:'.length) : '',
+    req.authSession?.client_id,
+    req.headers?.['x-client-id']
+  ];
+  for (const candidate of candidates) {
+    const value = normalizeText(candidate);
+    if (value) return value.slice(0, 64);
+  }
+  return 'web';
+}
+
+// 登录类型按结果推断为审计口径的粗分类：密码、外部身份（华为/OIDC）、管理员操作。
+function resolveLoginType(result, detail = '') {
+  if (result === 'register') return 'register';
+  if (result === 'admin_action') return 'admin';
+  const text = String(detail || '');
+  if (/huawei/i.test(text)) return 'huawei';
+  if (/oidc|external identity/i.test(text)) return 'oidc';
+  return 'password';
+}
+
 const RECOVERY_CODE_COUNT = 10;
 
 function hashRecoveryCode(code) {
@@ -420,12 +456,17 @@ function maskEmail(email) {
   return `${masked}${text.slice(atIndex)}`;
 }
 
-async function recordLoginLog({ username, userId = null, req, result, detail = '', database = pool }) {
+async function recordLoginLog({ username, userId = null, req, result, detail = '', database = pool,
+  platform, loginType }) {
   try {
+    const source = getClientSource(req);
     await new LoginLogModel(database).create({
       username: username || '-',
       userId,
-      ip: getClientIp(req),
+      ip: String(source.ip || '').slice(0, 64),
+      sourcePort: source.port,
+      platform: platform || resolveLoginPlatform(req, username),
+      loginType: loginType || resolveLoginType(result, detail),
       userAgent: req.headers['user-agent'] || '',
       result,
       detail
@@ -5963,7 +6004,11 @@ app.get('/api/admin/security/logs', asyncHandler(async (req, res) => {
   res.json(logs.map(log => ({
     id: log.id,
     username: log.username,
+    userId: log.user_id || '',
     ip: log.ip || '',
+    sourcePort: log.source_port === null || log.source_port === undefined ? null : Number(log.source_port),
+    platform: log.platform || '',
+    loginType: log.login_type || '',
     userAgent: log.user_agent || '',
     result: log.result,
     detail: log.detail || '',
@@ -6061,7 +6106,7 @@ async function bootstrap({ databasePool, port = PORT, host = process.env.HOST ||
     listener.once('error', reject);
   });
   const timer = setInterval(() => {
-    Promise.all([Captcha.deleteExpired(), Session.deleteExpired(), RateLimit.deleteExpired(), Token.cleanExpiredTokens(), EmailVerificationCode.deleteExpired()])
+    Promise.all([Captcha.deleteExpired(), Session.deleteExpired(), RateLimit.deleteExpired(), Token.cleanExpiredTokens(), EmailVerificationCode.deleteExpired(), LoginLog.deleteExpired()])
       .catch(error => console.error('Expired credential cleanup failed:', error.code || error.name));
   }, 60 * 1000);
   timer.unref();

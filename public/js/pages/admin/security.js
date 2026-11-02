@@ -28,6 +28,14 @@ const statusBar = document.getElementById('statusBar');
       admin_action: ['管理员操作', 'bg-purple-50 text-purple-700']
     };
 
+    const LOGIN_TYPE_LABELS = {
+      password: '密码登录',
+      huawei: '华为账号',
+      oidc: '第三方账号',
+      register: '注册',
+      admin: '管理员'
+    };
+
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function setStatus(kind, message) {
       statusBar.className = `admin-status admin-status-${kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'info'} mb-4`;
@@ -117,6 +125,10 @@ const statusBar = document.getElementById('statusBar');
           const [label, className] = RESULT_LABELS[log.result] || [log.result, ''];
           const time = new Date(log.createdAt);
           const timeText = Number.isNaN(time.getTime()) ? '-' : time.toLocaleString('zh-CN');
+          // 合规字段：平台（发起方应用）、类型、IP、源端口。
+          const platform = log.platform || '未知平台';
+          const typeLabel = LOGIN_TYPE_LABELS[log.loginType] || log.loginType || '未知类型';
+          const port = log.sourcePort ? `:${log.sourcePort}` : '';
           return `<div class="admin-log-item">
             <div class="flex items-center justify-between gap-2">
               <span class="admin-cell-strong truncate" title="${escapeHtml(log.username)}">${escapeHtml(log.username)}</span>
@@ -124,7 +136,8 @@ const statusBar = document.getElementById('statusBar');
             </div>
             ${log.detail ? `<p class="admin-cell-sub mt-1">${escapeHtml(log.detail)}</p>` : ''}
             <div class="admin-log-meta">
-              <span class="truncate">${escapeHtml(log.ip || '未知 IP')}</span>
+              <span class="truncate">${escapeHtml(platform)} · ${escapeHtml(typeLabel)}</span>
+              <span class="truncate font-mono">${escapeHtml((log.ip || '未知 IP') + port)}</span>
               <span class="shrink-0">${timeText}</span>
             </div>
           </div>`;

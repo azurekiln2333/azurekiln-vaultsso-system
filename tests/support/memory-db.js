@@ -666,17 +666,21 @@ class MemoryPool {
       return [{ affectedRows: 1, insertId: 0 }, []];
     }
 
-    if (lower === 'insert into login_logs (id, username, user_id, ip, user_agent, result, detail) values (?, ?, ?, ?, ?, ?, ?)') {
-      const [id, username, userId, ip, userAgent, result, detail] = params;
-      this.loginLogs.push({ id, username, user_id: userId, ip, user_agent: userAgent, result, detail, created_at: now() });
+    if (lower === 'insert into login_logs (id, username, user_id, ip, source_port, platform, login_type, user_agent, result, detail) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)') {
+      const [id, username, userId, ip, sourcePort, platform, loginType, userAgent, result, detail] = params;
+      this.loginLogs.push({ id, username, user_id: userId, ip, source_port: sourcePort, platform, login_type: loginType, user_agent: userAgent, result, detail, created_at: now() });
       return [{ affectedRows: 1, insertId: id }, []];
+    }
+
+    if (lower === 'delete from login_logs where created_at < ?') {
+      return [this.deleteRows(this.loginLogs, row => new Date(row.created_at) < new Date(params[0])), []];
     }
 
     if (lower === 'select * from login_logs where id = ?') {
       return [this.loginLogs.filter(row => row.id === params[0]).map(clone), []];
     }
 
-    if (lower.startsWith("select id, username, user_id, ip, user_agent, result, detail, created_at from login_logs where user_id = ? and created_at > ? order by created_at desc")) {
+    if (lower.startsWith('select id, username, user_id, ip, source_port, platform, login_type, user_agent, result, detail, created_at from login_logs where user_id = ? and created_at > ? order by created_at desc')) {
       const since = new Date(params[1]).getTime();
       const rows = this.loginLogs
         .filter(row => row.user_id === params[0] && new Date(row.created_at).getTime() > since)
@@ -685,7 +689,7 @@ class MemoryPool {
       return [rows, []];
     }
 
-    if (lower.startsWith('select id, username, user_id, ip, user_agent, result, detail, created_at from login_logs order by created_at desc limit')) {
+    if (lower.startsWith('select id, username, user_id, ip, source_port, platform, login_type, user_agent, result, detail, created_at from login_logs order by created_at desc limit')) {
       const limit = Math.max(1, Number(params[0]) || 50);
       const rows = this.loginLogs.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, limit).map(clone);
       return [rows, []];
