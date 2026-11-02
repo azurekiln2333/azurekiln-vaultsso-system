@@ -91,11 +91,14 @@ async function seedRegistrationCode(email) {
 }
 
 test('isQfliClient matches only qfli-prefixed identifiers case-insensitively', () => {
-  for (const value of ['qfli', 'QFLI', 'qfli-studio', 'QfliStudio+', '  qfli-app  ']) {
+  // 判定不裁剪空白，因此不再把带前后空白的 id 当成 QFLI 客户端。
+  // 与注销分支（任务4）的判定共用同一个前缀语义（startsWith，不 trim）。
+  for (const value of ['qfli', 'QFLI', 'qfli-studio', 'QfliStudio+']) {
     assert.equal(isQfliClient(value), true, value);
     assert.equal(isQfliClient({ id: value }), true, value);
   }
-  for (const value of ['', '   ', 'other-app', 'app-qfli', 'qf', 'qfl', null, undefined, 42, {}, { id: '' }]) {
+  // 前导空白会使客户端不再以 qfli 开头，不会被误判为 QFLI。
+  for (const value of ['', '   ', 'other-app', 'app-qfli', 'qf', 'qfl', ' qfli', '  qfli-app  ', null, undefined, 42, {}, { id: '' }]) {
     assert.equal(isQfliClient(value), false, String(value));
   }
   assert.equal(isQfliClient({ id: 'qfli-app' }), true);

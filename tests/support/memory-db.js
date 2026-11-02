@@ -704,10 +704,18 @@ class MemoryPool {
       return [{ affectedRows: 1, insertId: 0 }, []];
     }
 
-    if (lower === 'insert into login_logs (id, username, user_id, ip, source_port, platform, login_type, user_agent, result, detail) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)') {
-      const [id, username, userId, ip, sourcePort, platform, loginType, userAgent, result, detail] = params;
-      this.loginLogs.push({ id, username, user_id: userId, ip, source_port: sourcePort, platform, login_type: loginType, user_agent: userAgent, result, detail, created_at: now() });
-      return [{ affectedRows: 1, insertId: id }, []];
+    // 合并后的两处写入点使用不同的列清单（审计写入带 source_port/platform/login_type，
+    // 注销审计只写基础列），因此按实际列名映射而不是比对整条 SQL。
+    const insertLoginLog = lower.match(/^insert into login_logs \(([^)]+)\) values \(([^)]+)\)$/);
+    if (insertLoginLog) {
+      const columns = insertLoginLog[1].split(',').map(name => name.trim());
+      const row = { source_port: null, platform: null, login_type: null, created_at: now() };
+      for (const [index, column] of columns.entries()) row[column] = params[index];
+      row.user_agent = row.user_agent === undefined ? '' : row.user_agent;
+      row.result = row.result === undefined ? 'success' : row.result;
+      row.detail = row.detail === undefined ? '' : row.detail;
+      this.loginLogs.push(row);
+      return [{ affectedRows: 1, insertId: row.id }, []];
     }
 
     if (lower === 'delete from login_logs where created_at < ?') {

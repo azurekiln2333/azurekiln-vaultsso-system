@@ -4,12 +4,14 @@ const moderation = require('./moderation');
 // QFLIStudio+ 客户端标识：client_id 以 qfli 开头，大小写不敏感。
 // 只接受字符串形式的 client_id 或带 id 的客户端记录，其余一律返回 false，
 // 保证“无客户端”场景与其它客户端的行为不受任何影响。
+// 判定前不裁剪空白：带前导/尾随空白的 id 不是已登记客户端，
+// 不能因为宽松匹配把无关应用当成 QFLI 客户端去拦截注册或放行注销。
 // 注册限制（任务2）与账号注销（任务4）共用这一个判定。
 const QFLI_CLIENT_PREFIX = 'qfli';
 
 function isQfliClient(candidate) {
   const id = typeof candidate === 'string' ? candidate : candidate?.id;
-  return typeof id === 'string' && id.trim().toLowerCase().startsWith(QFLI_CLIENT_PREFIX);
+  return typeof id === 'string' && id.toLowerCase().startsWith(QFLI_CLIENT_PREFIX);
 }
 
 module.exports = function installQfliIntegration({
