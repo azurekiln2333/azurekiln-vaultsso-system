@@ -159,7 +159,6 @@ const i18n = window.VaultI18n;
       renderTotpStatus(user);
 
       document.getElementById('profileNameInput').value = user.name || '';
-      document.getElementById('profileAvatarInput').value = user.avatar || '';
       document.getElementById('profileDescriptionInput').value = user.description || '';
       document.getElementById('profileEmailInput').value = user.email || '';
     }
@@ -507,7 +506,6 @@ const i18n = window.VaultI18n;
 
       const updated = await saveProfile({
         name: document.getElementById('profileNameInput').value,
-        avatar: document.getElementById('profileAvatarInput').value,
         description: document.getElementById('profileDescriptionInput').value
       }, document.getElementById('profileModalSubmit'), 'profile.status.saving', 'profile.status.basic_updated');
 

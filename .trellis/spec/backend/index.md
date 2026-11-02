@@ -28,6 +28,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Registration Policy](./registration-policy.md) | Registration-only ASCII usernames, proof boundaries, configured password guidance and QFLI email-registration closure | Defined |
 | [Session Duration](./session-duration.md) | Fixed 1/7/14-day browser login, continuation, legacy caps and credential replacement | Defined |
 | [Account Erasure](./account-erasure.md) | QFLI service-client erasure, permanent tombstones, atomic revocation and pseudonymized retained logs | Defined |
+| [Profile Moderation](./moderation.md) | SDK boundary for profile text, safe failures and disabled manual avatar input | Defined |
 
 ---
 

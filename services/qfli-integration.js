@@ -1,4 +1,5 @@
 const { eraseAccount, AccountErasureError } = require('./account-erasure');
+const moderation = require('./moderation');
 
 // QFLIStudio+ 客户端标识：client_id 以 qfli 开头，大小写不敏感。
 // 只接受字符串形式的 client_id 或带 id 的客户端记录，其余一律返回 false，
@@ -95,6 +96,7 @@ module.exports = function installQfliIntegration({
       }
       updates.description = input.description;
     }
+    await moderation.assertProfileUpdates(authenticated.user, updates);
     await User.update(authenticated.user.id, updates);
     const user = await User.findById(authenticated.user.id);
     res.json({ ...scopedUserClaims(user, authenticated.scopes), description: user.description || '' });

@@ -26,6 +26,7 @@
     "db",
     "models",
     "services",
+    "vendor",
     "public/css",
     "public/js",
     "scripts/init-db.js",
@@ -35,6 +36,7 @@
     "docs/SECURITY_REVIEW.md"
   ],
   "dependencies": {
+    "@azurekiln/moderation-client": "file:vendor/azurekiln-moderation-client-0.1.0.tgz",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.3.1",

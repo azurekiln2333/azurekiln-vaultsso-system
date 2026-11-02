@@ -13,6 +13,13 @@ test('deployment ZIP contains separate phone scripts and styles with matching so
     const result = buildDeploy({ root, output });
     const tools = archiveTools();
     const entries = tools.list(output);
+    const manifest = JSON.parse(tools.read(output, 'package.json'));
+    const lock = JSON.parse(tools.read(output, 'package-lock.json'));
+    const sdk = manifest.dependencies['@azurekiln/moderation-client'];
+    assert.match(sdk, /^file:vendor\/azurekiln-moderation-client-[\d.]+\.tgz$/);
+    assert.ok(entries.includes(sdk.slice('file:'.length)), 'the official SDK tarball must be available to npm ci in the archive');
+    assert.equal(lock.packages[''].dependencies['@azurekiln/moderation-client'], sdk);
+    assert.equal(lock.packages['node_modules/@azurekiln/moderation-client'].resolved, sdk);
     for (const file of ['views/account/profile.html', 'views/admin/user.html', 'views/page-registry.js', 'public/js/pages/account/profile.js', 'public/js/pages/admin/user.js',
       'public/css/vaultsso-profile.css', '.env.example', 'scripts/init-db.js', 'models/User.js']) {
       assert.ok(entries.includes(file), `${file} must be included`);
