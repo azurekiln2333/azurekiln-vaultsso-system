@@ -2655,11 +2655,21 @@ function buildHuaweiProfile(identity, config) {
 }
 
 // 实名认证口径：没有华为已核验手机号的华为账号不得创建、绑定本地账号。
+// 该口径只适用于 QFLI 客户端（对外承诺的实名方式），其它接入应用保持整改前行为。
 const HUAWEI_VERIFIED_PHONE_REQUIRED = '请使用已绑定手机号的华为账号';
 const HUAWEI_VERIFIED_PHONE_REQUIRED_ERROR = 'huawei_verified_phone_required';
 
 function hasVerifiedHuaweiPhone(identity) {
   return Boolean(identity && identity.phoneVerified && identity.phone && identity.phone.e164);
+}
+
+// 这次华为请求是否属于 QFLI 客户端。无 client_id（网关自身页面登录）不算 QFLI 客户端。
+// 字符串前缀与已登记的客户端记录都查一次，与注册限制的判定保持一致。
+async function requiresVerifiedHuaweiPhone(clientId) {
+  const id = normalizeText(clientId);
+  if (!id) return false;
+  if (isQfliClient(id)) return true;
+  return isQfliClient(await Client.findById(id));
 }
 
 // Link/create paths are rejected exactly the same way so a caller learns nothing extra about
@@ -2701,7 +2711,8 @@ async function applyHuaweiPhone(user, identity) {
   return { user, action: 'unchanged' };
 }
 
-async function findOrCreateHuaweiUser(identity, config, linkUserId = '', allowCreate = true) {
+// `requireVerifiedPhone` 由调用方按本次请求的 client_id 决定（QFLI 客户端为 true）。
+async function findOrCreateHuaweiUser(identity, config, linkUserId = '', allowCreate = true, requireVerifiedPhone = false) {
   const provider = normalizeText(config.providerKey).toLowerCase();
   const scope = normalizeText(config.huaweiUnionScope);
   const subjects = [identity.unionId, identity.openId].filter(Boolean).map(id => `provider:${provider}:${id}`);
@@ -2720,7 +2731,7 @@ async function findOrCreateHuaweiUser(identity, config, linkUserId = '', allowCr
     }
     await connection.beginTransaction();
     transaction = true;
-    const result = await resolveHuaweiUser(identity, config, linkUserId, connection, { phoneAutolink, registrationEnabled, allowCreate });
+    const result = await resolveHuaweiUser(identity, config, linkUserId, connection, { phoneAutolink, registrationEnabled, allowCreate, requireVerifiedPhone });
     await connection.commit();
     transaction = false;
     return result;
@@ -2821,8 +2832,8 @@ async function resolveHuaweiUser(identity, config, linkUserId, connection, setti
   }
 
   if (!settings.allowCreate) return { pending: true };
-  // 一键登录路径的建号闸门：拿不到已核验手机号一律不建号。
-  if (!hasVerifiedHuaweiPhone(identity)) throw new Error(HUAWEI_VERIFIED_PHONE_REQUIRED);
+  // 一键登录路径的建号闸门：QFLI 客户端拿不到已核验手机号时一律不建号。
+  if (settings.requireVerifiedPhone && !hasVerifiedHuaweiPhone(identity)) throw new Error(HUAWEI_VERIFIED_PHONE_REQUIRED);
   if (!settings.registrationEnabled) throw new Error('Registration is disabled');
 
   const digest = crypto.createHash('sha256').update(primaryId).digest('hex');
@@ -3012,8 +3023,9 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
   if (!identity.openId && !identity.unionId) {
     return res.status(400).json({ error: 'invalid_grant', error_description: '华为账号未返回用户标识' });
   }
-  // 绑定/建号都必须建立在华为已核验手机号之上，先于任何账号写入或待绑定凭据签发。
-  if ((linkIntent || !mergeIntent) && !hasVerifiedHuaweiPhone(identity)) {
+  // 绑定/建号都必须建立在华为已核验手机号之上（仅 QFLI 客户端），先于任何账号写入或待绑定凭据签发。
+  const requireVerifiedPhone = await requiresVerifiedHuaweiPhone(req.body.client_id);
+  if (requireVerifiedPhone && (linkIntent || !mergeIntent) && !hasVerifiedHuaweiPhone(identity)) {
     return respondHuaweiVerifiedPhoneRequired(res);
   }
 
@@ -3048,7 +3060,7 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
 
   let result;
   try {
-    result = await findOrCreateHuaweiUser(identity, config, linkIntent ? currentUser.id : '', false);
+    result = await findOrCreateHuaweiUser(identity, config, linkIntent ? currentUser.id : '', false, requireVerifiedPhone);
   } catch (error) {
     if (error.message === HUAWEI_VERIFIED_PHONE_REQUIRED) return respondHuaweiVerifiedPhoneRequired(res);
     return res.status(400).json({ error: 'invalid_request', error_description: error.message });
@@ -3061,7 +3073,8 @@ app.post(HUAWEI_QUICK_LOGIN_PATH, asyncHandler(async (req, res) => {
     const { providerKey, providerName, huaweiUnionScope, clientId } = config;
     pendingHuaweiBindings.set(bindingToken, {
       identity: verifiedIdentity, config: { providerKey, providerName, huaweiUnionScope, clientId },
-      clientId: normalizeText(req.body.client_id), sessionDays, createdAt: Date.now(), inProgress: false
+      clientId: normalizeText(req.body.client_id), requireVerifiedPhone,
+      sessionDays, createdAt: Date.now(), inProgress: false
     });
     return res.json({ binding_required: true, binding_token: bindingToken,
       phone_available: Boolean(identity.phone && identity.phoneVerified),
@@ -3077,8 +3090,8 @@ app.post(HUAWEI_SKIP_PATH, asyncHandler(async (req, res) => {
   if (!entry) return res.status(400).json({ error: 'invalid_grant', error_description: '华为绑定请求已过期，请重新登录' });
   if (entry.inProgress) return res.status(409).json({ error: 'conflict', error_description: '请求正在处理' });
   if (normalizeText(req.body.client_id) !== entry.clientId) return res.status(403).json({ error: 'forbidden', error_description: '登录客户端不一致' });
-  // 旧版待绑定凭据可能缺少手机号；跳过只用于创建新账号，因此同样要求已核验手机号。
-  if (!hasVerifiedHuaweiPhone(entry.identity)) {
+  // 旧版待绑定凭据可能缺少手机号；对 QFLI 客户端跳过建号同样要求已核验手机号。
+  if (entry.requireVerifiedPhone && !hasVerifiedHuaweiPhone(entry.identity)) {
     pendingHuaweiBindings.delete(token);
     return respondHuaweiVerifiedPhoneRequired(res);
   }
@@ -3086,7 +3099,7 @@ app.post(HUAWEI_SKIP_PATH, asyncHandler(async (req, res) => {
   try {
     let result;
     try {
-      result = await findOrCreateHuaweiUser(entry.identity, entry.config);
+      result = await findOrCreateHuaweiUser(entry.identity, entry.config, '', true, Boolean(entry.requireVerifiedPhone));
     } catch (error) {
       if (error.message === HUAWEI_VERIFIED_PHONE_REQUIRED) return respondHuaweiVerifiedPhoneRequired(res);
       return res.status(400).json({ error: 'invalid_request', error_description: error.message });
@@ -3112,8 +3125,8 @@ app.post(HUAWEI_BIND_PATH, asyncHandler(async (req, res) => {
       || new Date(tokenData.expires_at) <= new Date() || !tokenData.scopes.includes('openid')) {
     return res.status(401).json({ error: 'invalid_token', error_description: '请重新验证已有账号' });
   }
-  // 绑定已有账号同样要求华为返回已核验手机号，与建号口径保持一致。
-  if (!hasVerifiedHuaweiPhone(entry.identity)) {
+  // 绑定已有账号对 QFLI 客户端同样要求华为返回已核验手机号，与建号口径保持一致。
+  if (entry.requireVerifiedPhone && !hasVerifiedHuaweiPhone(entry.identity)) {
     pendingHuaweiBindings.delete(token);
     return respondHuaweiVerifiedPhoneRequired(res);
   }
@@ -3121,7 +3134,8 @@ app.post(HUAWEI_BIND_PATH, asyncHandler(async (req, res) => {
   try {
     let result;
     try {
-      result = await findOrCreateHuaweiUser(entry.identity, entry.config, tokenData.user_id, false);
+      result = await findOrCreateHuaweiUser(entry.identity, entry.config, tokenData.user_id, false,
+        Boolean(entry.requireVerifiedPhone));
     } catch (error) {
       if (error.message === HUAWEI_VERIFIED_PHONE_REQUIRED) return respondHuaweiVerifiedPhoneRequired(res);
       return res.status(409).json({ error: 'conflict', error_description: error.message });

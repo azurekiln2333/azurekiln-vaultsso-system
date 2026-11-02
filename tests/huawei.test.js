@@ -210,22 +210,31 @@ test('官方 openId/unionId/phoneNumber 字段匹配已验证手机号并自动�
   assert.equal(f.pool.userIdentities[0].provider_secondary_id, 'official-app-open');
 });
 
-test('官方 phoneNumberValid=0 不自动关联已有账号，且不再建号', async () => {
+test('官方 phoneNumberValid=0 不自动关联已有账号，QFLI 客户端也不再建号', async () => {
+  const qfli = await createQfliClient();
   const existing = await f.User.create({
     username: `unverified-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`,
     password: randomSecret(), phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true
   });
   f.pool.settings.push({ setting_key: 'huawei_phone_autolink', setting_value: 'true' });
-  const result = await quickLogin({ code: stage({
+  const payload = () => ({
     openId: 'unverified-open', unionId: 'unverified-union',
     purePhoneNumber: '13800138000', phoneCountryCode: '0086', phoneNumberValid: 0
-  }) });
-  // 未核验号码既不能认领已有账号，也不能作为新建账号的依据。
+  });
+  const result = await quickLogin({ code: stage(payload()), client_id: qfli.id });
+  // 未核验号码既不能认领已有账号，QFLI 客户端也不能拿它新建账号。
   assert.equal(result.status, 403, JSON.stringify(result.body));
   assert.equal(result.body.error, 'huawei_verified_phone_required');
   assert.equal(f.pool.users.length, 1);
   assert.equal(f.pool.users[0].id, existing.id);
   assert.equal(f.pool.userIdentities.length, 0);
+
+  // 其它客户端保持整改前行为：不认领已有账号，但会为这个身份单独建号。
+  const other = await quickLogin({ code: stage(payload()) });
+  assert.equal(other.status, 200, JSON.stringify(other.body));
+  assert.notEqual(other.body.user.id, existing.id);
+  assert.equal(other.body.phoneStatus, 'unverified');
+  assert.equal(f.pool.users.length, 2);
 });
 
 test('HTTP 200 中的华为业务错误不会建立账号且不泄露原始报文', async () => {
@@ -310,8 +319,46 @@ test('默认按华为已验证手机号匹配已验证的已有账号', async ()
   assert.equal(f.pool.users.length, 1);
 });
 
-test('未获得手机号时不签发待绑定凭据，也不创建账号', async () => {
-  const pending = await quickLoginRaw({ code: stage(huaweiPayload({ purePhoneNumber: '', phoneNumber: '' })), session_days: 7 });
+// QFLI 客户端的 id 前缀是 qfli（大小写不敏感），注册限制与注销接口共用这个判定。
+async function createQfliClient(scopes = ['openid', 'profile', 'email', 'phone', 'offline_access']) {
+  const secret = randomSecret();
+  const record = await new ClientModel(f.pool).create({
+    id: `qfli-${crypto.randomUUID()}`, name: 'QFLIStudio+', secret,
+    redirectUris: ['https://qfli.example.test/callback'], scopes
+  });
+  return { ...record, clearSecret: secret };
+}
+
+// 走真实的密码登录 + 授权码交接，拿到属于该客户端的 bearer 访问令牌。
+async function signInExistingAccount(app) {
+  const password = randomSecret();
+  const existing = await f.User.create({
+    username: `bind-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`, password,
+    emailVerified: true
+  });
+  const verifier = randomSecret();
+  const authorized = await f.request('/oauth2/authorize', {
+    method: 'POST', data: {
+      username: existing.username, password, client_id: app.id,
+      redirect_uri: app.redirectUris[0], response_type: 'code', scope: 'openid profile',
+      state: randomSecret(), code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256'
+    }
+  });
+  assert.equal(authorized.status, 200, JSON.stringify(authorized.body));
+  const exchanged = await f.exchange(app, {
+    code: new URL(authorized.body.redirect).searchParams.get('code'), verifier
+  });
+  assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
+  return { existing, token: exchanged.body.access_token };
+}
+
+test('QFLI 客户端未获得手机号时不签发待绑定凭据，也不创建账号', async () => {
+  const qfli = await createQfliClient();
+  const pending = await quickLoginRaw({
+    code: stage(huaweiPayload({ purePhoneNumber: '', phoneNumber: '' })),
+    client_id: qfli.id, session_days: 7
+  });
   assert.equal(pending.status, 403);
   assert.equal(pending.body.error, 'huawei_verified_phone_required');
   assert.equal(pending.body.error_description, '请使用已绑定手机号的华为账号');
@@ -328,8 +375,9 @@ for (const [label, payload] of [
   ['华为返回未核验号码', () => huaweiPayload({ phoneNumberValid: 0 })],
   ['华为只返回掩码号码', () => huaweiPayload({ purePhoneNumber: '138****8000', phoneNumber: '', loginMobileNumber: '138****8000' })]
 ]) {
-  test(`快速登录被拒绝：${label}`, async () => {
-    const result = await quickLoginRaw({ code: stage(payload()) });
+  test(`QFLI 客户端快速登录被拒绝：${label}`, async () => {
+    const qfli = await createQfliClient();
+    const result = await quickLoginRaw({ code: stage(payload()), client_id: qfli.id });
     assert.equal(result.status, 403, JSON.stringify(result.body));
     assert.equal(result.body.error, 'huawei_verified_phone_required');
     assert.equal(result.body.error_description, PHONE_REJECTED);
@@ -342,13 +390,15 @@ for (const [label, payload] of [
   });
 }
 
-test('没有已核验手机号时 link intent 不会绑定到已登录账号', async () => {
+test('QFLI 客户端 link intent 在无已核验手机号时不会绑定到已登录账号', async () => {
+  const qfli = await createQfliClient();
   const target = await f.user();
   const signedIn = await f.login(target);
   assert.equal(signedIn.status, 200, JSON.stringify(signedIn.body));
   const usersBefore = f.pool.users.length;
   const identitiesBefore = f.pool.userIdentities.length;
-  const result = await quickLoginRaw({ intent: 'link', code: stage(noVerifiedPhone()) }, { Cookie: signedIn.cookie });
+  const result = await quickLoginRaw({ intent: 'link', code: stage(noVerifiedPhone()), client_id: qfli.id },
+    { Cookie: signedIn.cookie });
   assert.equal(result.status, 403, JSON.stringify(result.body));
   assert.equal(result.body.error, 'huawei_verified_phone_required');
   assert.equal(result.body.error_description, PHONE_REJECTED);
@@ -356,8 +406,100 @@ test('没有已核验手机号时 link intent 不会绑定到已登录账号', a
   assert.equal(f.pool.users.length, usersBefore);
 });
 
-test('未返回手机号的华为身份即使已存在也不会被登录', async () => {
-  // 历史数据：整改前允许无手机号建号，这里手工构造该绑定，验证整改后不能继续登录。
+// 其它接入应用与网关自身页面不在实名口径范围内，必须保持整改前（fix/admin-mfa-polish）的行为。
+test('其他客户端无手机号时仍可 skip 建号', async () => {
+  const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
+  const verifier = randomSecret();
+  const oauth = {
+    client_id: app.id, redirect_uri: app.redirectUris[0], response_type: 'code',
+    scope: 'openid profile', state: randomSecret(),
+    code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256'
+  };
+  const pending = await quickLoginRaw({ code: stage(noVerifiedPhone()), ...oauth });
+  assert.equal(pending.status, 200, JSON.stringify(pending.body));
+  assert.equal(pending.body.binding_required, true);
+  assert.equal(pending.body.phone_available, false);
+  assert.equal(f.pool.users.length, 0, 'no account is created before the decision');
+
+  const skipped = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', {
+    binding_token: pending.body.binding_token, ...oauth
+  });
+  assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.users[0].phone_e164, null, 'no phone is invented for the new account');
+  assert.equal(f.pool.userIdentities.length, 1);
+  assert.equal(f.pool.userIdentities[0].user_id, f.pool.users[0].id);
+  assert.ok(skipped.body.authorization_code, 'the normal authorization-code handoff still happens');
+});
+
+test('无 client_id 的网关页面登录仍可无手机号 skip 建号', async () => {
+  const pending = await quickLoginRaw({ code: stage(noVerifiedPhone()), session_days: 7 });
+  assert.equal(pending.status, 200, JSON.stringify(pending.body));
+  assert.equal(pending.body.binding_required, true);
+  const skipped = await huaweiRequest('/api/v1/auth/oauth/huawei/skip', { binding_token: pending.body.binding_token });
+  assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
+  assert.match(skipped.cookie, /(?:^|;\s*)session=/);
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(jwt.decode(decodeURIComponent(skipped.cookie.match(/session=([^;]+)/)[1])).session_days, 7);
+});
+
+test('其他客户端无手机号时仍可 bind 到已登录账号', async () => {
+  const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
+  const { existing, token: accessToken } = await signInExistingAccount(app);
+  const verifier = randomSecret();
+  const pending = await quickLoginRaw({
+    code: stage(noVerifiedPhone()), client_id: app.id, redirect_uri: app.redirectUris[0],
+    response_type: 'code', scope: 'openid profile', state: randomSecret(),
+    code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256'
+  });
+  assert.equal(pending.status, 200, JSON.stringify(pending.body));
+  assert.equal(pending.body.binding_required, true);
+  const bound = await huaweiRequest('/api/v1/auth/oauth/huawei/bind',
+    { binding_token: pending.body.binding_token }, { Authorization: `Bearer ${accessToken}` });
+  assert.equal(bound.status, 200, JSON.stringify(bound.body));
+  assert.equal(bound.body.linked, true);
+  assert.equal(f.pool.userIdentities.length, 1);
+  assert.equal(f.pool.userIdentities[0].user_id, existing.id);
+});
+
+test('其他客户端的存量无手机号华为账号可以照常登录', async () => {
+  const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
+  const verifier = randomSecret();
+  const oauth = () => ({
+    client_id: app.id, redirect_uri: app.redirectUris[0], response_type: 'code',
+    scope: 'openid profile', state: randomSecret(),
+    code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256'
+  });
+  const first = await quickLogin({ code: stage(noVerifiedPhone({ unionID: 'other-app-union', openID: 'other-app-open' })),
+    ...oauth() });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.users[0].phone_e164, null);
+
+  // 再次登录同一个无手机号身份：整改前的行为是照常登录。
+  const again = await quickLogin({ code: stage(noVerifiedPhone({ unionID: 'other-app-union', openID: 'other-app-open' })),
+    ...oauth() });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.userIdentities.length, 1);
+  assert.equal(f.pool.userIdentities[0].user_id, f.pool.users[0].id);
+});
+
+test('无 client_id 的存量无手机号华为账号可以照常登录', async () => {
+  const first = await quickLogin({ code: stage(noVerifiedPhone({ unionID: 'web-union', openID: 'web-open' })) });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  const again = await quickLogin({ code: stage(noVerifiedPhone({ unionID: 'web-union', openID: 'web-open' })) });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.user.id, first.body.user.id);
+  assert.equal(f.pool.users.length, 1);
+});
+
+test('QFLI 客户端的存量无手机号华为账号仍然无法登录', async () => {
+  const qfli = await createQfliClient();
+  // 历史数据：整改前允许无手机号建号，这里手工构造该绑定。
   const legacy = await f.User.create({
     username: `legacy-huawei-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@users.invalid`, password: ''
   });
@@ -370,7 +512,7 @@ test('未返回手机号的华为身份即使已存在也不会被登录', async
     created_at: new Date(), updated_at: new Date()
   });
   const loginLogsBefore = f.pool.loginLogs.length;
-  const result = await quickLoginRaw({ code: stage(huaweiPayload({
+  const result = await quickLoginRaw({ client_id: qfli.id, code: stage(huaweiPayload({
     unionID: 'legacy-no-phone-union', openID: 'legacy-no-phone-open',
     purePhoneNumber: '', phoneNumber: '', loginMobileNumber: ''
   })) });
@@ -397,33 +539,10 @@ test('过期的华为待绑定凭据不能创建账号', async () => {
   }
 });
 
-// 历史数据：待绑定凭据在整改前可能在华为未返回手机号时签发。skip/bind 都必须在写入前拒绝这类身份，
-// 即使绕过快速登录的闸门直接命中待绑定缓存。
-async function signInExistingAccount(app) {
-  const password = randomSecret();
-  const existing = await f.User.create({
-    username: `bind-${crypto.randomUUID()}`, email: `${crypto.randomUUID()}@example.test`, password,
-    emailVerified: true
-  });
-  const verifier = randomSecret();
-  const authorized = await f.request('/oauth2/authorize', {
-    method: 'POST', data: {
-      username: existing.username, password, client_id: app.id,
-      redirect_uri: app.redirectUris[0], response_type: 'code', scope: 'openid profile',
-      state: randomSecret(), code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
-      code_challenge_method: 'S256'
-    }
-  });
-  assert.equal(authorized.status, 200, JSON.stringify(authorized.body));
-  const exchanged = await f.exchange(app, {
-    code: new URL(authorized.body.redirect).searchParams.get('code'), verifier
-  });
-  assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
-  return { existing, token: exchanged.body.access_token };
-}
-
-test('skip 与 bind 对没有已核验手机号的历史待绑定凭据一律拒绝', async () => {
-  const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
+// 待绑定缓存是进程状态，可插入任意历史条目。QFLI 客户端的待绑定凭据即使绕过快速登录的闸门
+// 直接命中缓存，skip/bind 也必须在写入前拒绝无手机号身份。
+test('QFLI 客户端下 skip 与 bind 对没有已核验手机号的历史待绑定凭据一律拒绝', async () => {
+  const app = await createQfliClient();
   const { existing, token: accessToken } = await signInExistingAccount(app);
 
   const pendingCache = serverModule.__pendingHuaweiBindings;
@@ -434,7 +553,7 @@ test('skip 与 bind 对没有已核验手机号的历史待绑定凭据一律拒
       phone: null, phoneVerified: false, displayName: '历史华为用户'
     },
     config: { providerKey: 'huawei', providerName: '华为账号', huaweiUnionScope: '', clientId },
-    clientId: app.id, sessionDays: 1, createdAt: Date.now(), inProgress: false
+    clientId: app.id, requireVerifiedPhone: true, sessionDays: 1, createdAt: Date.now(), inProgress: false
   });
 
   const usersBefore = f.pool.users.length;
@@ -472,6 +591,24 @@ test('skip 与 bind 对没有已核验手机号的历史待绑定凭据一律拒
   assert.equal(bound.status, 200, JSON.stringify(bound.body));
   assert.equal(bound.body.linked, true);
   assert.equal(f.pool.userIdentities.length, identitiesBefore + 1);
+  assert.equal(f.pool.userIdentities.at(-1).user_id, existing.id);
+});
+
+test('同一待绑定凭据在其他客户端下不受手机号闸门影响', async () => {
+  const app = await createClient(['openid', 'profile', 'email', 'phone', 'offline_access']);
+  const { existing, token: accessToken } = await signInExistingAccount(app);
+  const pendingCache = serverModule.__pendingHuaweiBindings;
+  const token = randomSecret();
+  pendingCache.set(token, {
+    identity: { openId: `plain-open-${crypto.randomUUID()}`, unionId: '',
+      phone: null, phoneVerified: false, displayName: '普通应用用户' },
+    config: { providerKey: 'huawei', providerName: '华为账号', huaweiUnionScope: '', clientId },
+    clientId: app.id, requireVerifiedPhone: false, sessionDays: 1, createdAt: Date.now(), inProgress: false
+  });
+  const bound = await huaweiRequest('/api/v1/auth/oauth/huawei/bind', { binding_token: token },
+    { Authorization: `Bearer ${accessToken}` });
+  assert.equal(bound.status, 200, JSON.stringify(bound.body));
+  assert.equal(bound.body.linked, true);
   assert.equal(f.pool.userIdentities.at(-1).user_id, existing.id);
 });
 
@@ -671,13 +808,15 @@ test('启用验证器时返回 mfa_required，并可用响应体里的凭据（�
   assert.equal((await f.request('/api/profile', { cookie: completed.cookie })).status, 200);
 });
 
-test('华为未返回手机号时不再建号', async () => {
+test('华为未返回手机号时仍可登录，只是不写手机号', async () => {
+  // 无 client_id 的网关页面登录不属于 QFLI 客户端，保持整改前行为。
   const result = await quickLogin({
     code: stage(huaweiPayload({ purePhoneNumber: '', phoneCountryCode: '', loginMobileNumber: '', loginMobileValid: '' }))
   });
-  assert.equal(result.status, 403);
-  assert.equal(result.body.error, 'huawei_verified_phone_required');
-  assert.equal(f.pool.users.length, 0);
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.user.phoneE164, '');
+  assert.equal(f.pool.users.length, 1);
+  assert.equal(f.pool.users[0].phone_e164, null);
 });
 
 test('无效或已使用的授权码被拒绝，且不泄露上游报文', async () => {

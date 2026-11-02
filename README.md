@@ -214,8 +214,9 @@ const response = await fetch(process.env.SSO_BASE_URL + '/api/v1/auth/oauth/huaw
 const result = await response.json();
 if (!response.ok) throw new Error(result.error || 'quick_login_failed');
 if (result.binding_required) { /* 显示绑定已有账号或创建新账号的选择 */ }
-// 华为未返回已核验手机号时，网关在交换授权码后直接返回 403：
+// 仅 QFLI 客户端（client_id 以 qfli 开头）在华为未返回已核验手机号时收到 403：
 // { error: 'huawei_verified_phone_required', error_description: '请使用已绑定手机号的华为账号' }
+// 其他客户端与无 client_id 的登录保持原行为：binding_required → skip/bind。
 else if (result.mfa_required) { /* 继续二步验证 */ }
 else { /* 兑换 authorization_code，建立应用会话，再返回用户结果 */ }
 ```
@@ -227,7 +228,7 @@ else { /* 兑换 authorization_code，建立应用会话，再返回用户结果
 | 授权码 | 传了 `client_id` / `redirect_uri` | `{ authorization_code, state, redirect_uri, redirect, user, phone, phoneStatus, phoneBinding }`，应用服务端用 `authorization_code` 走 `/oauth2/token` 换码；未获准 `phone` scope 时 `phone: null`、`phoneStatus: "scope_not_granted"` |
 | 会话 Cookie | 未传 `client_id` / `redirect_uri` | `{ user, phone, phoneStatus, phoneBinding }`，同时下发网关会话 Cookie |
 | 二次验证 | 账号启用了验证器，或开启了邮件验证码 | `{ mfa_required: true, factor, email, pending_token, pending_header: 'X-Oidc-Pending' }` |
-| 绑定决策 | 尚无可直接认领的身份，且华为返回了已核验手机号 | `{ binding_required: true, binding_token, phone_available, phone_status }`；需要绑定已有账号或明确跳过创建新账号 |
+| 绑定决策 | 尚无可直接认领的身份（QFLI 客户端还需已核验手机号） | `{ binding_required: true, binding_token, phone_available, phone_status }`；需要绑定已有账号或明确跳过创建新账号 |
 | 绑定结果 | 请求体带 `intent: "link"`（需已登录） | `{ linked: true, user, phone, phoneStatus, phoneBinding }` |
 | 合并结果 | 请求体带 `intent: "merge"`，已有账号会话足够新 | `{ merged: true, user, phone, phoneStatus, phoneTransferred }`；原本已绑定当前账号时 `{ merged: false, linked: true, user }` |
 
@@ -235,9 +236,11 @@ else { /* 兑换 authorization_code，建立应用会话，再返回用户结果
 
 `binding_required` 和 `mfa_required` 都是待完成状态，不能按最终登录用户对象读取 `phone`。最终响应中的 `phone` 是华为本次返回且验证有效的完整 E.164 号码；`phoneStatus` 为 `verified`、`conflict`、`unverified`、`not_returned`，OAuth 交接未获准 `phone` scope 时为 `scope_not_granted`。`phoneBinding` 表示本地绑定结果。获准展示手机号时，`user.phoneE164` 是本地账号当前存储号码，发生 `conflict` 时两者可能不同；未获准的 OAuth 交接也会隐藏 `user` 中的手机号字段。华为未返回完整可用号码或未获准相关敏感权限时，网关不会补造号码。
 
-**手机号强制要求**：网关的实名认证口径为“华为账号一键登录获取已核验手机号”，因此快速登录、绑定（`/huawei/bind`）、跳过创建账号（`/huawei/skip`）和 `intent: "link"` 在华为本次没有返回 `phoneNumberValid` 为真的完整手机号时，一律返回 403 `huawei_verified_phone_required`，文案固定为“请使用已绑定手机号的华为账号”。被拒绝的请求不创建账号、不写身份绑定、不签发待绑定凭据或会话，也不修改任何已有账号；整改前遗留的无手机号华为绑定同样无法继续登录。应用服务端应把该错误直接展示给用户，引导其到华为账号中心绑定手机号后重试。
+**手机号强制要求（仅 QFLI 客户端）**：网关的实名认证口径为“华为账号一键登录获取已核验手机号”，该口径**只适用于 QFLI 客户端**（发起本次华为请求的 `client_id` 以 `qfli` 开头，大小写不敏感）。对 QFLI 客户端，快速登录、绑定（`/huawei/bind`）、跳过创建账号（`/huawei/skip`）和 `intent: "link"` 在华为本次没有返回 `phoneNumberValid` 为真的完整手机号时，一律返回 403 `huawei_verified_phone_required`，文案固定为“请使用已绑定手机号的华为账号”。被拒绝的请求不创建账号、不写身份绑定、不签发待绑定凭据或会话，也不修改任何已有账号；整改前遗留的无手机号华为绑定在 QFLI 客户端下同样无法继续登录。应用服务端应把该错误直接展示给用户，引导其到华为账号中心绑定手机号后重试。
 
-只有 `intent: "merge"`（合并误建账号）不受此限制，因为它只把已存在的身份并入当前已登录账号，且源账号必须已在整改前存在。
+**其他接入应用不受此限制**：不带 `client_id` 的网关页面登录，以及任何非 `qfli` 前缀的客户端，均保持整改前行为——华为未返回手机号时仍下发 `binding_required`，`/huawei/skip` 仍可建号，`/huawei/bind` 仍可绑定，存量无手机号华为账号仍可照常登录，只是不会写入手机号。
+
+只有 `intent: "merge"`（合并误建账号）对**所有**客户端都不受此限制，因为它只把已存在的身份并入当前已登录账号，且源账号必须已在整改前存在。
 
 **误建账号合并**：已创建独立华为账号、后来要并入已有本地账号时，先重新登录已有账号，确保网关会话创建不足五分钟；再以该会话调用同一 `POST /api/v1/auth/oauth/huawei/quick-login`，提交 `{ "intent": "merge", "provider": "对应华为 App", "authorizationCode": "新取得的华为授权码" }`。网关用新授权码证明源华为身份，成功返回 `{ merged: true, user, phone, phoneStatus, phoneTransferred }`；已经属于当前账号则返回 `{ merged: false, linked: true, user }`。应用服务端须保管已有账号会话及新授权码，不能仅凭手机号或客户端自称的 UnionID 发起合并。
 

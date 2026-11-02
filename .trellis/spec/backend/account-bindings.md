@@ -26,17 +26,19 @@ The bindings endpoint returns `{ accounts: [{ user: { id, username, name, email 
 
 Use sorted MySQL named locks on held connections for identity aliases and scope+UnionID. Resolve/create identities within a transaction on that connection; release locks/connections in `finally`. Huawei phone binding/verification must condition writes on the currently stored phone so a concurrent profile edit cannot be overwritten or incorrectly verified.
 
-### Verified Huawei phone is mandatory
+### Verified Huawei phone is mandatory for QFLI clients
 
-The disclosed identity model is phone verification: Huawei quick login must yield a verified phone. `hasVerifiedHuaweiPhone(identity)` is the single predicate: `identity.phoneVerified === true` and `identity.phone.e164` non-empty. `phoneNumberValid` false, a masked or partial number, or no number at all does not satisfy it.
+The disclosed identity model is phone verification for the QFLIStudio+ client: Huawei quick login must yield a verified phone there. Every other integrated application, and gateway-page logins that send no `client_id`, keep the pre-remediation behaviour. `hasVerifiedHuaweiPhone(identity)` is the single predicate: `identity.phoneVerified === true` and `identity.phone.e164` non-empty. `phoneNumberValid` false, a masked or partial number, or no number at all does not satisfy it.
 
-Every path that creates an account or records a new identity rejects on that predicate with HTTP 403, `error: 'huawei_verified_phone_required'`, `error_description: '请使用已绑定手机号的华为账号'` (`HUAWEI_VERIFIED_PHONE_REQUIRED`), and does so **before** any user row, `user_identities` row, pending binding token, login log or session is written:
+`requiresVerifiedHuaweiPhone(clientId)` decides whether the requirement applies to one request: a blank `client_id` is not a QFLI client, otherwise the string prefix and the registered client row are checked with `isQfliClient` from `services/qfli-integration.js`, matching the registration restriction. Resolve it from the incoming Huawei request, never from provider configuration, because one Huawei provider serves all applications.
+
+For a QFLI client, every path that creates an account or records a new identity rejects on that predicate with HTTP 403, `error: 'huawei_verified_phone_required'`, `error_description: '请使用已绑定手机号的华为账号'`, and does so **before** any user row, `user_identities` row, pending binding token, login log or session is written:
 
 1. `quick-login` with `intent: "link"` and plain quick-login (no intent). The check runs immediately after identity parsing, so no `binding_required` token is ever minted for a phone-less identity.
-2. `quick-login` creation, backed by `resolveHuaweiUser` throwing the same fixed message before `User.create`.
-3. `/huawei/skip` and `/huawei/bind`, which additionally delete the pending token so a legacy token issued before this rule cannot be replayed. This matters for tokens minted by a pre-change build and still inside the five-minute window.
+2. `quick-login` creation, backed by `resolveHuaweiUser` throwing the same fixed message before `User.create` when `settings.requireVerifiedPhone` is set.
+3. `/huawei/skip` and `/huawei/bind`, which also delete the pending token so a legacy token issued before this rule cannot be replayed. The scope is stored on the pending entry as `requireVerifiedPhone` at issuance, so the decision cannot change between stages.
 
-Identity records already stored without a phone stay inspectable but can no longer authenticate: a returning phone-less identity is rejected by the same predicate before the match is used, so the response does not reveal whether the identity is already bound. `intent: "merge"` is deliberately exempt: it only moves an existing source identity into a freshly authenticated target and cannot mint a new identity.
+For every other request the same endpoints keep the previous behaviour: `binding_required` is issued for a phone-less identity, `/skip` creates the account and `/bind` attaches the identity, and a stored phone-less Huawei account keeps signing in. `intent: "merge"` is exempt for all clients because it only moves an existing source identity into a freshly authenticated target.
 
 The rejection is not a login attempt outcome and is not written to `login_logs`; monitoring counts it as a refused pre-authentication request.
 
@@ -52,21 +54,21 @@ The rejection is not a login attempt outcome and is not written to `login_logs`;
 | Same scope/UnionID maps to different users | Reject Huawei login; preserve bindings |
 | A bound provider key is reused with a different client ID | Reject; use a new provider configuration |
 | Huawei-reported phone belongs to another user | Preserve login and identity, report phone conflict, do not merge |
-| Huawei returns no phone, an unverified phone, or only a masked/partial number | 403 `huawei_verified_phone_required` with the fixed message; no account, identity, pending token, login log or session written |
-| Legacy pending token or stored identity without a verified phone | Same 403 on quick-login, `/bind` and `/skip`; pending token consumed |
+| Huawei returns no phone, an unverified phone, or only a masked/partial number | QFLI client: 403 `huawei_verified_phone_required` with the fixed message; no account, identity, pending token, login log or session written. Other clients: previous behaviour |
+| Legacy pending token or stored identity without a verified phone | QFLI client: same 403 on quick-login, `/bind` and `/skip`; pending token consumed. Other clients: unchanged |
 
 ## 5. Good / Base / Bad Cases
 - Good: two configured apps in `company-a` return the same UnionID and different OpenIDs; one local account has two binding records.
 - Base: scope empty or no UnionID; login stays within its own app.
 - Bad: two historical local users already own app bindings for one UnionID; enabling a common scope does not merge them.
-- Phone-required good: a Huawei account with a bound phone creates or resumes its local account normally after the phone is verified.
+- Phone-required good: a QFLI Huawei account with a bound phone creates or resumes its local account normally after the phone is verified.
 - Phone-required base: an account already bound to that phone signs in; the phone is written by `applyHuaweiPhone` as before.
-- Phone-required bad: an account with no Huawei phone gets `binding_required`, and neither `/skip` nor `/bind` creates or attaches anything.
+- Phone-required bad: a QFLI account with no Huawei phone gets no `binding_required`, and neither `/skip` nor `/bind` creates or attaches anything; the same request from another client or with no `client_id` still creates or attaches.
 - Phone: `+65` with national `65123456` stays `+6565123456`; it must not become `+65123456`.
 
 ## 6. Tests Required
 - `tests/phone-api.test.js`: both write routes, format/uniqueness, unchanged verification, change/unbind, reauthentication, authorization and credential revocation.
-- `tests/huawei.test.js`: multiple apps, separate scopes, OpenID-only fallback/upgrade, conflicts, concurrent first logins, transactional rollback, competing phone edits and safe admin projection. It must also cover the phone requirement: quick login refused for missing, unverified and masked-only numbers; `intent: "link"` refused without writing an identity; a stored phone-less identity refused without a login log; legacy pending tokens injected into the exported `__pendingHuaweiBindings` cache refused by both `/skip` and `/bind`, with a verified-phone pending token proving the same paths still work.
+- `tests/huawei.test.js`: multiple apps, separate scopes, OpenID-only fallback/upgrade, conflicts, concurrent first logins, transactional rollback, competing phone edits and safe admin projection. It must also cover the QFLI phone requirement: quick login refused for missing, unverified and masked-only numbers; `intent: "link"` refused without writing an identity; a stored phone-less identity refused without a login log; legacy pending tokens injected into the exported `__pendingHuaweiBindings` cache refused by both `/skip` and `/bind`, with a verified-phone pending token proving the same paths still work. It must equally prove the non-QFLI side is unchanged: `binding_required` plus `/skip` account creation for a plain client and for a request with no `client_id`, `/bind` attaching a phone-less identity, a stored phone-less account signing in again, and an injected pending entry with `requireVerifiedPhone: false` still binding.
 - `tests/schema.test.js`: schema version, create and migration statements.
 - `npm run check:browser`: saves/reloads/unbinds, navigation/search and desktop/mobile screenshots.
 - Browser regression must save the currently signed-in administrator's full form, then reload and verify the phone. Editing another user alone misses self-session revocation bugs. Version changed phone scripts and required styles/translations in the referencing HTML to avoid old cached handlers.
@@ -78,7 +80,9 @@ Wrong: merge any matching `UnionID` globally, keep one mutable OpenID for all ap
 
 Wrong: treat "no phone" as a decision point and let `/skip` create the account anyway; or run the phone check only inside account creation, which leaves `/bind` and legacy pending tokens able to attach identities.
 
-Correct: check one shared predicate at every entry — quick login, link intent, account creation, `/skip` and `/bind` — before any write, and delete the pending token on rejection.
+Wrong: apply the QFLI phone requirement to every Huawei client, which breaks account creation and login for the other applications integrated on the gateway.
+
+Correct: resolve `requiresVerifiedHuaweiPhone` from the incoming request's `client_id`, check that one predicate at every QFLI entry — quick login, link intent, account creation, `/skip` and `/bind` — before any write, delete the pending token on rejection, and leave non-QFLI requests on the previous behaviour.
 
 Correct: establish explicit provider scope, keep each app's identity, reject conflicting mappings, and condition Huawei phone writes on the current database value.
 

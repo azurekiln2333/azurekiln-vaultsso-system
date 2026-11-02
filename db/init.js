@@ -291,9 +291,19 @@ const CREATE_CAPTCHA_TABLE = `CREATE TABLE IF NOT EXISTS captcha_challenges (
   INDEX idx_captcha_expiry (expires_at)
 ) ENGINE=InnoDB`;
 
+// MySQL 不接受 `SHOW COLUMNS ... LIKE ?` 里的占位符（无论 query 还是 execute，预处理后都是
+// ER_PARSE_ERROR: syntax error near '?'），所以直接查 information_schema。写成字面量能绕过，
+// 但表名/列名会进 SQL 文本；走参数化查询既可读又不需要拼接标识符。
+async function columnExists(connection, tableName, columnName) {
+  const [rows] = await connection.execute(
+    'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+    [tableName, columnName]
+  );
+  return rows.length > 0;
+}
+
 async function ensureUsersRoleColumn(connection) {
-  const [columns] = await connection.execute('SHOW COLUMNS FROM users LIKE ?', ['role']);
-  if (columns.length > 0) {
+  if (await columnExists(connection, 'users', 'role')) {
     return;
   }
 
@@ -304,10 +314,7 @@ async function ensureUsersRoleColumn(connection) {
 }
 
 async function ensureColumn(connection, tableName, columnName, definition, afterColumn) {
-  // 必须用 execute（预处理语句）让 mysql2 真正代入 LIKE ?，否则 query() 会把 "?" 原样发出，
-  // 每次都返回空结果，迁移在每次启动时重复执行。
-  const [columns] = await connection.execute(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [columnName]);
-  if (columns.length > 0) {
+  if (await columnExists(connection, tableName, columnName)) {
     return;
   }
 
