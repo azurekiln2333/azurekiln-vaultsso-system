@@ -15,11 +15,15 @@ test('normal database startup only reads schema metadata; explicit initializatio
       async execute(sql, params = []) {
         statements.push([sql, params]);
         if (sql.startsWith('SELECT version')) return [[{ version: SCHEMA_VERSION }]];
-        if (sql.startsWith('SHOW COLUMNS FROM clients') && params[0] === 'require_pkce') return [[]];
-        if (sql.startsWith('SHOW COLUMNS FROM oidc_providers') && params[0] === 'huawei_union_scope') return [[]];
-        if (sql.startsWith('SHOW COLUMNS FROM email_verification_codes') && params[0] === 'pending_context') return [[]];
-        if (sql.startsWith('SHOW COLUMNS FROM users') && ['status', 'deleted_at'].includes(params[0])) return [[]];
-        if (sql.startsWith('SHOW COLUMNS')) return [[{ Field: 'present' }]];
+        // 列探测统一走 information_schema（MySQL 不接受 SHOW COLUMNS ... LIKE ? 的占位符）。
+        if (sql.startsWith('SELECT 1 FROM information_schema.COLUMNS')) {
+          const column = params[1];
+          if (params[0] === 'clients' && column === 'require_pkce') return [[]];
+          if (params[0] === 'oidc_providers' && column === 'huawei_union_scope') return [[]];
+          if (params[0] === 'email_verification_codes' && column === 'pending_context') return [[]];
+          if (params[0] === 'users' && ['status', 'deleted_at'].includes(column)) return [[]];
+          return [[{ 1: 1 }]];
+        }
         return [{ affectedRows: 0 }];
       },
       release() { released++; }
@@ -65,8 +69,9 @@ test('normal database startup only reads schema metadata; explicit initializatio
     assert.match(logCreate, /platform VARCHAR\(64\)/i);
     assert.match(logCreate, /login_type VARCHAR\(32\)/i);
     for (const column of ['source_port', 'platform', 'login_type']) {
-      // 此桩模拟“列已存在”，所以只断言迁移被探测过（SHOW COLUMNS），ALTER 由下面的幂等用例覆盖。
-      assert.ok(statements.some(([sql, params]) => /SHOW COLUMNS FROM login_logs LIKE \?/i.test(sql) && params?.[0] === column),
+      // 此桩模拟“列已存在”，所以只断言迁移被探测过（information_schema），ALTER 由下面的幂等用例覆盖。
+      assert.ok(statements.some(([sql, params]) => /FROM information_schema\.COLUMNS/i.test(sql)
+        && params?.[0] === 'login_logs' && params?.[1] === column),
         `missing idempotent migration probe for login_logs.${column}`);
     }
     for (const [sql] of statements) {
@@ -104,7 +109,7 @@ test('explicit usage backfill combines retained token timestamps and preserves h
       release() {},
       async query(sql) {
         if (/INSERT INTO user_app_usage/i.test(sql)) return database.query(sql);
-        if (sql.startsWith('SHOW COLUMNS') || sql.startsWith('SHOW INDEX')) return [[{ Field: 'present' }]];
+        if (sql.startsWith('SELECT 1 FROM information_schema.COLUMNS') || sql.startsWith('SHOW INDEX')) return [[{ 1: 1 }]];
         return [{ affectedRows: 0 }];
       },
       async execute(sql, params = []) { return this.query(sql, params); }
@@ -146,12 +151,17 @@ test('login log compliance columns migrate idempotently on an existing table', a
         statements.push([sql, params]);
         // Simulates a table created before this migration: only `detail` exists, so every other
         // compliance column is added once and the second run must be a no-op.
-        if (sql.startsWith('SHOW COLUMNS FROM login_logs')) {
-          if (existing.has(params[0])) return [[{ Field: params[0] }]];
-          existing.add(params[0]);
-          return [[]];
+        if (sql.startsWith('SELECT 1 FROM information_schema.COLUMNS')) {
+          const table = params[0];
+          const column = params[1];
+          if (table === 'login_logs') {
+            if (existing.has(column)) return [[{ 1: 1 }]];
+            existing.add(column);
+            return [[]];
+          }
+          return [[{ 1: 1 }]];
         }
-        if (sql.startsWith('SHOW COLUMNS') || sql.startsWith('SHOW INDEX')) return [[{ Field: 'present' }]];
+        if (sql.startsWith('SHOW INDEX')) return [[{ 1: 1 }]];
         return [{ affectedRows: 0 }];
       }
     }; }
