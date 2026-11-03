@@ -2,5 +2,6 @@
 set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+bash scripts/ci-install-archiver.sh
 npm ci --no-audit --no-fund
 npm run check
