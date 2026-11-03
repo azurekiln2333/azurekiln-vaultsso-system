@@ -18,11 +18,14 @@
 !public/css/**
 !public/js/
 !public/js/**
+!public/assets/
+!public/assets/**
 !vendor/
 !vendor/azurekiln-moderation-client-0.1.0.tgz
 !scripts/
 !scripts/init-db.js
 !scripts/check-config.js
+!scripts/check-container-mounts.js
 
 # Final exclusions also protect against secrets placed inside an allowed tree.
 **/.env

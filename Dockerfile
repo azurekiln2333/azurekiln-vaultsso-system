@@ -11,7 +11,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production \
-    HOST=0.0.0.0 \
+    HOST=127.0.0.1 \
     PORT=3146 \
     ADMIN_SETTINGS_FILE=/app/data/admin-settings.json
 
@@ -25,15 +25,16 @@ COPY services/ ./services/
 COPY views/ ./views/
 COPY public/css/ ./public/css/
 COPY public/js/ ./public/js/
+COPY public/assets/ ./public/assets/
 COPY vendor/azurekiln-moderation-client-0.1.0.tgz ./vendor/
-COPY scripts/init-db.js scripts/check-config.js ./scripts/
-RUN mkdir -p data keys public/assets && chown node:node data
+COPY scripts/init-db.js scripts/check-config.js scripts/check-container-mounts.js ./scripts/
+RUN mkdir -p data/keys && chown -R node:node data && chmod 0700 data data/keys
 
 USER node:node
 EXPOSE 3146
 # Bootstrap verifies keys and schema before listening. This probe checks HTTP
 # liveness afterwards; it is not an ongoing MySQL readiness probe.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD node -e "fetch('http://127.0.0.1:3146/.well-known/openid-configuration', { redirect: 'error', signal: AbortSignal.timeout(4000) }).then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"
+    CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '3146') + '/.well-known/openid-configuration', { redirect: 'error', signal: AbortSignal.timeout(4000) }).then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["node", "server.js"]
