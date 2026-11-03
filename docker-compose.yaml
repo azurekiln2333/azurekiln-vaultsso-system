@@ -7,14 +7,16 @@ services:
     pull_policy: always
     restart: unless-stopped
     init: true
+    # Linux/Baota default: keep the existing loopback MySQL and Nginx boundary.
+    network_mode: host
     environment:
       # Deployment .env is mounted below and loaded by the application itself.
       NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: "3146"
+      HOST: "${HOST:-127.0.0.1}"
+      PORT: "${PORT:-3146}"
+      DB_BUNDLED: "false"
       ADMIN_SETTINGS_FILE: /app/data/admin-settings.json
-    ports:
-      - "${GATEWAY_BIND_HOST:-127.0.0.1}:${GATEWAY_PORT:-3146}:3146"
+      OIDC_SIGNING_KEY_FILE: "${OIDC_SIGNING_KEY_FILE:-data/keys/oidc-private.pem}"
     volumes:
       - type: bind
         source: ./.env
@@ -23,20 +25,14 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ./keys
-        target: /app/keys
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./public/assets
-        target: /app/public/assets
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
         source: ./data
         target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/keys
+        target: /app/data/keys
+        read_only: true
         bind:
           create_host_path: false
     labels:
@@ -50,6 +46,7 @@ services:
 
   watchtower:
     image: nickfedor/watchtower:1.23.2
+    profiles: [auto-update]
     restart: unless-stopped
     # Target only this gateway, in addition to label opt-in and project scope.
     command: ["${COMPOSE_PROJECT_NAME:-azurekiln-oauth2}-gateway"]

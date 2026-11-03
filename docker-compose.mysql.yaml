@@ -1,0 +1,71 @@
+# Optional bundled database; requires Docker Compose >=2.33.1.
+# docker compose -f docker-compose.yaml -f docker-compose.mysql.yaml ...
+services:
+  gateway:
+    network_mode: !reset null
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3146"
+      DB_BUNDLED: "true"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_TLS: "false"
+      # Both services receive the same Compose-parsed credentials.
+      DB_NAME: "${DB_NAME:?DB_NAME is required for bundled MySQL}"
+      DB_USER: "${DB_USER:?DB_USER is required for bundled MySQL}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD is required for bundled MySQL}"
+      TRUST_PROXY: "${GATEWAY_FRONT_GATEWAY:-172.30.46.1}/32"
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-3146}:3146"
+    networks:
+      frontend:
+        gw_priority: 1
+      database: {}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.4.13
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "${DB_NAME:?DB_NAME is required for bundled MySQL}"
+      MYSQL_USER: "${DB_USER:?DB_USER is required for bundled MySQL}"
+      MYSQL_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD is required for bundled MySQL}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required for bundled MySQL}"
+    command:
+      - --performance-schema=OFF
+      - "--innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}"
+      - "--max-connections=${MYSQL_MAX_CONNECTIONS:-50}"
+      - --mysqlx=OFF
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'MYSQL_PWD="$${MYSQL_PASSWORD}" mysql --protocol=TCP --host=127.0.0.1 --user="$${MYSQL_USER}" --database="$${MYSQL_DATABASE}" --batch --skip-column-names --execute="SELECT 1" >/dev/null 2>&1'
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 20
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  frontend:
+    ipam:
+      config:
+        - subnet: "${GATEWAY_FRONT_SUBNET:-172.30.46.0/24}"
+          gateway: "${GATEWAY_FRONT_GATEWAY:-172.30.46.1}"
+  database:
+    internal: true
+
+volumes:
+  mysql-data:

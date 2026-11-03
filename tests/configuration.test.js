@@ -83,6 +83,29 @@ test('configuration preflight accepts a persistent relative RSA key without expo
   assert.match(output, /were not tested/);
 });
 
+test('preflight honors the bundled Compose overrides and preserves the external TLS boundary', t => {
+  const secret = crypto.randomBytes(48).toString('base64url');
+  const dbPassword = crypto.randomBytes(32).toString('hex');
+  const root = fixture(t, [
+    'NODE_ENV=production', `JWT_SECRET=${secret}`, 'PUBLIC_BASE_URL=https://login.example.test',
+    'OIDC_SIGNING_KEY_FILE=signing.pem', 'DB_HOST=db.example.test', 'DB_PORT=3306',
+    'DB_BUNDLED=false', 'DB_TLS=false', 'DB_USER=application', `DB_PASSWORD=${dbPassword}`, 'DB_NAME=oauth', ''
+  ].join('\n'));
+  const privateKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  fs.writeFileSync(path.join(root, 'signing.pem'), privateKey, { mode: 0o600 });
+  const bundled = { DB_BUNDLED: 'true', DB_HOST: 'mysql', DB_PORT: '3306', DB_TLS: 'false' };
+  const accepted = checkConfiguration({ env: { ...bundled }, projectRoot: root });
+  assert.deepEqual(accepted.errors, []);
+  for (const sensitive of [secret, dbPassword, privateKey]) assert.ok(!formatReport(accepted).includes(sensitive));
+
+  const externalNoTls = checkConfiguration({ env: { ...bundled, DB_BUNDLED: 'false' }, projectRoot: root });
+  assert.ok(externalNoTls.errors.some(message => /Remote production databases require DB_TLS=true/.test(message)));
+  const disguisedExternal = checkConfiguration({ env: { ...bundled, DB_HOST: 'db.example.test', DB_TLS: 'true' }, projectRoot: root });
+  assert.ok(disguisedExternal.errors.some(message => /DB_BUNDLED=true requires the private Compose service/.test(message)));
+  const externalTls = checkConfiguration({ env: { DB_BUNDLED: 'false', DB_TLS: 'true' }, projectRoot: root });
+  assert.deepEqual(externalTls.errors, []);
+});
+
 test('JWT configuration errors remain strict and never include the rejected secret', () => {
   for (const secret of ['', 'too-short', 'your-super-secret-jwt-key-change-in-production']) {
     assert.throws(() => readRuntimeConfig({ NODE_ENV: 'production', JWT_SECRET: secret, PUBLIC_BASE_URL: 'https://login.example.test' }), /JWT_SECRET/);

@@ -74,7 +74,16 @@ function validateDatabaseEnvironment(env = process.env) {
     for (const key of ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
       if (!env[key]) throw new Error(`${key} must be explicitly configured in production`);
     }
-    if (!['localhost', '127.0.0.1', '::1'].includes(String(env.DB_HOST).toLowerCase())
+    const bundled = String(env.DB_BUNDLED ?? 'false').toLowerCase();
+    if (!['true', 'false'].includes(bundled)) {
+      throw new Error('DB_BUNDLED must be true or false');
+    }
+    // Only the opt-in Compose database on its private, unpublished network may omit TLS.
+    // Match config/database.js's default port without accepting numeric-prefix variants.
+    if (bundled === 'true' && (env.DB_HOST !== 'mysql' || String(env.DB_PORT || 3306) !== '3306')) {
+      throw new Error('DB_BUNDLED=true requires the private Compose service DB_HOST=mysql and DB_PORT=3306');
+    }
+    if (bundled !== 'true' && !['localhost', '127.0.0.1', '::1'].includes(String(env.DB_HOST).toLowerCase())
         && String(env.DB_TLS || '').toLowerCase() !== 'true') {
       throw new Error('Remote production databases require DB_TLS=true (and DB_TLS_CA_FILE for a private CA)');
     }
