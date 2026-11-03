@@ -6,7 +6,7 @@ Node.js / Express / MySQL 登录网关，提供本地账号、邮件验证、验
 
 ## 部署
 
-要求 Node.js 22 或更新版本，以及 MySQL 8 / InnoDB。网关部署在 HTTPS 反向代理后，默认监听 `127.0.0.1:3146`。配置说明见 [.env.example](.env.example)。
+要求 Node.js 22 或更新版本，以及 MySQL 8 / InnoDB。网关部署在 HTTPS 反向代理后，默认监听 `127.0.0.1:10493`。配置说明见 [.env.example](.env.example)。
 
 执行 `npm run build:deploy` 默认生成 `dist/azurekiln-oauth2.zip`。打包前后会检查页面引用的脚本和样式是否齐全。业务样式在 `public/css/`，页面逻辑及国际化脚本在 `public/js/`；部署包不包含 `public/assets/` 中的字体和图标资源，也不包含 `.env`、私钥及依赖目录。部署时保留或单独提供现有 `public/assets/`，页面仍通过 `/assets/vaultsso-fonts.css` 加载字体和图标。
 
@@ -47,7 +47,7 @@ node -e "const fs=require('node:fs'); fs.mkdirSync('keys',{recursive:true}); con
 宝塔/Nginx 的站点反代 `location` 中应包含以下设置，并在修改后重载 Nginx、重启 Node 服务：
 
 ```nginx
-proxy_pass http://127.0.0.1:3146;
+proxy_pass http://127.0.0.1:10493;
 proxy_set_header Host $host;
 proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Real-Port $remote_port;
@@ -65,7 +65,7 @@ SMTP 未配置或发送失败时，邮件验证流程返回错误。SMTP 管理�
 
 让 UID `1000` 能读取 `.env` 和 `data/keys/`、并能写入 `data/`；仅在这份部署副本调整权限，建议 `.env`/私钥 `0600`、`data/` 与 `data/keys/` `0700`。签名路径使用容器内可见路径 `data/keys/oidc-private.pem`，即 `.env` 中 `OIDC_SIGNING_KEY_FILE=data/keys/oidc-private.pem`；检查器会拒绝仍指向顶层 `keys/` 的旧路径，避免私钥落进可写挂载。Compose 将 `.env` 和 `data/keys/` 只读挂载（后者嵌在可写的 `data/` 内），后台设置固定保存到 `/app/data/admin-settings.json`。在 `.env` 中设置实际已发布的 `GATEWAY_IMAGE`（可用固定版本或 digest）与唯一的 `COMPOSE_PROJECT_NAME`；不要用另一个不匹配的 `-p`。
 
-**外部 MySQL（默认，现有宝塔单机推荐）**：使用 host 网络，原 `.env` 的 `HOST=127.0.0.1`、`PORT=3146`、`DB_HOST=127.0.0.1`、`TRUST_PROXY=127.0.0.1/32,::1/128` 可直接沿用，无需修改本机 MySQL 的监听、授权或 TLS。执行下面一条命令，按提示完成数据库备份并暂停写入后确认迁移。远程 MySQL 仍必须启用 `DB_TLS=true`，私有 CA 使用 `DB_TLS_CA_FILE`，证书校验始终开启。
+**外部 MySQL（默认，现有宝塔单机推荐）**：使用 host 网络，原 `.env` 的 `HOST=127.0.0.1`、`PORT=10493`、`DB_HOST=127.0.0.1`、`TRUST_PROXY=127.0.0.1/32,::1/128` 可直接沿用，无需修改本机 MySQL 的监听、授权或 TLS。执行下面一条命令，按提示完成数据库备份并暂停写入后确认迁移。远程 MySQL 仍必须启用 `DB_TLS=true`，私有 CA 使用 `DB_TLS_CA_FILE`，证书校验始终开启。
 
 ```sh
 bash scripts/deploy-docker.sh --db external
@@ -77,7 +77,7 @@ bash scripts/deploy-docker.sh --db external
 bash scripts/deploy-docker.sh --db bundled
 ```
 
-内置模式将网关发布到 `127.0.0.1:${GATEWAY_PORT:-3146}`，覆盖内部监听为 `0.0.0.0:3146`，数据库为 `mysql:3306`，并显式设置 `DB_BUNDLED=true`、`DB_TLS=false`。只有该准确主机和端口允许生产免 TLS；其他数据库继续遵守远程 TLS 规则。MySQL 只连接私有内部网络，网关另有前端网桥以访问 SMTP、审核和 OAuth 服务。前端默认子网 `172.30.46.0/24`、网关 `172.30.46.1`，Compose 将 `TRUST_PROXY` 固定为该网关 `/32`。如与现有网络冲突，同时修改 `GATEWAY_FRONT_SUBNET` 与 `GATEWAY_FRONT_GATEWAY`；host 模式继续读取原 `TRUST_PROXY`。内置模式中指向宿主机 loopback 的 SMTP/审核地址也需改为容器可达地址。
+内置模式将网关发布到 `127.0.0.1:${GATEWAY_PORT:-10493}`，覆盖内部监听为 `0.0.0.0:10493`，数据库为 `mysql:3306`，并显式设置 `DB_BUNDLED=true`、`DB_TLS=false`。只有该准确主机和端口允许生产免 TLS；其他数据库继续遵守远程 TLS 规则。MySQL 只连接私有内部网络，网关另有前端网桥以访问 SMTP、审核和 OAuth 服务。前端默认子网 `172.30.46.0/24`、网关 `172.30.46.1`，Compose 将 `TRUST_PROXY` 固定为该网关 `/32`。如与现有网络冲突，同时修改 `GATEWAY_FRONT_SUBNET` 与 `GATEWAY_FRONT_GATEWAY`；host 模式继续读取原 `TRUST_PROXY`。内置模式中指向宿主机 loopback 的 SMTP/审核地址也需改为容器可达地址。
 
 脚本会检查挂载及容器用户权限、拉取镜像、运行静态 `check:config`、要求备份确认、显式执行 `init-db`，然后重建本网关并等待 healthy。`--backup-confirmed` 表示运维已完成备份和暂停写入，适用于无人值守；`--skip-migrate` 仅适用于已单独迁移到匹配版本的数据库。迁移所用账号需有本库 DDL 权限；若使用单独迁移账号，先自行运行 `init-db`，恢复应用账号后用 `--skip-migrate`。脚本不停止旧宿主机 Node 进程；如果原端口占用，由运维手动释放，或先选空闲端口验证（外部模式改 `PORT`，内置模式改 `GATEWAY_PORT`）。
 

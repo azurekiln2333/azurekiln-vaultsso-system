@@ -5,7 +5,7 @@ services:
     network_mode: !reset null
     environment:
       HOST: 0.0.0.0
-      PORT: "3146"
+      PORT: "10493"
       DB_BUNDLED: "true"
       DB_HOST: mysql
       DB_PORT: "3306"
@@ -16,7 +16,7 @@ services:
       DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD is required for bundled MySQL}"
       TRUST_PROXY: "${GATEWAY_FRONT_GATEWAY:-172.30.46.1}/32"
     ports:
-      - "127.0.0.1:${GATEWAY_PORT:-3146}:3146"
+      - "127.0.0.1:${GATEWAY_PORT:-10493}:10493"
     networks:
       frontend:
         gw_priority: 1

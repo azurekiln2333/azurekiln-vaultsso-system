@@ -42,7 +42,7 @@ port. `recordLoginLog` in `server.js` writes `ip`/`source_port`; nothing else sh
 ### Nginx (required, user-applied)
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:3146;
+    proxy_pass http://127.0.0.1:10493;
     proxy_set_header Host              $host;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;

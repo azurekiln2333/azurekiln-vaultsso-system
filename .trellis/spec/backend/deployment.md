@@ -43,7 +43,7 @@ Always select files with `-f`; an unrelated implicit override must not change de
   build stage. Do not pass credentials as build arguments. `public/assets/` is copied in on purpose:
 the image is the single source of fonts and icons.
 - Start `node server.js` directly with `NODE_ENV=production`. External Compose preserves
-  `HOST`/`PORT` (defaults `127.0.0.1:3146`); bundled Compose uses `0.0.0.0:3146` internally.
+  `HOST`/`PORT` (defaults `127.0.0.1:10493`); bundled Compose uses `0.0.0.0:10493` internally.
   The healthcheck requests `http://127.0.0.1:${PORT}/.well-known/openid-configuration` and requires a
   successful response. The listener starts after initial database/key checks. This is process
   liveness after bootstrap, not a continuous database/SMTP/provider readiness guarantee.
@@ -75,8 +75,8 @@ and `data/keys/`.
 | --- | --- |
 | `GATEWAY_IMAGE` | Operator's published image; example CNB path is not proof a repository exists |
 | `COMPOSE_PROJECT_NAME` | `azurekiln-oauth2`; also identifies the gateway and Watchtower scope |
-| `HOST`, `PORT` | External host-mode listener; defaults `127.0.0.1`, `3146` |
-| `GATEWAY_PORT` | Bundled-only host loopback port, default `3146`; container stays on 3146 |
+| `HOST`, `PORT` | External host-mode listener; defaults `127.0.0.1`, `10493` |
+| `GATEWAY_PORT` | Bundled-only host loopback port, default `10493`; container stays on 10493 |
 | `GATEWAY_FRONT_SUBNET`, `GATEWAY_FRONT_GATEWAY` | Bundled frontend `172.30.46.0/24`, `172.30.46.1`; change together on collision |
 | `WATCHTOWER_POLL_INTERVAL` | `600` seconds |
 | `TRUST_PROXY` | External reads original `.env`; bundled overrides to frontend gateway `/32` |
@@ -119,7 +119,7 @@ needed for this single-host installation. Other production DB hosts still requir
 a readable private CA when used and verified server identity. Do not disable certificate checks.
 
 Bundled mode layers `docker-compose.mysql.yaml`, resets host networking and publishes the gateway
-only to `127.0.0.1:${GATEWAY_PORT}:3146`. Gateway joins a fixed frontend bridge and an `internal:
+only to `127.0.0.1:${GATEWAY_PORT}:10493`. Gateway joins a fixed frontend bridge and an `internal:
 true` DB network. Frontend `gw_priority: 1` preserves SMTP/OAuth/moderation egress. MySQL joins
 only the private DB network, publishes no host port and is pinned to `mysql:8.4.13`; disable its
 updater label. Its `mysql-data` volume persists independently of gateway recreation. The app

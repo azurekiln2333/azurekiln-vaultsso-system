@@ -45,7 +45,7 @@ const RUNTIME = readRuntimeConfig();
 app.disable('x-powered-by');
 app.set('trust proxy', RUNTIME.trustedProxies.length ? RUNTIME.trustedProxies : false);
 
-const PORT = Number(process.env.PORT || 3146);
+const PORT = Number(process.env.PORT || 10493);
 const JWT_SECRET = RUNTIME.jwtSecret;
 const adminSettingsStore = createStore(JWT_SECRET);
 let adminSettingsOverrides = {};

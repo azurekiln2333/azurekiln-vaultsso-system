@@ -13,7 +13,7 @@ services:
       # Deployment .env is mounted below and loaded by the application itself.
       NODE_ENV: production
       HOST: "${HOST:-127.0.0.1}"
-      PORT: "${PORT:-3146}"
+      PORT: "${PORT:-10493}"
       DB_BUNDLED: "false"
       ADMIN_SETTINGS_FILE: /app/data/admin-settings.json
       OIDC_SIGNING_KEY_FILE: "${OIDC_SIGNING_KEY_FILE:-data/keys/oidc-private.pem}"

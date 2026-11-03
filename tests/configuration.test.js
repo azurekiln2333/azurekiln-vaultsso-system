@@ -124,7 +124,7 @@ test('JWT configuration errors remain strict and never include the rejected secr
 test('Turnstile requires a complete key pair and keeps the secret in runtime config', () => {
   const base = {
     NODE_ENV: 'development', JWT_SECRET: crypto.randomBytes(48).toString('base64url'),
-    PUBLIC_BASE_URL: 'http://localhost:3146'
+    PUBLIC_BASE_URL: 'http://localhost:10493'
   };
   assert.throws(() => readRuntimeConfig({ ...base, TURNSTILE_SITE_KEY: 'site-key' }), /must be configured together/);
   assert.throws(() => readRuntimeConfig({ ...base, TURNSTILE_SECRET_KEY: 'secret-key' }), /must be configured together/);
@@ -138,7 +138,7 @@ test('preflight reports moderation configuration separately from SDK readiness a
   const root = fixture(t);
   const env = {
     NODE_ENV: 'development', JWT_SECRET: crypto.randomBytes(48).toString('base64url'),
-    PUBLIC_BASE_URL: 'http://localhost:3146', MODERATION_BASE_URL: 'https://moderation.example.test', MODERATION_APP_ID: 'isolated-gateway-test', MODERATION_API_KEY: key
+    PUBLIC_BASE_URL: 'http://localhost:10493', MODERATION_BASE_URL: 'https://moderation.example.test', MODERATION_APP_ID: 'isolated-gateway-test', MODERATION_API_KEY: key
   };
   const configured = checkConfiguration({ env, projectRoot: root });
   assert.equal(configured.moderationConfigured, true);
