@@ -21,7 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Account Bindings](./account-bindings.md) | Phone editing and Huawei app identity contracts | Defined |
 | [Proxy Addresses](./proxy-addresses.md) | Local reverse proxy trust and client IP recording | Defined |
-| [Deployment](./deployment.md) | Non-root container runtime, persisted secrets/assets, scoped updates and gated GitHub/CNB images | Defined |
+| [Deployment](./deployment.md) | Host or private bundled MySQL, checked deployment script, non-root runtime, persisted data and gated images | Defined |
 | [Password Verification](./password-verification.md) | Dedicated login MFA and on-demand CAPTCHA | Defined |
 | [User Applications](./user-applications.md) | Durable app usage and personal/admin app lists | Defined |
 | [Multiple Authenticators](./multiple-authenticators.md) | Independent TOTP devices, lifecycle locks and final credential issuance | Defined |

@@ -55,45 +55,46 @@ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-IP 记录使用可信代理链中的客户端地址；客户端伪造的更早转发地址不会覆盖紧邻本机代理的来源地址。若 Nginx 前还有 CDN，需在 Nginx 配置该 CDN 的可信来源和真实 IP 头。Docker/远程代理需明确填写实际代理地址。历史记录中的 `127.0.0.1` 无法恢复，配置生效后新登录记录会使用真实 IP。
+IP 记录使用可信代理链中的客户端地址；客户端伪造的更早转发地址不会覆盖紧邻本机代理的来源地址。若 Nginx 前还有 CDN，需在 Nginx 配置该 CDN 的可信来源和真实 IP 头。Docker 桥接模式或远程代理需明确填写实际代理地址；下文默认的 host 网络模式沿用本机代理配置。历史记录中的 `127.0.0.1` 无法恢复，配置生效后新登录记录会使用真实 IP。
 
 SMTP 未配置或发送失败时，邮件验证流程返回错误。SMTP 管理页保存后立即生效，重启后从 JSON 配置文件恢复。后台保存的 SMTP 和 Turnstile 设置优先于 `.env`；默认写入 `data/admin-settings.json`，可通过 `ADMIN_SETTINGS_FILE` 指向部署期间保留的可写路径。请备份该文件和 `JWT_SECRET`，并限制服务账号以外的读取权限；修改 `JWT_SECRET` 后，已保存的凭据无法解密。
 
 ### Docker Compose 部署
 
-容器是另一种发布方式，原有 ZIP 流程继续保留。镜像使用 Node 24、多阶段安装生产依赖，并包含 `vendor/` 的审核 SDK；以 `node` 用户（UID/GID `1000:1000`）运行。健康检查访问现有 OIDC 发现接口，启动时仍检查密钥、数据库连接和结构版本；健康状态不代表持续验证数据库、SMTP 或外部身份提供方。
+要求 Linux Docker Engine 和 Docker Compose **2.33.1+**。镜像使用 Node 24，以 `node`（UID/GID `1000:1000`）运行。部署目录只需 `docker-compose.yaml`、`.env` 和 `data/`：字体与图标已随镜像提供，无需再复制 `public/assets/`。先准备该目录并复制 `.env.example` 为 `.env`；已有安装把原来的 `.env`、`data/` 复制过来，并把原 `keys/` 整体移入 `data/keys/`（签名私钥与 `data/admin-settings.json` 保持原值不变）。内置 MySQL 模式再额外放入 `docker-compose.mysql.yaml`，需要一键脚本时放入 `scripts/deploy-docker.sh`。
 
-生产使用 `docker-compose.yaml` 拉取镜像。本地源码构建使用独立可运行的 `docker-compose.build.yaml`，其网关更新标签为 `false`，Watchtower 位于默认不启用的 `auto-update` profile。始终显式传 `-f`，避免目录中旧的 `compose.yaml` 或 override 被自动选中。
+让 UID `1000` 能读取 `.env` 和 `data/keys/`、并能写入 `data/`；仅在这份部署副本调整权限，建议 `.env`/私钥 `0600`、`data/` 与 `data/keys/` `0700`。签名路径使用容器内可见路径 `data/keys/oidc-private.pem`，即 `.env` 中 `OIDC_SIGNING_KEY_FILE=data/keys/oidc-private.pem`；检查器会拒绝仍指向顶层 `keys/` 的旧路径，避免私钥落进可写挂载。Compose 将 `.env` 和 `data/keys/` 只读挂载（后者嵌在可写的 `data/` 内），后台设置固定保存到 `/app/data/admin-settings.json`。在 `.env` 中设置实际已发布的 `GATEWAY_IMAGE`（可用固定版本或 digest）与唯一的 `COMPOSE_PROJECT_NAME`；不要用另一个不匹配的 `-p`。
 
-1. 在新的专用部署目录放置 Compose 文件，复制 `.env.example` 为 `.env`。现有服务迁移时复制原 `.env`、签名私钥和 `data/admin-settings.json`，保持 `JWT_SECRET`、公开域名和签名密钥不变；不要覆盖旧目录。预先创建 `keys/`、`data/`、`public/assets/`，将现有字体图标复制到 `public/assets/`，包括 `vaultsso-fonts.css` 和它引用的字体文件。绑定路径缺失会使启动失败。
-2. `.env` 和 `keys/` 挂载为只读，`public/assets/` 只读，`data/` 可写。让容器用户 `1000:1000` 能读取 `.env`、私钥和资源，并拥有新目录中的 `data/`；建议 `.env`、私钥为 `0600`，`data/` 为 `0700`。在 Linux 上只对这份新部署副本设置权限，避免影响原服务或其他应用。容器中的签名路径可写成 `keys/oidc-private.pem`，CA 文件也可放在 `keys/`；Compose 固定后台设置路径为 `/app/data/admin-settings.json`。
-3. 将 `GATEWAY_IMAGE` 改成实际发布的 GHCR/CNB 镜像，例如 `ghcr.io/<owner>/<repo>:main` 或 `docker.cnb.cool/<namespace>/<repo>:main`。发布的固定版本、提交标签或 digest 可用于受控升级和回退。不同安装使用不同 `COMPOSE_PROJECT_NAME`；以 `.env` 中的该值为准，不另外用不匹配的 `-p`。宿主机默认仅发布 `127.0.0.1:3146`，可用 `GATEWAY_PORT` 选择并行验证端口，容器内部固定为 `3146`。
-4. MySQL 为外部服务。容器里的 `127.0.0.1` 是容器自身，需要可达的数据库 DNS/IP；使用宿主机 MySQL 时须由运维提供可达地址、监听和访问控制。非 loopback 生产数据库必须 `DB_TLS=true`，私有 CA 设置 `DB_TLS_CA_FILE=keys/mysql-ca.pem`，证书中的主机名必须匹配；不要关闭证书校验。容器也必须能访问 SMTP、审核服务和身份提供方；原来指向宿主机 loopback 的服务地址需重新确认。
-5. 宝塔/Nginx 继续在宿主机反代到发布端口，并保留上面的全部转发头，特别是 `X-Real-IP` 和 `X-Real-Port`。容器看到的 Nginx socket peer 通常是 Docker bridge 的宿主机网关，已不再是 `127.0.0.1`。通过 `docker network inspect` 核对项目网络网关，并结合实际请求来源确认后，将 `TRUST_PROXY` 配成该具体地址的 `/32`（IPv6 用 `/128`）。不要照抄某个 `172.x` 地址、信任整个私网或设置 `true`。再验证登录记录中的 IP 和源端口；IP 仍由 Express 可信代理链解析。
-
-以下命令供运维在准备好上述挂载和配置后执行。先在无生产流量的端口验证；使用迁移账号执行 `init-db` 前备份数据库，完成后恢复应用账号配置。`check:config` 仅做静态检查，`init-db` 会改数据库。容器启动不会自动迁移。
+**外部 MySQL（默认，现有宝塔单机推荐）**：使用 host 网络，原 `.env` 的 `HOST=127.0.0.1`、`PORT=3146`、`DB_HOST=127.0.0.1`、`TRUST_PROXY=127.0.0.1/32,::1/128` 可直接沿用，无需修改本机 MySQL 的监听、授权或 TLS。执行下面一条命令，按提示完成数据库备份并暂停写入后确认迁移。远程 MySQL 仍必须启用 `DB_TLS=true`，私有 CA 使用 `DB_TLS_CA_FILE`，证书校验始终开启。
 
 ```sh
-# 生产镜像：先拉取，再做静态配置检查
-docker compose -f docker-compose.yaml pull gateway
-docker compose -f docker-compose.yaml run --rm --no-deps gateway npm run check:config
-# 仅在已备份并切换为专用迁移账号后执行
-docker compose -f docker-compose.yaml run --rm --no-deps gateway npm run init-db
-# 恢复应用数据库账号后，先只启动网关
-docker compose -f docker-compose.yaml up -d --wait gateway
-docker compose -f docker-compose.yaml ps
-curl --fail http://127.0.0.1:3146/.well-known/openid-configuration
-
-# 本地构建：不启用 Watchtower，同样需要可用配置、密钥、资源和外部 MySQL
-docker compose -f docker-compose.build.yaml build
-docker compose -f docker-compose.build.yaml up -d --wait gateway
+bash scripts/deploy-docker.sh --db external
 ```
 
-并行验证可先设置未占用的 `GATEWAY_PORT`，验证公开发现文档、JWKS、字体、登录/MFA、刷新令牌和审计 IP/端口后，再安排只切换本网关的 Nginx upstream（或停止旧进程、释放原端口）。保留旧进程配置与部署目录供回退。回退时先停止本网关的 Watchtower，将 Nginx 切回旧服务，或将 `GATEWAY_IMAGE` 改回先前记录的镜像 digest 并重建本网关；涉及结构迁移时按数据库备份与兼容性计划回退，不能只退镜像。
+**内置 MySQL（新安装可选）**：在 `.env` 设置 `DB_NAME`、`DB_USER`、`DB_PASSWORD`，另设独立强密码 `MYSQL_ROOT_PASSWORD`，然后运行下面命令。脚本叠加 `docker-compose.mysql.yaml`，首次空卷自动建库和应用账号，再显式运行迁移。固定镜像 `mysql:8.4.13`，数据保存在项目的 `mysql-data` 卷中，不发布数据库端口；默认关闭 Performance Schema，缓冲池 `128M`、连接数上限 `50`，可通过对应 `MYSQL_*` 调优变量修改。已有外部数据库不会自动导入，请先自行备份/导入到内置库；不能通过删除卷来升级或改密码。
 
-生产 Watchtower 固定为 `nickfedor/watchtower:1.23.2`，默认每 `WATCHTOWER_POLL_INTERVAL=600` 秒检查一次。它同时按启用标签、项目 scope 和网关容器名筛选，仅更新该项目网关，自身标签为 `false`。完成手动切换和检查后，运维可执行 `docker compose -f docker-compose.yaml up -d watchtower` 启用更新。数据库结构变化的版本需要先停止 Watchtower、完成备份和显式迁移，再安排镜像更新。Watchtower 不会替你应用 `.env`、挂载或 Compose 修改；修改后执行 `docker compose -f docker-compose.yaml up -d --force-recreate --wait gateway`，本地构建则将文件名换成 `docker-compose.build.yaml`。应用只在启动时读取 `.env`，文件被原子替换后旧容器还可能持有旧挂载，因此不能依赖普通 `up -d` 自动刷新。
+```sh
+bash scripts/deploy-docker.sh --db bundled
+```
 
-公开镜像无需拉取凭据。私有镜像需要宿主机 `docker login`，Watchtower 还需通过运维专用 override 将正确的 Docker `config.json` 只读挂载到它的 `/config.json`；仅宿主机登录不足以让 Watchtower 读取凭据。使用 override 时需在相关命令中显式同时传入两个文件，例如 `docker compose -f docker-compose.yaml -f docker-compose.private.yaml up -d --force-recreate watchtower`；显式指定 `-f` 后不会自动加载该 override。不要把登录文件、令牌或真实 `.env` 提交到仓库。Docker socket 只挂给本项目 Watchtower。
+内置模式将网关发布到 `127.0.0.1:${GATEWAY_PORT:-3146}`，覆盖内部监听为 `0.0.0.0:3146`，数据库为 `mysql:3306`，并显式设置 `DB_BUNDLED=true`、`DB_TLS=false`。只有该准确主机和端口允许生产免 TLS；其他数据库继续遵守远程 TLS 规则。MySQL 只连接私有内部网络，网关另有前端网桥以访问 SMTP、审核和 OAuth 服务。前端默认子网 `172.30.46.0/24`、网关 `172.30.46.1`，Compose 将 `TRUST_PROXY` 固定为该网关 `/32`。如与现有网络冲突，同时修改 `GATEWAY_FRONT_SUBNET` 与 `GATEWAY_FRONT_GATEWAY`；host 模式继续读取原 `TRUST_PROXY`。内置模式中指向宿主机 loopback 的 SMTP/审核地址也需改为容器可达地址。
+
+脚本会检查挂载及容器用户权限、拉取镜像、运行静态 `check:config`、要求备份确认、显式执行 `init-db`，然后重建本网关并等待 healthy。`--backup-confirmed` 表示运维已完成备份和暂停写入，适用于无人值守；`--skip-migrate` 仅适用于已单独迁移到匹配版本的数据库。迁移所用账号需有本库 DDL 权限；若使用单独迁移账号，先自行运行 `init-db`，恢复应用账号后用 `--skip-migrate`。脚本不停止旧宿主机 Node 进程；如果原端口占用，由运维手动释放，或先选空闲端口验证（外部模式改 `PORT`，内置模式改 `GATEWAY_PORT`）。
+
+宝塔/Nginx 继续反代到 loopback 端口，保留上文全部转发头，特别是 `X-Real-IP`/`X-Real-Port`。先验证发现文档、JWKS、字体、登录/MFA、刷新令牌与审计 IP/源端口，再只切换本网关 upstream。健康检查使用实际监听端口的 OIDC 发现接口；不代表持续验证数据库、SMTP 或提供方。内置数据库初始化变量只对空卷生效；修改 `.env` 不会给已有卷重设密码。备份时同时保留数据库、原密钥、`JWT_SECRET` 和 `data/admin-settings.json`。
+
+默认不启动 Watchtower。确认切换和回退方案后，可在部署命令加 `--watchtower`；固定 `nickfedor/watchtower:1.23.2`，默认轮询 `600` 秒，仅按启用标签、项目 scope 和网关容器名更新该项目网关，MySQL 和更新器自身均不更新。结构变更前暂停更新、先备份/迁移。修改 `.env`、挂载或 Compose 后需重新执行部署命令以强制重建，不能依赖普通 `up -d` 刷新原子替换过的 `.env` 挂载。回退前停本项目更新器，再切回旧 upstream 或已记录的镜像 digest；结构迁移按备份兼容性方案处理。
+
+私有镜像先在宿主机 `docker login`；Watchtower 另需运维专用 override 将 Docker `config.json` 只读挂载到 `/config.json`。部署脚本显式传 `--override docker-compose.private.yaml`，不要提交凭据。手工命令也要保留全部 `-f` 和 `--profile auto-update`；脚本成功后会打印对应验证命令。需要本地构建时：
+
+```sh
+docker compose -f docker-compose.build.yaml build
+# 外部模式；已备份并通过 check:config/init-db 后启动
+docker compose -f docker-compose.build.yaml up -d --wait gateway
+# 内置模式在相应 config/run/up 命令追加 -f docker-compose.mysql.yaml
+```
+
+本地构建文件可独立运行且禁用网关自动更新标签；不启动 Watchtower。原 ZIP 发布流程继续保留。
 
 ### 镜像 CI 配置
 
@@ -349,7 +350,7 @@ npm audit --omit=dev
 
 浏览器检查使用已安装的 Chrome；也可通过 `BROWSER_EXECUTABLE` 指向兼容 Chromium 的浏览器。测试仅监听随机本地端口，使用临时生成的测试凭据与签名密钥，不连接 `.env` 配置的数据库和 SMTP。
 
-页面 JavaScript 位于 `public/js/pages/`，共享脚本位于 `public/js/`，业务样式位于 `public/css/`。字体与图标包保留在 `public/assets/` 并单独部署。CSP 仅允许本地脚本和字体。Tailwind 样式已编译并纳入仓库，修改 HTML、页面脚本或主题后执行：
+页面 JavaScript 位于 `public/js/pages/`，共享脚本位于 `public/js/`，业务样式位于 `public/css/`。字体与图标包位于 `public/assets/`：容器镜像已内置该目录，ZIP 部署仍按原方式单独保留或提供宿主机上的 `public/assets/`。CSP 仅允许本地脚本和字体。Tailwind 样式已编译并纳入仓库，修改 HTML、页面脚本或主题后执行：
 
 ```sh
 npm run build:css

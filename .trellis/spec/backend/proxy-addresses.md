@@ -54,6 +54,15 @@ location / {
 `TRUST_PROXY` must contain the address Nginx connects from (default `127.0.0.1/32,::1/128` already
 covers this). If Nginx runs in a container or on another host, add that explicit address.
 
+The default external-MySQL Compose mode uses Linux host networking: keep the same loopback
+listener and default trust above. The optional `docker-compose.mysql.yaml` changes the gateway
+to bridge networking and publishes only on host `127.0.0.1`. Its frontend subnet/gateway are
+fixed by `GATEWAY_FRONT_SUBNET=172.30.46.0/24` and `GATEWAY_FRONT_GATEWAY=172.30.46.1`; the overlay
+sets `TRUST_PROXY` to the configured gateway `/32`, overriding a legacy loopback `.env` value.
+If the subnet overlaps an existing network, change subnet and gateway together. Inspect the
+actual project network and test new audit IP/port records after switching; never trust a whole
+Docker network. See [Deployment](./deployment.md) for mode/port and private-DB contracts.
+
 ### Retention interaction
 Login records written through this path feed `login_logs`, which is retained for 365 days
 (`LoginLogModel.RETENTION_DAYS`). Existing localhost records cannot be reconstructed; new
