@@ -5,6 +5,17 @@ const { normalizePhone, normalizeParts, toE164, DEFAULT_COUNTRY_CODE } = require
 const USER_ROLE_ADMIN = 'admin';
 const USER_ROLE_USER = 'user';
 
+// 只有管理员显式提交的 true 才代表“已验证”；其余真值（字符串、1 等）一律不视为验证。
+function normalizeAdminPhoneVerified(value) {
+  return value === true;
+}
+
+function normalizeVerificationTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : value;
+}
+
 // 手机号只有经过归一化才允许落库，否则 phone_e164 唯一键形同虚设。
 // 返回 undefined 表示本次不修改手机号，返回 null 表示解绑。
 function resolvePhone(userData) {
@@ -205,10 +216,14 @@ class UserModel {
     const phone = resolvePhone(userData);
     if (phone !== undefined) {
       const current = await this.findById(id);
-      const unchanged = Boolean(phone && current && phone.e164 === toE164(current.phone_country_code, current.phone_number));
-      const verified = Boolean(phone && (userData.phoneVerified !== undefined ? userData.phoneVerified : unchanged && current.phone_verified));
+      const currentE164 = current ? (current.phone_e164 || toE164(current.phone_country_code, current.phone_number)) : '';
+      // 未提交 phoneVerified 时只能继承“同一个号码”的验证状态，换号/解绑一律失效。
+      const unchanged = Boolean(phone && currentE164 && phone.e164 === currentE164);
+      const verified = Boolean(phone && (userData.phoneVerified !== undefined
+        ? normalizeAdminPhoneVerified(userData.phoneVerified)
+        : unchanged && current.phone_verified));
       const verifiedAt = verified
-        ? (userData.phoneVerifiedAt || (unchanged && current.phone_verified_at) || new Date())
+        ? (normalizeVerificationTimestamp(userData.phoneVerifiedAt) || (unchanged && current.phone_verified_at) || new Date())
         : null;
       fields.push('phone_country_code = ?', 'phone_number = ?', 'phone_verified = ?', 'phone_verified_at = ?');
       // 换号或解绑都会让此前的验证状态失效，必须一并重置。
@@ -219,20 +234,35 @@ class UserModel {
         verifiedAt
       );
     } else if (userData.phoneVerified !== undefined) {
-      const verified = Boolean(userData.phoneVerified);
+      // 未提交手机号时只改验证标记：必须已有落库号码，且未变更的已验证号码保留原时间戳。
+      const current = await this.findById(id);
+      const storedE164 = current ? (current.phone_e164 || toE164(current.phone_country_code, current.phone_number)) : '';
+      const verified = Boolean(normalizeAdminPhoneVerified(userData.phoneVerified) && storedE164);
+      const verifiedAt = verified
+        ? (normalizeVerificationTimestamp(userData.phoneVerifiedAt)
+          || (current.phone_verified && storedE164 && current.phone_verified_at)
+          || new Date())
+        : null;
       fields.push('phone_verified = ?');
       values.push(verified);
       fields.push('phone_verified_at = ?');
-      values.push(verified ? (userData.phoneVerifiedAt || new Date()) : null);
+      values.push(verifiedAt);
     }
 
     if (fields.length === 0) return this.findById(id);
     
     values.push(id);
-    await this.pool.execute(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND status <> 'deleted'`,
+    // Bind a verification-only admin edit to the phone observed by the route.
+    // A concurrent number change must not inherit the old number's verification.
+    const guardPhone = userData.expectedPhoneE164 !== undefined;
+    if (guardPhone) values.push(userData.expectedPhoneE164);
+    const [result] = await this.pool.execute(
+      `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND status <> 'deleted'${guardPhone ? ' AND phone_e164 <=> ?' : ''}`,
       values
     );
+    if (guardPhone && result.affectedRows !== 1) {
+      throw Object.assign(new Error('Phone changed before verification was saved'), { code: 'PHONE_VERIFICATION_STALE' });
+    }
     
     const updated = await this.findById(id);
     if (phone !== undefined && (

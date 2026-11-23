@@ -619,6 +619,12 @@ const LOGOUT_REDIRECT_HOSTS = String(process.env.LOGOUT_REDIRECT_HOSTS || '')
 const COOKIE_DOMAIN = normalizeText(process.env.COOKIE_DOMAIN);
 // 会话滑动续期阈值：会话有效时长过半后再次访问时重发 session cookie
 const SESSION_REFRESH_THRESHOLD_MS = Math.floor(ACCESS_TOKEN_TTL_MS / 2);
+// 浏览器账号列表：仅保存已完成登录的会话引用，最多记住 5 个账号。
+const BROWSER_ACCOUNTS_COOKIE = 'browser_accounts';
+const BROWSER_ACCOUNTS_PURPOSE = 'browser_accounts';
+const BROWSER_ACCOUNTS_MAX_ENTRIES = 5;
+// 单个 Cookie 必须远小于浏览器约 4KB 的上限，5 个签名的账号条目需要留出余量。
+const BROWSER_ACCOUNTS_MAX_COOKIE_BYTES = 3800;
 const EMAIL_PURPOSE_REGISTER = 'register';
 const EMAIL_PURPOSE_PASSWORD_RESET = 'password_reset';
 const EMAIL_PURPOSE_LOGIN = 'login';
@@ -1284,6 +1290,111 @@ function sessionCookieOptions(maxAge = SESSION_MAX_AGE) {
     return options;
   }
 
+// Keep only signed session claims in the HttpOnly roster, never profile data or bearer
+// tokens in an API response. Every restored entry is checked against the live database.
+function browserAccountClaims(session) {
+  if (!session || typeof session !== 'object' || Array.isArray(session)
+      || typeof session.sub !== 'string' || !session.sub || session.sub.length > 255
+      || typeof session.sid !== 'string' || !session.sid || session.sid.length > 128
+      || !Number.isSafeInteger(session.exp) || session.exp * 1000 <= Date.now()
+      || !Number.isSafeInteger(session.iat) || session.iat < 0 || session.iat > session.exp) return null;
+  const entry = { sub: session.sub, sid: session.sid, exp: session.exp, iat: session.iat };
+  if (Object.hasOwn(session, 'session_deadline')) {
+    if (!Number.isSafeInteger(session.session_deadline) || session.session_deadline * 1000 <= Date.now()) return null;
+    entry.session_deadline = session.session_deadline;
+  }
+  if (Object.hasOwn(session, 'session_days')) {
+    if (!SUPPORTED_SESSION_DAYS.includes(session.session_days) || session.exp !== session.session_deadline) return null;
+    entry.session_days = session.session_days;
+  }
+  return entry;
+}
+
+function readBrowserAccounts(req) {
+  if (req.browserAccountEntries) return req.browserAccountEntries;
+  let entries = [];
+  const token = req.cookies[BROWSER_ACCOUNTS_COOKIE];
+  if (typeof token === 'string' && Buffer.byteLength(token) <= BROWSER_ACCOUNTS_MAX_COOKIE_BYTES) {
+    try {
+      const payload = jwt.verify(token, JWT_SECRET, {
+        algorithms: ['HS256'], issuer: PUBLIC_BASE_URL, audience: PUBLIC_BASE_URL
+      });
+      if (payload.type === BROWSER_ACCOUNTS_PURPOSE && Number.isSafeInteger(payload.exp)
+          && Array.isArray(payload.accounts) && payload.accounts.length <= BROWSER_ACCOUNTS_MAX_ENTRIES) {
+        const allowed = ['sub', 'sid', 'exp', 'iat', 'session_days', 'session_deadline'];
+        entries = payload.accounts.filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry)
+          && Object.keys(entry).every(key => allowed.includes(key))).map(browserAccountClaims).filter(Boolean);
+      }
+    } catch { /* A malformed roster cannot invalidate an independent active session. */ }
+  }
+  req.browserAccountEntries = entries;
+  return entries;
+}
+
+function currentBrowserAccount(req) {
+  return browserAccountClaims(validateToken(req.browserSessionToken || req.cookies.session));
+}
+
+function mergeBrowserAccounts(entries) {
+  const seen = new Set();
+  return entries.map(browserAccountClaims).filter(entry => {
+    if (!entry || seen.has(entry.sub)) return false;
+    seen.add(entry.sub);
+    return true;
+  }).slice(0, BROWSER_ACCOUNTS_MAX_ENTRIES);
+}
+
+function writeBrowserAccounts(req, res, entries) {
+  const saved = mergeBrowserAccounts(entries);
+  while (saved.length) {
+    const expires = Math.max(...saved.map(entry => entry.exp));
+    const token = jwt.sign({ type: BROWSER_ACCOUNTS_PURPOSE, accounts: saved, exp: expires,
+      iss: PUBLIC_BASE_URL, aud: PUBLIC_BASE_URL }, JWT_SECRET, { algorithm: 'HS256' });
+    if (Buffer.byteLength(`${BROWSER_ACCOUNTS_COOKIE}=${token}`) <= BROWSER_ACCOUNTS_MAX_COOKIE_BYTES) {
+      req.browserAccountEntries = saved;
+      res.cookie(BROWSER_ACCOUNTS_COOKIE, token, sessionCookieOptions(expires * 1000 - Date.now()));
+      return;
+    }
+    saved.pop();
+  }
+  req.browserAccountEntries = [];
+  res.clearCookie(BROWSER_ACCOUNTS_COOKIE, sessionCookieOptions(null));
+}
+
+function publishBrowserSession(req, res, token, expiresAt) {
+  // Synchronous remembering is safe inside existing held-connection issuance paths.
+  // Capture the incoming credential before replacing request-local identity state.
+  const entries = [browserAccountClaims(validateToken(token)), currentBrowserAccount(req), ...readBrowserAccounts(req)];
+  req.browserSessionToken = token;
+  res.cookie('session', token, sessionCookieOptions(expiresAt - Date.now()));
+  writeBrowserAccounts(req, res, entries);
+}
+
+async function validateBrowserAccount(entry, database = pool) {
+  const row = await new SessionModel(database).findActiveTokenByToken(entry.sid);
+  if (!row || row.user_id !== entry.sub) return null;
+  const policy = authenticatedSessionPolicy(entry, row);
+  if (!policy) return null;
+  const user = await new UserModel(database).findById(entry.sub);
+  return user && !isUserBanned(user) ? { entry, row, policy, user } : null;
+}
+
+async function resolveBrowserAccounts(req) {
+  const active = currentBrowserAccount(req);
+  const entries = mergeBrowserAccounts([active, ...readBrowserAccounts(req)]);
+  const accounts = [];
+  for (const entry of entries) {
+    const account = await validateBrowserAccount(entry);
+    if (account) accounts.push(account);
+  }
+  return { accounts, currentAccountId: accounts.find(account => account.entry.sid === active?.sid)?.user.id || null };
+}
+
+function browserAccountRequired(res) {
+  return res.status(401).json({ error: 'unauthorized', error_key: 'auth.required',
+    error_description: '登录状态已失效，请重新登录' });
+}
+
 async function setSessionCookie(req, res, user, database = pool, options = {}) {
     const sid = crypto.randomUUID();
     const policy = sessionPolicyForIssue(options);
@@ -1293,7 +1404,7 @@ async function setSessionCookie(req, res, user, database = pool, options = {}) {
     });
     req.authenticatedUser = user;
     req.authSessionPolicy = policy;
-    res.cookie('session', createSessionToken(user, sid, policy), sessionCookieOptions(policy.expiresAt - Date.now()));
+    publishBrowserSession(req, res, createSessionToken(user, sid, policy), policy.expiresAt);
   }
 
 async function getAuthenticatedUser(req, res = null) {
@@ -1314,7 +1425,7 @@ async function getAuthenticatedUser(req, res = null) {
       if (await Session.extend(row.id, expiresAt)) {
         policy.expiresAt = expiresAt;
         row.expires_at = new Date(expiresAt);
-        res.cookie('session', createSessionToken(user, row.token, policy), sessionCookieOptions(expiresAt - Date.now()));
+        publishBrowserSession(req, res, createSessionToken(user, row.token, policy), expiresAt);
       } else {
         req.authenticatedUser = null;
         return null;
@@ -1343,7 +1454,8 @@ const OIDC_PENDING_COOKIE = 'oidc_pending';
 function pendingLoginSecurityState(user) {
   return crypto.createHmac('sha256', JWT_SECRET).update(JSON.stringify([
     user.password, user.email, Boolean(user.email_verified), user.role, user.banned, user.phone_e164,
-    user.phone_country_code, user.phone_number, user.totp_enabled, user.totp_secret, Number(user.totp_revision || 0)
+    user.phone_country_code, user.phone_number, Boolean(user.phone_verified),
+    user.totp_enabled, user.totp_secret, Number(user.totp_revision || 0)
   ])).digest('hex');
 }
 
@@ -1629,7 +1741,7 @@ function applyIssuedLogin(req, res, issued) {
   req.authSession = { token: issued.sid };
   req.authSessionPolicy = issued.policy;
   req.authenticatedUser = issued.user;
-  res.cookie('session', createSessionToken(issued.user, issued.sid, issued.policy), sessionCookieOptions(issued.policy.expiresAt - Date.now()));
+  publishBrowserSession(req, res, createSessionToken(issued.user, issued.sid, issued.policy), issued.policy.expiresAt);
   if (issued.alert) {
     sendLoginAlertEmail({ to: issued.user.email, ip: issued.alertIp, userAgent: req.headers['user-agent'] }).catch(() => {});
   }
@@ -4262,8 +4374,9 @@ app.get(['/api/me', '/api/profile'], asyncHandler(async (req, res) => {
 
 async function preparePhoneUpdate(req, res, user, requireReauthentication = false) {
   const body = req.body;
+  const currentE164 = user.phone_e164 || phoneNumbers.toE164(user.phone_country_code, user.phone_number) || '';
   if (body.phone === undefined && body.phoneNumber === undefined && body.phoneCountryCode === undefined) {
-    return { updates: {}, changed: false };
+    return { updates: {}, changed: false, e164: currentE164 };
   }
   const hasNumber = body.phone !== undefined || body.phoneNumber !== undefined;
   const input = String(hasNumber ? (body.phone !== undefined ? body.phone : body.phoneNumber) ?? '' : user.phone_number ?? '').trim();
@@ -4276,7 +4389,6 @@ async function preparePhoneUpdate(req, res, user, requireReauthentication = fals
     res.status(400).json({ error: 'invalid_request', error_key: 'validation.phone.invalid', error_description: '请输入有效的国家/地区代码和手机号' });
     return null;
   }
-  const currentE164 = user.phone_e164 || phoneNumbers.toE164(user.phone_country_code, user.phone_number);
   const changed = (phone?.e164 || '') !== (currentE164 || '');
   if (changed && requireReauthentication) {
     const recent = req.authSession && Date.now() - new Date(req.authSession.created_at).getTime() < 5 * 60 * 1000;
@@ -4297,6 +4409,8 @@ async function preparePhoneUpdate(req, res, user, requireReauthentication = fals
   }
   return {
     changed,
+    // 归一化后的有效号码：解绑/无号码时为空字符串，供管理员验证标记做前置校验。
+    e164: phone?.e164 || '',
     updates: changed ? {
       phoneCountryCode: phone?.countryCode || '', phoneNumber: phone?.nationalNumber || '', phoneVerified: false
     } : {}
@@ -4828,9 +4942,52 @@ app.get('/profile', asyncHandler(async (req, res) => {
 app.get('/oauth2/logout', asyncHandler(async (req, res) => {
   await getAuthenticatedUser(req);
   if (req.authSession) await Session.revoke(req.authSession.id);
+  const active = currentBrowserAccount(req);
+  writeBrowserAccounts(req, res, readBrowserAccounts(req).filter(entry => entry.sub !== active?.sub));
   res.clearCookie('session', sessionCookieOptions(null));
   const target = resolveLogoutRedirect(req.query.redirect);
   res.redirect(target || '/oauth2/authorize');
+}));
+
+app.get('/api/auth/accounts', asyncHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { accounts, currentAccountId } = await resolveBrowserAccounts(req);
+  writeBrowserAccounts(req, res, accounts.map(account => account.entry));
+  res.json({ accounts: accounts.map(({ user }) => ({
+    id: user.id, username: user.username || '', name: user.name || '', current: user.id === currentAccountId
+  })), currentAccountId });
+}));
+
+app.post('/api/auth/accounts/switch', asyncHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { accounts } = await resolveBrowserAccounts(req);
+  const selected = typeof req.body.accountId === 'string'
+    ? accounts.find(account => account.user.id === req.body.accountId) : null;
+  if (!selected) return browserAccountRequired(res);
+  const result = await finishAccountLogin(selected.user, async (_current, connection) => {
+    const valid = await validateBrowserAccount(selected.entry, connection);
+    return valid ? { status: 200, value: valid } : { status: 401 };
+  });
+  if (result.status !== 200) return browserAccountRequired(res);
+  const { entry, policy } = result.value;
+  const token = jwt.sign({ ...entry, type: 'session', iss: PUBLIC_BASE_URL, aud: PUBLIC_BASE_URL },
+    JWT_SECRET, { algorithm: 'HS256' });
+  req.browserSessionToken = token;
+  res.cookie('session', token, sessionCookieOptions(policy.expiresAt - Date.now()));
+  writeBrowserAccounts(req, res, [entry, ...accounts.map(account => account.entry)]);
+  res.json({ accountId: selected.user.id });
+}));
+
+app.post('/api/auth/accounts/remove', asyncHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { accounts, currentAccountId } = await resolveBrowserAccounts(req);
+  const selected = typeof req.body.accountId === 'string'
+    ? accounts.find(account => account.user.id === req.body.accountId) : null;
+  if (!selected) return browserAccountRequired(res);
+  await Session.revoke(selected.row.id);
+  writeBrowserAccounts(req, res, accounts.filter(account => account.user.id !== selected.user.id).map(account => account.entry));
+  if (currentAccountId === selected.user.id) res.clearCookie('session', sessionCookieOptions(null));
+  res.json({ accountId: selected.user.id });
 }));
 
 app.get('/api/account/sessions', asyncHandler(async (req, res) => {
@@ -5219,6 +5376,15 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   const phoneUpdate = await preparePhoneUpdate(req, res, target);
   if (!phoneUpdate) return;
   Object.assign(updates, phoneUpdate.updates);
+  if (req.body.phoneVerified !== undefined) {
+    if (typeof req.body.phoneVerified !== 'boolean' || (req.body.phoneVerified && !phoneUpdate.e164)) {
+      return res.status(400).json({ error: 'invalid_request', error_key: 'validation.phone.invalid',
+        error_description: typeof req.body.phoneVerified !== 'boolean'
+          ? '手机号验证状态必须为布尔值' : '请先绑定有效手机号，再标记为已验证' });
+    }
+    updates.phoneVerified = req.body.phoneVerified;
+    if (!phoneUpdate.changed) updates.expectedPhoneE164 = phoneUpdate.e164 || null;
+  }
   if (req.body.captchaRequired !== undefined) {
     updates.captchaRequired = Boolean(req.body.captchaRequired);
   }
@@ -5296,6 +5462,7 @@ app.put('/api/users/:id', asyncHandler(async (req, res) => {
   const securityChanged = (updates.banned !== undefined && updates.banned !== Boolean(target.banned))
     || (updates.email !== undefined && updates.email !== normalizeEmail(target.email))
     || (updates.emailVerified !== undefined && updates.emailVerified !== Boolean(target.email_verified))
+    || (updates.phoneVerified !== undefined && updates.phoneVerified !== Boolean(target.phone_verified))
     || nextRole !== normalizeText(target.role).toLowerCase()
     || phoneUpdate.changed;
   if (securityChanged) {
@@ -6181,6 +6348,11 @@ app.use((err, req, res, next) => {
   if (err instanceof AccountTransactionAbort) return res.status(err.status).json(err.body);
   if (err instanceof moderation.ModerationError) {
     return res.status(err.status).json({ error: err.code, error_description: err.message });
+  }
+  if (err.code === 'PHONE_VERIFICATION_STALE') {
+    return res.status(409).json({
+      error: 'conflict', error_description: '手机号已变化，请刷新后重新确认验证状态'
+    });
   }
   if (err.code === 'PHONE_UPDATE_NOT_PERSISTED') {
     console.error('Request failed:', err.code);

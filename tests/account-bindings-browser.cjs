@@ -104,11 +104,78 @@ async function main() {
     assert.ok(page.url().includes('/user.html'), `Unexpected admin navigation: ${page.url()}`);
     await page.waitForFunction(() => document.getElementById('phoneInput')?.value === '13700137000');
     await page.waitForFunction(() => document.activeElement?.id === 'phoneInput');
+
+    // Phone verified checkbox mirrors the saved value and cannot carry the old verification onto a new number.
+    assert.equal(await page.locator('#phoneVerifiedInput').isVisible(), true, 'Phone verified checkbox is rendered beside Email verified');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'A new number starts unverified even though this account previously had no verification');
+    assert.equal(await page.locator('#phoneVerifiedInput').isDisabled(), false, 'A bound number allows the verification checkbox');
     await page.locator('#phoneInput').fill('13900139000');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'Editing the number keeps the checkbox clear');
+    await page.locator('#phoneVerifiedInput').check();
+    const verifiedSubmission = page.waitForRequest(request => request.url().endsWith(`/api/users/${target.id}`) && request.method() === 'PUT');
     await page.locator('#saveBtn').click();
+    const verifiedBody = (await verifiedSubmission).postDataJSON();
+    assert.equal(verifiedBody.phoneVerified, true, 'The form submits the admin phone verification intent');
+    assert.equal(verifiedBody.phoneNumber, '13900139000');
     await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    const verifiedRecord = await fixture.User.findById(target.id);
+    assert.equal(verifiedRecord.phone_verified, true, 'Checking the box verifies the saved number');
+    const verifiedAt = verifiedRecord.phone_verified_at;
+    assert.ok(verifiedAt, 'Verification records a timestamp');
     await page.reload();
     await page.waitForFunction(() => document.getElementById('phoneInput').value === '13900139000');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), true, 'Reload shows the persisted verification');
+    // Resubmitting the unchanged verified number keeps its timestamp.
+    await page.locator('#saveBtn').click();
+    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    assert.equal(String((await fixture.User.findById(target.id)).phone_verified_at), String(verifiedAt), 'Unchanged verified number keeps its timestamp');
+
+    // Editing the number resets the displayed verification so it cannot silently carry over.
+    await page.locator('#phoneInput').fill('13900139001');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'A changed number clears the displayed checkbox');
+    await page.locator('#saveBtn').click();
+    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    const changedRecord = await fixture.User.findById(target.id);
+    assert.equal(changedRecord.phone_e164, '+8613900139001');
+    assert.equal(changedRecord.phone_verified, false, 'Changing the number without re-checking clears verification');
+    assert.equal(changedRecord.phone_verified_at, null);
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('phoneInput').value === '13900139001');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'Reload shows the cleared verification');
+
+    // Unchecking a verified number persists as unchecked.
+    await page.locator('#phoneVerifiedInput').check();
+    await page.locator('#saveBtn').click();
+    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    assert.equal((await fixture.User.findById(target.id)).phone_verified, true);
+    await page.locator('#phoneVerifiedInput').uncheck();
+    await page.locator('#saveBtn').click();
+    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    assert.equal((await fixture.User.findById(target.id)).phone_verified, false, 'Unchecking persists');
+    assert.equal((await fixture.User.findById(target.id)).phone_verified_at, null);
+
+    // Emptying the number disables and clears the checkbox, and cannot invent a verification.
+    await page.locator('#phoneInput').fill('');
+    assert.equal(await page.locator('#phoneVerifiedInput').isDisabled(), true, 'An empty number disables the checkbox');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'An empty number clears the checkbox');
+    await page.locator('#saveBtn').click();
+    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    assert.equal((await fixture.User.findById(target.id)).phone_e164, null);
+    assert.equal((await fixture.User.findById(target.id)).phone_verified, false);
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('phoneInput').value === '');
+    assert.equal(await page.locator('#phoneVerifiedInput').isDisabled(), true, 'Reload keeps the checkbox disabled without a number');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false);
+
+    // Restore a verified number for the screenshot state.
+    await page.locator('#phoneInput').fill('13900139000');
+    await page.locator('#phoneVerifiedInput').check();
+    await page.locator('#saveBtn').click();
+    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    assert.equal((await fixture.User.findById(target.id)).phone_verified, true);
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('phoneInput').value === '13900139000');
+    assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), true);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: path.join(artifacts, 'admin-phone-390.png'), fullPage: true, animations: 'disabled' });
 
@@ -206,7 +273,7 @@ async function main() {
     await page.locator('#editPhoneBtn').click();
     assert.equal(await page.locator('#phoneUnbindBtn').isVisible(), false, 'Unbind action hides again after removing the phone');
     assert.deepEqual(errors, [], 'Feature pages execute without browser errors');
-    console.log('Feature browser checks passed: profile/admin phone save/reload/unbind, app bindings/search, desktop/mobile screenshots');
+    console.log('Feature browser checks passed: profile/admin phone save/reload/unbind, phone verification checkbox, app bindings/search, desktop/mobile screenshots');
   } finally {
     if (browser) await browser.close();
     await fixture.close();

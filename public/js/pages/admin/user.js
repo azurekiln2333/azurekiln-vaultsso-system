@@ -2,6 +2,9 @@ const statusBar = document.getElementById('statusBar');
     const editForm = document.getElementById('userEditForm');
     const saveBtn = document.getElementById('saveBtn');
     let currentUserId = '';
+    // 已保存的手机号与验证状态快照：号码一旦改动，旧验证状态就不再可信。
+    let loadedPhoneKey = '';
+    let loadedPhoneVerified = false;
 
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
     function dateText(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN'); }
@@ -13,6 +16,29 @@ const statusBar = document.getElementById('statusBar');
       const initial = (name || 'U').trim().charAt(0).toUpperCase() || 'U';
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="40" fill="#0b57d0"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="32" font-family="Segoe UI, Arial, sans-serif" font-weight="700">${escapeHtml(initial)}</text></svg>`;
       return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+    function phoneDigits(value) { return String(value ?? '').replace(/\D/g, ''); }
+    function currentPhoneKey() {
+      const number = phoneDigits(document.getElementById('phoneInput').value);
+      return number ? `${phoneDigits(document.getElementById('phoneCountryInput').value)}:${number}` : '';
+    }
+    function syncPhoneVerifiedState(resetToSaved = false) {
+      const checkbox = document.getElementById('phoneVerifiedInput');
+      const hint = document.getElementById('phoneVerifiedHint');
+      const key = currentPhoneKey();
+      checkbox.disabled = !key;
+      if (!key) {
+        checkbox.checked = false;
+        hint.textContent = '未绑定手机号时不可标记验证。';
+      } else if (resetToSaved) {
+        checkbox.checked = Boolean(loadedPhoneVerified && key === loadedPhoneKey);
+        hint.textContent = '';
+      } else if (key !== loadedPhoneKey) {
+        checkbox.checked = false;
+        hint.textContent = '号码已变更，原验证状态已清除，勾选可验证新号码。';
+      } else {
+        hint.textContent = '';
+      }
     }
     function setAvatar(url, name) {
       const avatar = document.getElementById('detailAvatar');
@@ -62,6 +88,9 @@ const statusBar = document.getElementById('statusBar');
       document.getElementById('phoneInput').value = user.phoneNationalNumber || '';
       document.getElementById('phoneStatus').textContent = !user.phoneE164 ? '未绑定手机号' : user.phoneVerified ? '已验证' : '未验证';
       document.getElementById('phoneClearBtn').hidden = !user.phoneE164;
+      loadedPhoneKey = currentPhoneKey();
+      loadedPhoneVerified = Boolean(user.phoneVerified);
+      syncPhoneVerifiedState(true);
       document.getElementById('avatarInput').value = user.avatar || '';
       document.getElementById('descriptionInput').value = user.description || '';
       document.getElementById('creditsInput').value = String(user.credits ?? 0);
@@ -103,6 +132,7 @@ const statusBar = document.getElementById('statusBar');
             credits: Number(document.getElementById('creditsInput').value || 0),
             role: document.getElementById('roleInput').value,
             emailVerified: document.getElementById('verifiedInput').checked,
+            phoneVerified: document.getElementById('phoneVerifiedInput').checked,
             banned: document.getElementById('bannedInput').checked,
             phoneCountryCode: document.getElementById('phoneCountryInput').value.trim(),
             phoneNumber: document.getElementById('phoneInput').value.trim()
@@ -118,7 +148,11 @@ const statusBar = document.getElementById('statusBar');
       document.getElementById('phoneInput').value = '';
       document.getElementById('phoneInput').focus();
       document.getElementById('phoneStatus').textContent = '待解除绑定，保存后生效';
+      syncPhoneVerifiedState();
     });
+    for (const id of ['phoneInput', 'phoneCountryInput']) {
+      document.getElementById(id).addEventListener('input', () => syncPhoneVerifiedState());
+    }
     document.getElementById('captchaClearBtn').addEventListener('click', async () => {
       if (!currentUserId) return;
       try {

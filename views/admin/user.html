@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/css/vaultsso-base.css?v=20261025-icon-font-1">
   <link rel="stylesheet" href="/css/vaultsso-admin.css?v=20261021-admin-flat-1">
   <link rel="stylesheet" href="/css/vaultsso-admin-pages.css?v=20261021-admin-flat-1">
-  <script src="/js/shared/i18n.js?v=20261026-session-duration-1"></script>
+  <script src="/js/shared/i18n.js?v=20261123-account-chooser-1"></script>
   <script src="/js/shared/admin-shell.js?v=20260928-js-1" defer></script>
   <script src="/js/shared/icon-font.js?v=20261025-icon-font-1" defer></script>
 </head>
@@ -93,7 +93,7 @@
                   <button class="inline-flex items-center gap-1 text-xs font-bold text-red-600" id="phoneClearBtn" type="button"><span class="material-symbols-outlined text-sm">link_off</span>解除绑定</button>
                 </div>
               </div>
-              <p class="text-xs text-muted sm:col-span-2">修改手机号后将清除验证状态；留空并保存可解除绑定。</p>
+              <p class="text-xs text-muted sm:col-span-2">修改手机号后将清除验证状态；留空并保存可解除绑定。勾选“手机号已验证”可直接标记新的有效号码。</p>
               <label class="block sm:col-span-2">
                 <span class="napi-label">头像 URL</span>
                 <input class="napi-input" id="avatarInput" name="avatar" type="url" placeholder="https://example.com/avatar.png">
@@ -119,6 +119,11 @@
                 <input class="admin-checkbox" id="verifiedInput" name="emailVerified" type="checkbox">
                 <span class="text-sm font-bold text-muted">邮箱已验证</span>
               </label>
+              <label class="flex flex-wrap items-center gap-3 self-end pb-2">
+                <input class="admin-checkbox" id="phoneVerifiedInput" name="phoneVerified" type="checkbox">
+                <span class="text-sm font-bold text-muted">手机号已验证</span>
+                <span class="napi-hint" id="phoneVerifiedHint">未绑定手机号时不可标记验证。</span>
+              </label>
               <label class="flex flex-wrap items-center gap-3 sm:col-span-2">
                 <input class="admin-checkbox" id="bannedInput" name="banned" type="checkbox">
                 <span class="text-sm font-bold text-muted">封禁该账户</span>
@@ -133,6 +138,6 @@
     </div>
   </div>
 
-  <script src="/js/pages/admin/user.js?v=20260928-js-1"></script>
+  <script src="/js/pages/admin/user.js?v=20261123-phone-verified-1"></script>
 </body>
 </html>

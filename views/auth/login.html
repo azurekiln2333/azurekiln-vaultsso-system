@@ -7,7 +7,7 @@
   <title>VaultSSO | Sign In</title>
   <link rel="stylesheet" href="/css/vaultsso-utilities.css">
   <link rel="stylesheet" href="/css/vaultsso-base.css?v=20261025-icon-font-1">
-  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261026-session-duration-1">
+  <link rel="stylesheet" href="/css/vaultsso-authorize.css?v=20261123-account-chooser-1">
   <script src="/js/shared/icon-font.js?v=20261025-icon-font-1" defer></script>
 </head>
 <body class="bg-mesh min-h-screen flex flex-col text-on-surface">
@@ -28,18 +28,17 @@
       </div>
 
       <div class="card-section hidden session-panel" id="sessionBanner">
-        <div class="session-card" id="sessionEntry" role="button" tabindex="0">
-          <div class="session-head">
-            <div class="min-w-0">
-              <strong class="session-title" id="sessionBannerTitle"></strong>
-            </div>
-            <button class="logout-button" id="logoutButton" type="button" data-i18n="common.action.logout_short">Log out</button>
-          </div>
+        <div class="accounts-heading">
+          <strong class="session-title" id="sessionBannerTitle"></strong>
           <span class="session-text" id="sessionBannerText"></span>
         </div>
+        <ul class="account-list" id="sessionAccountList" aria-labelledby="sessionBannerTitle"></ul>
+        <div class="status-box" id="accountsStatus" role="status" aria-live="polite" aria-atomic="true"></div>
+        <button class="secondary-submit" id="addAccountBtn" type="button" data-i18n="auth.accounts.add">Add account</button>
       </div>
 
       <div class="hidden auth-region card-section" id="authRegion">
+        <button class="text-action-button back-to-accounts" id="backToAccountsBtn" type="button" data-i18n="auth.accounts.back" hidden>Back to accounts</button>
         <div class="tabs-row">
           <button class="tab-button active" type="button" data-mode="login" data-i18n="auth.tab.login">Sign In</button>
           <button class="tab-button" type="button" data-mode="register" data-i18n="auth.tab.register">Sign Up</button>
@@ -281,7 +280,7 @@
     </section>
   </main>
 
-  <script src="/js/shared/i18n.js?v=20261026-session-duration-1"></script>
-  <script src="/js/pages/auth/login.js?v=20261026-session-duration-1"></script>
+  <script src="/js/shared/i18n.js?v=20261123-account-chooser-1"></script>
+  <script src="/js/pages/auth/login.js?v=20261123-account-chooser-1"></script>
 </body>
 </html>

@@ -27,6 +27,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Registration Policy](../backend/registration-policy.md) | Configured new-password guidance and registration-only username validation | Defined |
 | [Icon Font Loading](./icon-font-loading.md) | Hide English ligatures until actual font success, with stable slots and failure handling | Defined |
 | [Session Duration](../backend/session-duration.md) | Login duration selector, local provider links, saved factor choice and fixed expiry | Defined |
+| [Browser Accounts](../backend/browser-accounts.md) | Browser account list, add/back/select/remove and preserved authentication flows | Defined |
 
 ---
 

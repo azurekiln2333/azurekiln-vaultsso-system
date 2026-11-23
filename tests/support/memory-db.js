@@ -548,6 +548,15 @@ class MemoryPool {
       return [result, []];
     }
 
+    if (lower.startsWith('update users set ') && lower.endsWith(' where id = ? and phone_e164 <=> ?')) {
+      const id = params[params.length - 2];
+      const expectedPhone = params[params.length - 1];
+      if (!this.users.some(row => row.id === id && (row.phone_e164 ?? null) === expectedPhone)) {
+        return [{ affectedRows: 0 }, []];
+      }
+      return MemoryPool.prototype.execute.call(this, normalized.slice(0, -' AND phone_e164 <=> ?'.length), params.slice(0, -1));
+    }
+
     if (lower.startsWith('update users set ') && lower.endsWith(' where id = ?')) {
       const candidates = clone(this.users);
       const result = this.updateDynamic(candidates, normalized, params, 'id');

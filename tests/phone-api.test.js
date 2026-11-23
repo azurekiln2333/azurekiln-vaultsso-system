@@ -96,10 +96,12 @@ test('administrator can save, preserve, change and unbind a user phone', async (
   const account = await f.user();
   const { cookie } = await f.login(admin);
   const route = `/api/users/${account.id}`;
-  let result = await edit(route, cookie, { phoneCountryCode: '+1', phoneNumber: '415 555 2671', phoneVerified: true });
+  // 未提交 phoneVerified 时，绑定新号码不得自动带出验证状态。
+  let result = await edit(route, cookie, { phoneCountryCode: '+1', phoneNumber: '415 555 2671' });
   assert.equal(result.status, 200);
   assert.equal(result.body.user.phoneE164, '+14155552671');
   assert.equal(result.body.user.phoneVerified, false);
+  assert.equal(result.body.user.phoneVerifiedAt, null);
   await f.User.update(account.id, { phoneVerified: true, phoneVerifiedAt: '2025-03-01T00:00:00.000Z' });
   result = await edit(route, cookie, { phoneCountryCode: '1', phoneNumber: '4155552671' });
   assert.equal(result.status, 200);
@@ -267,4 +269,209 @@ test('phone update rejects stale generated E164 and an unbind that did not persi
   try {
     await assert.rejects(f.User.update(account.id, { phoneNumber: '13900139000', phoneCountryCode: '86' }), { code: 'PHONE_UPDATE_NOT_PERSISTED' });
   } finally { f.pool.execute = execute; }
+});
+
+test('administrator phone verification checkbox persists checking, unchecking and reloads the actual value', async () => {
+  const admin = await f.user('admin');
+  const account = await f.user();
+  const { cookie } = await f.login(admin);
+  const route = `/api/users/${account.id}`;
+  assert.equal((await f.request(route, { cookie })).body.user.phoneVerified, false, 'A new account starts unverified');
+
+  // 勾选可验证本次提交的新号码，并写入新的验证时间。
+  let result = await edit(route, cookie, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.user.phoneE164, '+8613800138000');
+  assert.equal(result.body.user.phoneVerified, true);
+  const firstVerifiedAt = result.body.user.phoneVerifiedAt;
+  assert.ok(firstVerifiedAt, 'Verifying a number records a timestamp');
+  let reloaded = await f.request(route, { cookie });
+  assert.equal(reloaded.body.user.phoneVerified, true, 'Reload returns the saved verification');
+  assert.equal(reloaded.body.user.phoneVerifiedAt, firstVerifiedAt);
+
+  // 重新提交同一个已验证号码：保留原验证时间。
+  result = await edit(route, cookie, { phoneCountryCode: '+86', phoneNumber: '138 0013 8000', phoneVerified: true });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.user.phoneVerified, true);
+  assert.equal(result.body.user.phoneVerifiedAt, firstVerifiedAt, 'Unchanged verified number keeps its timestamp');
+
+  // 取消勾选：清除验证与时间。
+  result = await edit(route, cookie, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: false });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.user.phoneVerified, false);
+  assert.equal(result.body.user.phoneVerifiedAt, null);
+  reloaded = await f.request(route, { cookie });
+  assert.equal(reloaded.body.user.phoneVerified, false, 'Unchecking persists after reload');
+
+  // 重新勾选，然后换号（不勾选）：旧验证状态不得跟随新号码。
+  result = await edit(route, cookie, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true });
+  assert.equal(result.body.user.phoneVerified, true);
+  result = await edit(route, cookie, { phoneCountryCode: '86', phoneNumber: '13900139000' });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.user.phoneE164, '+8613900139000');
+  assert.equal(result.body.user.phoneVerified, false, 'A changed number drops the previous verification');
+  assert.equal(result.body.user.phoneVerifiedAt, null);
+  assert.notEqual(result.body.user.phoneVerifiedAt, firstVerifiedAt);
+});
+
+test('administrator can verify a bound number without resubmitting it and unchecking clears the timestamp', async () => {
+  const admin = await f.user('admin');
+  const account = await f.user();
+  await f.User.update(account.id, { phoneCountryCode: '86', phoneNumber: '13800138000' });
+  const { cookie } = await f.login(admin);
+  const route = `/api/users/${account.id}`;
+  let result = await edit(route, cookie, { phoneVerified: true });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.user.phoneVerified, true);
+  const verifiedAt = result.body.user.phoneVerifiedAt;
+  assert.ok(verifiedAt);
+  // 同一个号码再次勾选保留时间戳。
+  result = await edit(route, cookie, { phoneVerified: true });
+  assert.equal(result.body.user.phoneVerified, true);
+  assert.equal(result.body.user.phoneVerifiedAt, verifiedAt);
+  // 未勾选也不得丢掉已保存的验证状态。
+  result = await edit(route, cookie, { phoneVerified: true, name: 'Verified Name' });
+  assert.equal(result.body.user.phoneVerified, true);
+  result = await edit(route, cookie, { phoneVerified: false });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.user.phoneVerified, false);
+  assert.equal(result.body.user.phoneVerifiedAt, null);
+});
+
+for (const [description, data] of [
+  ['with the original phone fields', { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true }],
+  ['with only the verification flag', { phoneVerified: true }]
+]) {
+  test(`administrator stale phone verification is rejected ${description}`, async () => {
+    const admin = await f.user('admin');
+    const account = await f.user();
+    await f.User.update(account.id, { phoneCountryCode: '86', phoneNumber: '13800138000' });
+    const app = await f.client();
+    const grant = await f.authorize(account, app, 'openid offline_access');
+    const token = await f.exchange(app, grant);
+    const privileged = await f.login(admin);
+    const execute = f.pool.execute.bind(f.pool);
+    let interleaved = false;
+    f.pool.execute = async (sql, params) => {
+      if (!interleaved && /^UPDATE users SET [\s\S]*\bphone_verified\s*=/i.test(sql)
+        && params.includes(account.id)) {
+        interleaved = true;
+        // A different request commits a new, unverified phone after this
+        // administrator's validation/read, immediately before the write.
+        await execute(
+          'UPDATE users SET phone_country_code = ?, phone_number = ?, phone_verified = ?, phone_verified_at = ? WHERE id = ?',
+          ['86', '13900139000', false, null, account.id]
+        );
+      }
+      return execute(sql, params);
+    };
+    let result;
+    try {
+      result = await edit(`/api/users/${account.id}`, privileged.cookie, data);
+    } finally {
+      f.pool.execute = execute;
+    }
+    assert.equal(interleaved, true, 'The competing phone change reached the verification write');
+    assert.equal(result.status, 409, JSON.stringify(result.body));
+    assert.equal(result.body.error, 'conflict');
+    assert.ok(result.body.error_description, 'A stale verification is rejected readably');
+    const stored = await f.User.findById(account.id);
+    assert.equal(stored.phone_e164, '+8613900139000', 'The competing phone change is preserved');
+    assert.equal(stored.phone_verified, false, 'A stale check cannot verify a different phone');
+    assert.equal(stored.phone_verified_at, null);
+    assert.equal((await f.request('/api/profile', { cookie: grant.cookie })).status, 200, 'Rejected verification does not revoke the target session');
+    assert.equal((await f.request('/api/profile', { cookie: privileged.cookie })).status, 200, 'The acting administrator stays signed in');
+    assert.equal((await f.request('/oauth2/userinfo', { headers: { Authorization: `Bearer ${token.body.access_token}` } })).status, 200);
+    assert.equal((await f.refresh(app, token.body.refresh_token)).status, 200, 'Rejected verification does not revoke OAuth credentials');
+  });
+}
+
+test('an account without a phone cannot be marked phone verified', async () => {
+  const admin = await f.user('admin');
+  const account = await f.user();
+  const { cookie } = await f.login(admin);
+  const route = `/api/users/${account.id}`;
+
+  // 仅有验证标记、没有任何号码：必须可读地拒绝，且不写入任何验证状态。
+  let result = await edit(route, cookie, { phoneVerified: true });
+  assert.equal(result.status, 400, JSON.stringify(result.body));
+  assert.equal(result.body.error_key, 'validation.phone.invalid');
+  assert.ok(result.body.error_description, 'The failure is readable');
+  assert.equal((await f.User.findById(account.id)).phone_verified, false);
+  assert.equal((await f.User.findById(account.id)).phone_verified_at, null);
+
+  // 空手机号 + 勾选验证：同样拒绝，不能凭空生成验证状态。
+  result = await edit(route, cookie, { phoneCountryCode: '86', phoneNumber: '', phoneVerified: true });
+  assert.equal(result.status, 400, JSON.stringify(result.body));
+  assert.equal(result.body.error_key, 'validation.phone.invalid');
+  assert.equal((await f.User.findById(account.id)).phone_e164, null);
+  assert.equal((await f.User.findById(account.id)).phone_verified, false);
+
+  // 非严格布尔值必须被拒绝，而不是被当成真值。
+  for (const value of ['true', '1', 1]) {
+    result = await edit(route, cookie, { phoneVerified: value });
+    assert.equal(result.status, 400, `${JSON.stringify(value)} is not a strict boolean: ${JSON.stringify(result.body)}`);
+    assert.equal(result.body.error_key, 'validation.phone.invalid');
+    assert.equal((await f.User.findById(account.id)).phone_verified, false);
+  }
+
+  // 模型层是最后一道防线：无号码时绝不写验证。
+  await f.User.update(account.id, { phone: '+8613800138000', phoneVerified: true });
+  await f.User.update(account.id, { phoneNumber: '' });
+  assert.equal((await f.User.findById(account.id)).phone_verified, false);
+  await f.User.update(account.id, { phoneVerified: true });
+  assert.equal((await f.User.findById(account.id)).phone_verified, false, 'Unbind then verify without a number stays unverified');
+  await f.User.update(account.id, { phoneVerified: '1' });
+  assert.equal((await f.User.findById(account.id)).phone_verified, false, 'A non-boolean flag never verifies');
+});
+
+test('ordinary profile edits cannot verify a phone even when the flag is sent', async () => {
+  const account = await f.user();
+  const { cookie } = await f.login(account);
+  let result = await edit('/api/profile', cookie, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.user.phoneVerified, false, 'Profile never self-verifies a phone');
+  assert.equal(result.body.user.phoneVerifiedAt, null);
+  let current = result.cookie;
+  // 号码未变时提交 true 也不能自证。
+  result = await edit('/api/profile', current, { phoneCountryCode: '86', phoneNumber: '13800138000', phoneVerified: true });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.user.phoneVerified, false);
+  // 直接对模型提交非严格布尔值同样无效。
+  await f.User.update(account.id, { phoneVerified: '1' });
+  assert.equal((await f.User.findById(account.id)).phone_verified, false);
+});
+
+test('administrator phone verification changes revoke target credentials but keep the admin signed in', async () => {
+  const admin = await f.user('admin');
+  const account = await f.user();
+  await f.User.update(account.id, { phoneCountryCode: '86', phoneNumber: '13800138000' });
+  const app = await f.client();
+  const grant = await f.authorize(account, app, 'openid offline_access');
+  const token = await f.exchange(app, grant);
+  const privileged = await f.login(admin);
+  const verified = await edit(`/api/users/${account.id}`, privileged.cookie, { phoneVerified: true });
+  assert.equal(verified.status, 200);
+  assert.equal(verified.body.user.phoneVerified, true);
+  assert.equal((await f.request('/api/profile', { cookie: grant.cookie })).status, 401, 'Verification change revokes the target session');
+  assert.equal((await f.request('/api/profile', { cookie: privileged.cookie })).status, 200, 'The acting administrator stays signed in');
+  assert.equal((await f.refresh(app, token.body.refresh_token)).status, 400);
+});
+
+test('administrator verifying their own phone keeps the current session', async () => {
+  const admin = await f.user('admin');
+  const otherSession = await f.login(admin);
+  const current = await f.login(admin);
+  const route = `/api/users/${admin.id}`;
+  const result = await edit(route, current.cookie, {
+    name: 'Self verify admin', email: admin.email, role: 'admin', emailVerified: true, banned: false,
+    phoneCountryCode: '+86', phoneNumber: '13800138000', phoneVerified: true
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.user.phoneVerified, true);
+  assert.ok(result.body.user.phoneVerifiedAt);
+  const reloaded = await f.request(route, { cookie: current.cookie });
+  assert.equal(reloaded.status, 200, 'Self verification keeps the acting session');
+  assert.equal(reloaded.body.user.phoneVerified, true);
+  assert.equal((await f.request('/api/profile', { cookie: otherSession.cookie })).status, 401, 'Other sessions of the target are revoked');
 });

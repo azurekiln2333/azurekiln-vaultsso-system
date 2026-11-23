@@ -31,14 +31,27 @@ const i18n = window.VaultI18n;
     const sendSetupCodeBtn = document.getElementById('sendSetupCodeBtn');
     const authRegion = document.getElementById('authRegion');
     const sessionBanner = document.getElementById('sessionBanner');
-    const sessionEntry = document.getElementById('sessionEntry');
-    const logoutButton = document.getElementById('logoutButton');
+    const sessionBannerTitle = document.getElementById('sessionBannerTitle');
+    const sessionBannerText = document.getElementById('sessionBannerText');
+    const sessionAccountList = document.getElementById('sessionAccountList');
+    const accountsStatus = document.getElementById('accountsStatus');
+    const addAccountBtn = document.getElementById('addAccountBtn');
+    const backToAccountsBtn = document.getElementById('backToAccountsBtn');
     const oidcDivider = document.getElementById('oidcDivider');
     const oidcProviders = document.getElementById('oidcProviders');
     let modeRevision = 0;
     let feedbackRevision = 0;
     let loginStep = 'account';
     let registerUsernameComposing = false;
+    // Browser account chooser state. `accountsView` tracks whether the user is
+    // reading the saved-account list or explicitly adding another account, so a
+    // late hydration response cannot steal an explicit add/back action.
+    let browserAccounts = [];
+    let accountsView = 'list';
+    let accountsHydrated = false;
+    let accountsRevision = 0;
+    let accountsBusy = false;
+    let accountsStatusRevision = 0;
 
     function usernameCharacters(value) {
       return value.replace(/[^A-Za-z0-9_]/g, '');
@@ -483,17 +496,6 @@ const i18n = window.VaultI18n;
       statusMessage.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
-    function setSignedInState(isSignedIn) {
-      sessionBanner.classList.toggle('hidden', !isSignedIn);
-      authRegion.classList.toggle('hidden', isSignedIn);
-      if (!isSignedIn && loginCaptcha?.isVisible()) loginCaptcha.refresh();
-      if (!isSignedIn && registerCaptcha?.isVisible()) registerCaptcha.refresh();
-
-      if (isSignedIn) {
-        clearStatus();
-      }
-    }
-
     function fillHiddenFields(form) {
       Object.keys(oauthParams).forEach(function (key) {
         const input = form.querySelector(`input[name="${key}"]`);
@@ -523,51 +525,268 @@ const i18n = window.VaultI18n;
       }
     }
 
-    async function hydrateSessionBanner() {
-      try {
-        const response = await fetch('/api/profile', {
-          credentials: 'same-origin'
-        });
+    function setAccountsStatus(kind, message, requestRevision = accountsStatusRevision) {
+      if (requestRevision !== accountsStatusRevision) return;
+      if (!kind || !message) {
+        accountsStatus.className = 'status-box';
+        accountsStatus.textContent = '';
+        return;
+      }
+      const colorMap = { error: 'is-error', success: 'is-success' };
+      accountsStatus.className = `status-box is-visible ${colorMap[kind] || 'is-info'}`;
+      accountsStatus.textContent = message;
+      accountsStatus.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
 
-        if (!response.ok) {
-          setSignedInState(false);
-          return;
+    function clearAccountsStatus() {
+      accountsStatusRevision += 1;
+      setAccountsStatus('', '');
+    }
+
+    function accountLabel(account) {
+      return account.name || account.username || i18n.t('common.user_fallback');
+    }
+
+    function setAccountsBusy(busy) {
+      accountsBusy = busy;
+      sessionAccountList.querySelectorAll('button').forEach(function (button) {
+        button.disabled = busy;
+      });
+      addAccountBtn.disabled = busy;
+    }
+
+    function applyAccountsVisibility() {
+      const hasAccounts = browserAccounts.length > 0;
+      // A late hydration response must not steal an explicit add/back action.
+      const showList = accountsView !== 'add' && hasAccounts;
+      sessionBanner.classList.toggle('hidden', !showList);
+      authRegion.classList.toggle('hidden', showList);
+      backToAccountsBtn.hidden = !(accountsView === 'add' && hasAccounts);
+    }
+
+    function renderAccounts() {
+      sessionBannerTitle.textContent = i18n.t('auth.accounts.title');
+      sessionBannerText.textContent = i18n.t('auth.accounts.description');
+      sessionAccountList.replaceChildren();
+
+      browserAccounts.forEach(function (account) {
+        const item = document.createElement('li');
+        item.className = 'account-row';
+        item.dataset.accountId = account.id;
+        if (account.current) item.classList.add('is-current');
+
+        // Two sibling native buttons: selecting the account, and removing it.
+        // No interactive element is nested inside another.
+        const select = document.createElement('button');
+        select.type = 'button';
+        select.className = 'account-select';
+        select.dataset.accountId = account.id;
+        if (account.current) select.setAttribute('aria-current', 'true');
+        select.title = i18n.t('auth.accounts.select_named', { name: accountLabel(account) });
+
+        const name = document.createElement('span');
+        name.className = 'account-name';
+        name.textContent = accountLabel(account);
+
+        const meta = document.createElement('span');
+        meta.className = 'account-meta';
+        // Username truncates on its own; the current-status badge is a separate
+        // non-shrinking sibling so a long username cannot ellipsis it away.
+        if (account.username && account.username !== account.name) {
+          const username = document.createElement('span');
+          username.className = 'account-username';
+          username.textContent = account.username;
+          meta.append(username);
+        }
+        if (account.current) {
+          const badge = document.createElement('span');
+          badge.className = 'account-current-badge';
+          badge.textContent = i18n.t('auth.accounts.current_badge');
+          meta.append(badge);
         }
 
-        const payload = await response.json();
-        const user = payload.user;
-        document.getElementById('sessionBannerTitle').textContent = i18n.t('auth.session.title', {
-          user: user.name || user.username
+        select.append(name, meta);
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'account-remove';
+        remove.dataset.accountId = account.id;
+        const removeLabel = i18n.t('auth.accounts.remove_named', { name: accountLabel(account) });
+        remove.setAttribute('aria-label', removeLabel);
+        remove.title = removeLabel;
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'close';
+        remove.append(icon);
+
+        item.append(select, remove);
+        sessionAccountList.append(item);
+      });
+
+      sessionAccountList.hidden = browserAccounts.length === 0;
+      addAccountBtn.hidden = browserAccounts.length === 0;
+      // Re-rendering rebuilds enabled buttons; restore the busy gate so a locale
+      // change during a pending request cannot re-enable them.
+      if (accountsBusy) setAccountsBusy(true);
+      applyAccountsVisibility();
+    }
+
+    function applyAccountsPayload(payload) {
+      browserAccounts = Array.isArray(payload?.accounts) ? payload.accounts.filter(function (account) {
+        return account && typeof account.id === 'string' && account.id;
+      }) : [];
+      accountsHydrated = true;
+      renderAccounts();
+      if (loginCaptcha?.isVisible()) loginCaptcha.refresh();
+      if (registerCaptcha?.isVisible()) registerCaptcha.refresh();
+    }
+
+    async function hydrateBrowserAccounts() {
+      const revision = ++accountsRevision;
+      let payload = null;
+      try {
+        const response = await fetch('/api/auth/accounts', {
+          credentials: 'same-origin',
+          cache: 'no-store'
         });
-        document.getElementById('sessionBannerText').textContent = i18n.t('auth.session.default_text');
-        setSignedInState(true);
+        if (response.ok) payload = await response.json();
       } catch (error) {
-        console.error('Session banner error:', error);
-        setSignedInState(false);
+        console.error('Account list request failed:', error);
+      }
+      if (revision !== accountsRevision) return;
+      applyAccountsPayload(payload);
+    }
+
+    function showAccountsList() {
+      // Returning to the list abandons any half-finished form: bump the mode
+      // revision and drop pending discovery/setup state so a delayed credential
+      // or discovery response cannot navigate away from the chooser.
+      accountsView = 'list';
+      invalidateAuthAction();
+      loginForm.reset();
+      registerForm.reset();
+      recoverForm.reset();
+      loginForm.dataset.busy = 'false';
+      registerForm.dataset.busy = 'false';
+      recoverForm.dataset.busy = 'false';
+      setLoginStep('account');
+      clearAccountsStatus();
+      applyAccountsVisibility();
+      document.querySelector('.account-select')?.focus();
+    }
+
+    // The back action is only reachable in add mode while a saved account still
+    // exists. Block it during a credential submit so the active request cannot
+    // race the chooser; modeRevision invalidation covers discovery responses.
+    function setBackToAccountsBusy(busy) {
+      if (!backToAccountsBtn.hidden) backToAccountsBtn.disabled = busy;
+    }
+
+    function enterAddAccount() {
+      accountsView = 'add';
+      // Invalidate a hydration already in flight so it cannot re-open the list.
+      accountsRevision += 1;
+      clearAccountsStatus();
+      loginForm.reset();
+      registerForm.reset();
+      recoverForm.reset();
+      setMode('login');
+      applyAccountsVisibility();
+      document.getElementById('loginUsername').focus();
+    }
+
+    function continueAfterAccountSelection() {
+      if (hasOAuthRequest) {
+        // Preserve the original authorization request, including PKCE/state/nonce.
+        window.location.assign('/oauth2/authorize' + window.location.search);
+        return;
+      }
+      window.location.assign('/profile');
+    }
+
+    async function switchAccount(accountId) {
+      if (accountsBusy || !accountId) return;
+      clearAccountsStatus();
+      const requestRevision = accountsStatusRevision;
+      setAccountsBusy(true);
+      try {
+        const response = await fetch('/api/auth/accounts/switch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ accountId })
+        });
+        const result = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          const message = i18n.resolveMessage(result, 'auth.accounts.switch_failed');
+          // The stored entry may be expired or revoked; refresh the visible list.
+          if (response.status === 401) await hydrateBrowserAccounts();
+          if (browserAccounts.length === 0) {
+            // The list just disappeared, so its status region is no longer
+            // visible: surface the readable error in the sign-in form instead.
+            accountsView = 'add';
+            setMode('login');
+            applyAccountsVisibility();
+            setStatus('error', message);
+            document.getElementById('loginUsername').focus();
+            return;
+          }
+          setAccountsStatus('error', message, requestRevision);
+          return;
+        }
+        continueAfterAccountSelection();
+      } catch (error) {
+        console.error('Account switch failed:', error);
+        setAccountsStatus('error', i18n.t('common.network_error'), requestRevision);
+      } finally {
+        setAccountsBusy(false);
       }
     }
 
-    async function handleLogout() {
-      const originalLabel = logoutButton.textContent;
-      logoutButton.disabled = true;
-
+    async function removeAccount(accountId) {
+      if (accountsBusy || !accountId) return;
+      clearAccountsStatus();
+      const requestRevision = accountsStatusRevision;
+      setAccountsBusy(true);
       try {
-        await fetch('/oauth2/logout', {
-          credentials: 'same-origin'
+        const response = await fetch('/api/auth/accounts/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ accountId })
         });
-
-        loginForm.reset();
-        registerForm.reset();
-        recoverForm.reset();
-        setMode('login');
-        setSignedInState(false);
-        document.getElementById('loginUsername').focus();
+        const result = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          const message = i18n.resolveMessage(result, 'auth.accounts.remove_failed');
+          if (response.status === 401 || response.status === 404) await hydrateBrowserAccounts();
+          if (browserAccounts.length === 0) {
+            // The list just disappeared, so its status region is no longer
+            // visible: surface the readable error in the sign-in form instead.
+            accountsView = 'add';
+            setMode('login');
+            applyAccountsVisibility();
+            setStatus('error', message);
+            document.getElementById('loginUsername').focus();
+            return;
+          }
+          setAccountsStatus('error', message, requestRevision);
+          return;
+        }
+        // Refresh while still busy: the old rows stay disabled until the new
+        // list is painted, so a stale row cannot fire a duplicate remove.
+        await hydrateBrowserAccounts();
       } catch (error) {
-        console.error('Logout failed:', error);
-        window.location.href = '/oauth2/logout';
+        console.error('Account removal failed:', error);
+        setAccountsStatus('error', i18n.t('common.network_error'), requestRevision);
+        return;
       } finally {
-        logoutButton.disabled = false;
-        logoutButton.textContent = originalLabel;
+        setAccountsBusy(false);
+      }
+      if (browserAccounts.length === 0) {
+        accountsView = 'add';
+        applyAccountsVisibility();
+        document.getElementById('loginUsername').focus();
       }
     }
 
@@ -584,6 +803,7 @@ const i18n = window.VaultI18n;
 
       submitButton.disabled = true;
       submitButton.textContent = i18n.t(loadingKey);
+      setBackToAccountsBusy(true);
 
       try {
         const response = await fetch(endpoint, {
@@ -642,8 +862,9 @@ const i18n = window.VaultI18n;
 
         loginForm.reset();
         registerForm.reset();
+        accountsView = 'list';
         setMode('login');
-        await hydrateSessionBanner();
+        await hydrateBrowserAccounts();
       } catch (error) {
         console.error('Auth request failed:', error);
         const failedCaptcha = form === loginForm ? loginCaptcha : form === registerForm ? registerCaptcha : null;
@@ -654,6 +875,7 @@ const i18n = window.VaultI18n;
       } finally {
         form.dataset.busy = 'false';
         submitButton.disabled = false;
+        setBackToAccountsBusy(false);
         if (form === loginForm) {
           applyLoginStepLabels();
         } else {
@@ -966,7 +1188,7 @@ const i18n = window.VaultI18n;
     hydrateAuthConfig();
     hydrateOidcLogin();
     i18n.bindLanguageButtons(document);
-    hydrateSessionBanner();
+    hydrateBrowserAccounts();
 
     loginForm.addEventListener('reset', function () {
       // Reset values are applied after the reset event itself.
@@ -1017,7 +1239,8 @@ const i18n = window.VaultI18n;
 
     document.addEventListener('vaultsso:languagechange', function () {
       renderPage();
-      hydrateSessionBanner();
+      // Re-render the chooser from cached state; no extra request is needed.
+      if (accountsHydrated) renderAccounts();
     });
 
     loginForm.addEventListener('submit', function (event) {
@@ -1096,29 +1319,22 @@ const i18n = window.VaultI18n;
       submitPasswordReset();
     });
 
-    logoutButton.addEventListener('click', function () {
-      handleLogout();
+    addAccountBtn.addEventListener('click', function () {
+      enterAddAccount();
     });
 
-    sessionEntry.addEventListener('click', function (event) {
-      if (event.target.closest('#logoutButton')) {
-        return;
-      }
-
-      window.location.href = '/profile';
+    backToAccountsBtn.addEventListener('click', function () {
+      showAccountsList();
     });
 
-    sessionEntry.addEventListener('keydown', function (event) {
-      if (event.target.closest('#logoutButton')) {
+    sessionAccountList.addEventListener('click', function (event) {
+      const remove = event.target.closest('.account-remove');
+      if (remove) {
+        removeAccount(remove.dataset.accountId);
         return;
       }
-
-      if (event.key !== 'Enter' && event.key !== ' ') {
-        return;
-      }
-
-      event.preventDefault();
-      window.location.href = '/profile';
+      const select = event.target.closest('.account-select');
+      if (select) switchAccount(select.dataset.accountId);
     });
 
     if (urlParams.has('oidc_error')) {
