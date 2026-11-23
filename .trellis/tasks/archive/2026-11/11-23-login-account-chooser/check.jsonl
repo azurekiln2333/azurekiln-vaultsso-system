@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/session-duration.md","reason":"Preserve existing authentication, phone, UI and cross-layer contracts; task design explicitly adds administrator phone verification."}
+{"file":".trellis/spec/backend/account-bindings.md","reason":"Preserve existing authentication, phone, UI and cross-layer contracts; task design explicitly adds administrator phone verification."}
+{"file":".trellis/spec/backend/password-verification.md","reason":"Preserve existing authentication, phone, UI and cross-layer contracts; task design explicitly adds administrator phone verification."}
+{"file":".trellis/spec/frontend/auth-feedback.md","reason":"Preserve existing authentication, phone, UI and cross-layer contracts; task design explicitly adds administrator phone verification."}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Preserve existing authentication, phone, UI and cross-layer contracts; task design explicitly adds administrator phone verification."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Preserve existing authentication, phone, UI and cross-layer contracts; task design explicitly adds administrator phone verification."}

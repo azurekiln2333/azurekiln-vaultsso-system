@@ -1,0 +1,31 @@
+{
+  "id": "login-account-chooser",
+  "name": "login-account-chooser",
+  "title": "Login account chooser and admin phone verification",
+  "description": "List and add browser accounts on login; add administrator phone verification checkbox with persisted state.",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "lichengyu",
+  "assignee": "lichengyu",
+  "createdAt": "2026-11-23",
+  "completedAt": "2026-11-23",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "12cdee4bf40f4455c225e8701ed162c2502c7d52",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "User authorized immediate plan and dispatch to four existing Pi agents in Herdr. Panes: backend w6Q:p2, login UI w6Q:p7, phone UI/model w6Q:p5, account tests/review w6Q:p6. Backend later handed to native implementer; final tests run by coordinator after Pi provider timeout. Implementation and verification complete: npm run check 450 passed / 2 skipped, phone 21/21, account API 16/16, targeted browser checks passed. User approved commit/archive/journal plan with 行. Work committed as 12cdee4; see verification.md and commit-plan.md. Direct shared-checkout task without a PR. Existing unrelated compliance docs/tasks excluded. No deployment.",
+  "meta": {
+    "phase": "completed",
+    "implementation_complete": true,
+    "verification_complete": true,
+    "awaiting_commit_confirmation": false
+  }
+}
