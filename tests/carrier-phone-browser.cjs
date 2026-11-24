@@ -22,6 +22,27 @@ const VIEWPORTS = [
 const SMS_PHONE = '13800138000';
 const APP_PHONE = '13900139000';
 
+async function captureJson(page, suffix) {
+  let resolveResult;
+  let rejectResult;
+  const result = new Promise((resolve, reject) => {
+    resolveResult = resolve;
+    rejectResult = reject;
+  });
+  await page.route(url => url.pathname.endsWith(suffix), async route => {
+    try {
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({ response });
+      resolveResult({ status: response.status(), body });
+    } catch (error) {
+      rejectResult(error);
+    }
+  }, { times: 1 });
+  // Await route installation without waiting for the request triggered by the click.
+  return { result };
+}
+
 // ---------------------------------------------------------------------------
 // Fake PNVS transport. Installed on the module export so every route-level
 // createClient() call uses it, regardless of when the client is constructed.
@@ -331,13 +352,13 @@ async function main() {
       await page.locator('#phoneSmsSendBtn').click();
       assert.equal((await send).status(), 200);
 
-      const completion = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/sms/login'));
+      const { result: completion } = await captureJson(page, '/api/auth/phone/sms/login');
       await page.locator('#phoneSmsCode').fill('555555');
       await page.locator('#phoneSmsSubmit').click();
-      const response = await completion;
-      assert.equal(response.status(), 200, 'OAuth SMS login must complete');
+      const captured = await completion;
+      assert.equal(captured.status, 200, 'OAuth SMS login must complete');
 
-      const body = await response.json();
+      const body = captured.body;
       assert.ok(body.redirect, 'the OAuth handoff returns a redirect target');
       assert.match(body.redirect, /state=phone-browser-state/, 'the original state is preserved');
       // The client never requested the phone scope, so the handoff withholds the number.
@@ -400,7 +421,7 @@ async function main() {
       assert.equal(await page.locator('#phoneH5Section').isVisible(), true);
 
       const tokenRequest = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/h5/token'));
-      const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/h5/login'));
+      const { result: loginResponse } = await captureJson(page, '/api/auth/phone/h5/login');
       await page.locator('#phoneH5Btn').click();
       const token = await tokenRequest;
       assert.equal(token.status(), 200, 'H5 token must be issued');
@@ -410,11 +431,11 @@ async function main() {
       assert.equal(provider.callsFor('GetAuthToken').length, 1);
       await page.waitForFunction(() => window.__phoneSdkCalls === 1, undefined, { timeout: 15000 });
 
-      const completed = await loginResponse;
-      assert.equal(completed.status(), 200, 'H5 login must complete');
+      const captured = await loginResponse;
+      assert.equal(captured.status, 200, 'H5 login must complete');
       assert.equal(provider.callsFor('GetPhoneWithToken').length, 1, 'the number is resolved server-side');
 
-      const body = await completed.json();
+      const body = captured.body;
       // Either the flow finished with a redirect, or it correctly stopped at the second factor.
       const navigationTarget = body.mfa_url || body.redirect;
       assert.ok(navigationTarget, `the H5 login must return a navigation target: ${JSON.stringify(body)}`);
