@@ -445,7 +445,14 @@ test('Tianyi pending MFA is invalidated when its application configuration chang
   assert.equal(context.tianyiAppId, TIANYI_APP);
 
   const code = f.lastCode(target.email);
-  await configureTianyi({ clientId: 'replacement-app' });
+  const replacement = await configureTianyi({ clientId: 'replacement-app' });
+  assert.equal(replacement.body.provider.clientId, 'replacement-app');
+  assert.equal(f.pool.oidcProviders.find(row => row.provider_key === 'tianyi-test')?.client_id, 'replacement-app');
+  const pendingCookie = callback.cookie.match(/(?:^|;\s*)oidc_pending=([^;]+)/)?.[1];
+  assert.ok(pendingCookie, 'Tianyi MFA callback must publish its pending credential');
+  const pendingClaims = jwt.verify(decodeURIComponent(pendingCookie), process.env.JWT_SECRET);
+  assert.equal(pendingClaims.source, 'external');
+  assert.equal(pendingClaims.provider, 'tianyi-test');
   const pending = await f.request('/api/v1/auth/oauth/oidc/pending', { cookie: `${activeLogin.cookie}; ${callback.cookie}` });
   assert.equal(pending.status, 401);
   const completed = await post('/api/v1/auth/oauth/oidc/complete', { code }, `${activeLogin.cookie}; ${callback.cookie}`);
@@ -479,7 +486,7 @@ test('Tianyi MFA publishes no session until the final account transaction commit
   const completed = await post('/api/v1/auth/oauth/oidc/complete', { code }, callback.cookie);
   assert.equal(completed.status, 200, JSON.stringify(completed.body));
   assert.equal(claims(completed).session_days, 7);
-  assert.ok(parent.consumed_at);
+  assert.ok(f.pool.emailVerificationCodes.find(row => row.id === parent.id)?.consumed_at);
   assert.equal(f.pool.sessions.filter(row => row.user_id === user.id).length, 1);
 });
 
