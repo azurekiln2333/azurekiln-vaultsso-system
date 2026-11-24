@@ -27,7 +27,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .artifacts/cloud
-          bash scripts/ci-backend.sh 2>&1 | tee .artifacts/cloud/backend.log
+          if ! bash scripts/ci-backend.sh 2>&1 | tee .artifacts/cloud/backend.log; then
+            grep -E '^(not ok |  error:|  code:|  failureType:|  location:|  stack:|    at |# fail |# tests )' \
+              .artifacts/cloud/backend.log | tail -n 80 | while IFS= read -r line; do
+                line=${line//'%'/'%25'}
+                line=${line//$'\r'/'%0D'}
+                line=${line//$'\n'/'%0A'}
+                echo "::error title=Backend test failure::$line"
+              done
+            exit 1
+          fi
       - name: Install locked Chromium
         run: |
           node node_modules/playwright-core/cli.js install --with-deps chromium
