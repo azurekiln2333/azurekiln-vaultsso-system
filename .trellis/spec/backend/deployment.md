@@ -180,6 +180,13 @@ application, or kill an old host Node process. Print an operator hint for occupi
 
 ### Publishing
 
+- GitHub also runs the complete browser suite using Chromium from the locked `playwright-core`,
+  retains screenshot/log evidence and a deployment ZIP, then builds and inspects an isolated
+  nonpublishing runtime image on every branch/PR/tag. `image` publication depends on
+  `image-validation`, which depends on `test`. Branch validation needs no registry credentials.
+  Carrier fixture traffic is isolated; live provider/SMS calls are not CI checks. The carrier
+  task explicitly requires all checks/builds in GitHub and authorizes push/merge/tag publication;
+  that user direction overrides the local-only validation preference below.
 - `scripts/ci-backend.sh` performs locked dependency installation and `npm run check` with
   fail-fast behavior. Shell files use LF. GitHub runs it for every branch push, `v*` tag and PR.
   Only successful `main`/`v*` push runs can publish to lower-case `ghcr.io/<owner>/<repo>` using

@@ -96,6 +96,13 @@
                 <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.phone">手机号</span><div class="profile-phone-line"><strong id="phoneValue"></strong><span id="phoneVerifiedChip"></span></div><small id="phoneCountryHint"></small><small class="hidden" id="phoneBindHint" data-i18n="profile.phone.bind_hint">使用华为账号一键登录后，手机号会自动绑定到当前账号。</small></div>
                 <button class="profile-row-action" id="editPhoneBtn" type="button"><span data-i18n="profile.phone.edit">修改手机号</span></button>
               </div>
+              <div class="profile-detail-row" id="phoneSmsVerifyRow" hidden>
+                <div class="profile-detail-copy">
+                  <span class="profile-detail-label" data-i18n="profile.phone.sms_verify_title">短信验证手机号</span>
+                  <small data-i18n="profile.phone.sms_verify_desc">向当前绑定的手机号发送验证码，验证通过后号码标记为已验证。</small>
+                </div>
+                <button class="profile-row-action" id="phoneSmsVerifyStartBtn" type="button" data-i18n="profile.phone.sms_send">发送验证码</button>
+              </div>
               <div class="profile-detail-row">
                 <div class="profile-detail-copy"><span class="profile-detail-label" data-i18n="profile.field.login_password">登录密码</span><strong id="passwordValue" data-i18n="profile.value.password_masked">已隐藏</strong></div>
                 <button class="profile-row-action" id="editPasswordBtn" type="button" data-i18n="profile.button.edit_password">修改密码</button>
@@ -255,6 +262,28 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="phoneSmsModal" data-modal-backdrop>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phoneSmsModalTitle">
+      <div class="modal-head">
+        <h2 class="modal-title" id="phoneSmsModalTitle" data-i18n="profile.phone.sms_verify_title">短信验证手机号</h2>
+        <button class="close-button" type="button" data-close-modal="phoneSmsModal" aria-label="Close">&times;</button>
+      </div>
+      <form class="form-grid" id="phoneSmsVerifyForm">
+        <p class="modal-desc" data-i18n="profile.phone.sms_verify_desc">向当前绑定的手机号发送验证码，验证通过后号码标记为已验证。</p>
+        <p class="text-sm text-red-600 hidden" id="phoneSmsError" role="alert"></p>
+        <div class="field">
+          <label for="phoneSmsCode" data-i18n="profile.phone.sms_code_label">短信验证码</label>
+          <input id="phoneSmsCode" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" data-i18n-placeholder="profile.phone.sms_code_placeholder" placeholder="6 位验证码" required>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" id="phoneSmsResendBtn" type="button" data-i18n="profile.phone.sms_send">发送验证码</button>
+          <button class="ghost-button" type="button" data-close-modal="phoneSmsModal" data-i18n="common.action.cancel">取消</button>
+          <button class="submit" id="phoneSmsVerifySubmit" type="submit" data-i18n="profile.phone.sms_verify_btn">验证手机号</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="phoneModal" data-modal-backdrop>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phoneModalTitle">
       <div class="modal-head">
@@ -358,8 +387,8 @@
     </div>
   </div>
 
-  <script src="/js/shared/i18n.js?v=20261123-account-chooser-1"></script>
+  <script src="/js/shared/i18n.js?v=20261124-carrier-phone-1"></script>
   <script src="/js/pages/account/authenticators.js?v=20260929-personal-1"></script>
-  <script src="/js/pages/account/profile.js?v=20261102-moderation-1"></script>
+  <script src="/js/pages/account/profile.js?v=20261124-carrier-phone-2"></script>
 </body>
 </html>

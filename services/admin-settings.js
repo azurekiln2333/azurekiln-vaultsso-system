@@ -3,6 +3,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { PROJECT_ROOT, resolveProjectPath } = require('../config/environment');
 const { createSecretCipher } = require('./secret-storage');
+// 引入号码认证配置归一化，保证「加载/保存」与运行时投影使用同一套字段规则。
+const phoneAuth = require('./phone-auth');
 
 function settingsFile() {
   const file = resolveProjectPath(process.env.ADMIN_SETTINGS_FILE || 'data/admin-settings.json');
@@ -42,12 +44,32 @@ function createStore(rootSecret, file = settingsFile()) {
       result.turnstile = { siteKey, secretKey: decodeSecret(secretKey) };
       if (Boolean(siteKey) !== Boolean(result.turnstile.secretKey)) throw new Error('Incomplete Turnstile settings file');
     }
+    if (saved.phoneAuth) {
+      const section = saved.phoneAuth;
+      if (typeof section !== 'object' || Array.isArray(section)) throw new Error('Invalid phone auth settings file');
+      // 两个密钥字段独立加密，缺省视为空串；其余字段由归一化器兜底，因此
+      // 一个尚未配置完成的号码认证段可以安全地随进程启动加载。
+      result.phoneAuth = phoneAuth.normalizeConfig({
+        ...section,
+        accessKeySecret: decodeSecret(typeof section.accessKeySecret === 'string' ? section.accessKeySecret : ''),
+        securityToken: decodeSecret(typeof section.securityToken === 'string' ? section.securityToken : '')
+      });
+    }
     return result;
   }
   function save(settings) {
     const saved = { version: 1 };
     if (settings.smtp) saved.smtp = { ...settings.smtp, password: cipher.encrypt(settings.smtp.password) };
     if (settings.turnstile) saved.turnstile = { ...settings.turnstile, secretKey: cipher.encrypt(settings.turnstile.secretKey) };
+    if (settings.phoneAuth) {
+      // 只持久化归一化后的字段，并加密两个密钥；其余已存在的配置段不受影响。
+      const normalized = phoneAuth.normalizeConfig(settings.phoneAuth, settings.phoneAuth);
+      saved.phoneAuth = {
+        ...normalized,
+        accessKeySecret: cipher.encrypt(normalized.accessKeySecret),
+        securityToken: cipher.encrypt(normalized.securityToken)
+      };
+    }
     const directory = path.dirname(file);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;

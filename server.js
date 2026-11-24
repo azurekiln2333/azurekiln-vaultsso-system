@@ -32,6 +32,8 @@ const { verifyTurnstile } = require('./services/turnstile');
 const { generateSecret, matchingTotpCounter, buildOtpauthUri } = require('./services/totp');
 const phoneNumbers = require('./services/phone');
 const huawei = require('./services/huawei');
+const phoneAuth = require('./services/phone-auth');
+const tianyi = require('./services/tianyi');
 const moderation = require('./services/moderation');
 const { mergeHuaweiAccount, AccountMergeError } = require('./services/account-merge');
 const { mergeOidcAccount } = require('./services/oidc-account-merge');
@@ -77,7 +79,8 @@ setInterval(() => {
 // 这些端点由原生 App / 服务端直接调用，不经过浏览器，因此按机器调用校验来源。
 const OIDC_EMAIL_SEND_PATH = '/api/v1/auth/oauth/oidc/email/send';
 const ACCOUNT_ERASE_PATH = '/oauth2/account/erase';
-const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete', OIDC_EMAIL_SEND_PATH, ACCOUNT_ERASE_PATH]);
+const MACHINE_ENDPOINTS = new Set([HUAWEI_QUICK_LOGIN_PATH, HUAWEI_BIND_PATH, HUAWEI_SKIP_PATH, '/api/v1/auth/oauth/oidc/complete', OIDC_EMAIL_SEND_PATH, ACCOUNT_ERASE_PATH,
+  '/api/auth/phone/app/login', '/api/auth/phone/sms/send', '/api/auth/phone/sms/login']);
 
 let User;
 let Authenticator;
@@ -653,7 +656,7 @@ const OIDC_CONFIG = {
 // 提供方类型：通用 OIDC，以及需要专用协议的华为账号一键登录。
 const PROVIDER_TYPE_OIDC = 'oidc';
 const PROVIDER_TYPE_HUAWEI = 'huawei_quicklogin';
-const PROVIDER_TYPES = new Set([PROVIDER_TYPE_OIDC, PROVIDER_TYPE_HUAWEI]);
+const PROVIDER_TYPES = new Set([PROVIDER_TYPE_OIDC, PROVIDER_TYPE_HUAWEI, 'tianyi_web', 'tianyi_h5']);
 const USERINFO_METHODS = new Set(['GET', 'POST']);
 const USERINFO_TOKEN_IN = new Set(['header', 'body_form']);
 let OIDC_PROVIDERS = Object.create(null);
@@ -783,10 +786,29 @@ function isOidcProvider(config) {
   return (config?.providerType || PROVIDER_TYPE_OIDC) === PROVIDER_TYPE_OIDC;
 }
 
+function isTianyiProvider(config) {
+  return ['tianyi_web', 'tianyi_h5'].includes(config?.providerType);
+}
+
+function isTianyiEnabled(config) {
+  return Boolean(isTianyiProvider(config) && config.enabled !== false
+    && typeof config.clientId === 'string' && config.clientId.trim()
+    && typeof config.clientSecret === 'string' && config.clientSecret.trim()
+    && !config.credentialError);
+}
+
+function validTianyiPendingProvider(pending, context) {
+  if (pending.source !== 'external') return true;
+  const config = getOidcProviderConfig(pending.provider);
+  if (!isTianyiProvider(config) && context.tianyiAppId === undefined && context.tianyiType === undefined) return true;
+  return isTianyiEnabled(config) && context.tianyiAppId === config.clientId
+    && context.tianyiType === config.providerType;
+}
+
 function getConfiguredOidcProviders() {
   const keys = Object.keys(OIDC_PROVIDERS);
   if (!keys.length) return [];
-  return keys.map(getOidcProviderConfig).filter(config => isOidcProvider(config) && isOidcEnabled(config));
+  return keys.map(getOidcProviderConfig).filter(config => (isOidcProvider(config) && isOidcEnabled(config)) || isTianyiEnabled(config));
 }
 
 // 华为一键登录不是 OIDC：只需要凭据和换码地址，不参与通用 OIDC 发现流程。
@@ -1552,7 +1574,7 @@ async function createSecondFactorRecord({ user, returnTo, factor, source, extraC
     await issueEmailVerificationCode({ email: user.email, purpose: EMAIL_PURPOSE_LOGIN, userId: user.id });
   }
   const record = await codes.create({
-    email: user.email, userId: user.id, purpose: source === 'password' ? 'password_mfa' : 'oidc_mfa',
+    email: user.email, userId: user.id, purpose: source === 'password' ? 'password_mfa' : source === 'phone' ? 'phone_mfa' : 'oidc_mfa',
     codeHash: pendingChallengeHash(challenge), expiresAt,
     pendingContext: { returnTo: getOidcReturnPath(returnTo), sessionDays: DEFAULT_SESSION_DAYS, ...extraContext }
   });
@@ -1580,15 +1602,15 @@ const OIDC_PENDING_HEADER = 'x-oidc-pending';
 async function getPendingOidcLogin(req) {
   const supplied = normalizeText(req.get(OIDC_PENDING_HEADER)) || normalizeText(req.body?.pending_token);
   const pending = validateToken(supplied || req.cookies[OIDC_PENDING_COOKIE], 'oidc_pending');
-  if (!pending) return null;
-  if (pending.source !== 'password') {
+  if (!pending || !['password', 'external', 'huawei', 'phone'].includes(pending.source)) return null;
+  if (pending.source !== 'password' && pending.source !== 'phone') {
     await refreshOidcProvidersFromDatabase();
     // External pending logins may originate from either OIDC or Huawei.
     const providerConfig = getOidcProviderConfig(pending.provider);
-    if (!isOidcEnabled(providerConfig) && !isHuaweiEnabled(providerConfig)) return null;
+    if (!isOidcEnabled(providerConfig) && !isHuaweiEnabled(providerConfig) && !isTianyiEnabled(providerConfig)) return null;
   }
   const record = await EmailVerificationCode.findById(pending.jti);
-  const purpose = pending.source === 'password' ? 'password_mfa' : 'oidc_mfa';
+  const purpose = pending.source === 'password' ? 'password_mfa' : pending.source === 'phone' ? 'phone_mfa' : 'oidc_mfa';
   if (!record || record.purpose !== purpose || record.user_id !== pending.sub || record.consumed_at
       || new Date(record.expires_at) <= new Date()
       || record.code_hash !== crypto.createHash('sha256').update(pending.challenge).digest('hex')) return null;
@@ -1601,6 +1623,8 @@ async function getPendingOidcLogin(req) {
   if (sessionDays === null) return null;
   context.sessionDays = sessionDays;
   if (pending.source === 'huawei' && (!context.huawei || typeof context.huawei !== 'object')) return null;
+  if (pending.source === 'phone' && !phoneIntegration.validContext(context.phone)) return null;
+  if (!validTianyiPendingProvider(pending, context)) return null;
   pending.returnTo = context.returnTo;
   const user = await User.findById(pending.sub);
   if (!user || isUserBanned(user) || pending.securityState !== pendingLoginSecurityState(user)) return null;
@@ -2512,7 +2536,7 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
   if (sessionDays === null) return invalidSessionDuration(res);
   await refreshOidcProvidersFromDatabase();
   const config = getOidcProviderConfig(req.query.provider);
-  if (!config || !isOidcEnabled(config)) {
+  if (!config || (!isOidcProvider(config) || !isOidcEnabled(config)) && !isTianyiEnabled(config)) {
     return res.status(503).json({
       error: 'oidc_not_configured',
       error_description: 'OIDC login is not configured'
@@ -2529,8 +2553,11 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
       || Date.now() - new Date(req.authSession.created_at).getTime() >= 5 * 60 * 1000)) {
     return res.status(403).json({ error: 'reauthentication_required', error_description: '处理第三方账号前，请重新登录' });
   }
-  const endpoints = await resolveOidcEndpoints(config);
-  const state = crypto.randomBytes(32).toString('base64url');
+  if (isTianyiProvider(config) && mergeIntent) {
+    return res.status(400).json({ error: 'invalid_request', error_description: '天翼账号暂不支持合并，请使用绑定' });
+  }
+  const endpoints = isTianyiProvider(config) ? null : await resolveOidcEndpoints(config);
+  const state = isTianyiProvider(config) ? tianyi.generateState() : crypto.randomBytes(32).toString('base64url');
   const nonce = crypto.randomBytes(32).toString('base64url');
   const stateData = {
     sessionDays,
@@ -2543,6 +2570,7 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
     mergeUserId: mergeIntent ? currentUser.id : '',
     mergeSessionId: mergeIntent ? req.authSession.id : '',
     provider: config.providerKey,
+    ...(isTianyiProvider(config) ? { providerClientId: config.clientId, providerType: config.providerType } : {}),
     // 发起登录时所属的网关客户端，供回调建号时的注册策略判断使用。
     clientId: normalizeText(req.query.client_id)
   };
@@ -2555,7 +2583,7 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
     nonce
   };
 
-  if (config.pkceEnabled) {
+  if (!isTianyiProvider(config) && config.pkceEnabled) {
     const codeVerifier = crypto.randomBytes(48).toString('base64url');
     const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
     stateData.codeVerifier = codeVerifier;
@@ -2569,6 +2597,9 @@ app.get('/api/v1/auth/oauth/oidc/login', asyncHandler(async (req, res) => {
     sameSite: 'lax',
     maxAge: OIDC_STATE_MAX_AGE
   });
+  if (isTianyiProvider(config)) {
+    return res.redirect(tianyi.buildAuthorizationUrl(config, { redirectUri: getOidcCallbackUrl(req), state }).url);
+  }
   return res.redirect(`${endpoints.authorizeUrl}${endpoints.authorizeUrl.includes('?') ? '&' : '?'}${new URLSearchParams(authorizeParams).toString()}`);
 }));
 
@@ -2590,7 +2621,22 @@ app.get('/api/v1/auth/oauth/oidc/config', asyncHandler(async (req, res) => {
 app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
   const cookieState = decodeOidcState(req.cookies[OIDC_STATE_COOKIE]);
   res.clearCookie(OIDC_STATE_COOKIE, { httpOnly: true, secure: RUNTIME.secureCookies, sameSite: 'lax', path: '/' });
-  const queryState = normalizeText(req.query.state);
+  let queryState = normalizeText(req.query.state);
+  let code = normalizeText(req.query.code);
+  if (cookieState && ['tianyi_web', 'tianyi_h5'].includes(cookieState.providerType)) {
+    try {
+      await refreshOidcProvidersFromDatabase();
+      const provider = getOidcProviderConfig(cookieState.provider);
+      if (!isTianyiEnabled(provider) || provider.clientId !== cookieState.providerClientId || provider.providerType !== cookieState.providerType) {
+        throw new Error('Tianyi configuration changed');
+      }
+      const callback = tianyi.parseCallback(provider, req.query);
+      queryState = callback.state;
+      code = callback.code;
+    } catch {
+      return res.redirect(oidcErrorRedirect(cookieState, '天翼授权回调无效或已过期'));
+    }
+  }
   const stateIsValid = cookieState && queryState && cookieState.state === queryState &&
     Number(cookieState.createdAt) <= Date.now() && Number(cookieState.createdAt) + OIDC_STATE_MAX_AGE >= Date.now();
 
@@ -2601,7 +2647,6 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
     return res.redirect(oidcErrorRedirect(cookieState, req.query.error_description || req.query.error));
   }
 
-  const code = normalizeText(req.query.code);
   if (!code) {
     return res.redirect(oidcErrorRedirect(cookieState, 'OIDC authorization code is missing'));
   }
@@ -2617,9 +2662,47 @@ app.get(OIDC_CALLBACK_PATH, asyncHandler(async (req, res) => {
       }
     }
     const config = getOidcProviderConfig(cookieState.provider);
-    if (!config || !isOidcEnabled(config)) throw new Error('OIDC provider is no longer configured');
+    if (!config || (!isOidcProvider(config) || !isOidcEnabled(config)) && !isTianyiEnabled(config)) throw new Error('OIDC provider is no longer configured');
     const sessionDays = normalizeSessionDays(cookieState.sessionDays);
     if (sessionDays === null) throw new Error('Invalid login duration');
+    if (isTianyiProvider(config)) {
+      if (cookieState.providerClientId !== config.clientId || cookieState.providerType !== config.providerType || cookieState.mergeUserId) {
+        throw new Error('天翼应用配置已变化，请重新登录');
+      }
+      const replay = await RateLimit.consume(`tianyi-state:${config.providerKey}:${cookieState.state}`, 1, OIDC_STATE_MAX_AGE);
+      if (!replay.allowed) throw new Error('天翼授权状态已使用，请重新登录');
+      const identity = await tianyi.exchangeCode(config, code);
+      const completed = await require('./services/tianyi-identity')({ pool, config, identity, state: cookieState,
+        isUserBanned, isSettingEnabled,
+        fail(status, message) { throw new AccountTransactionAbort(status, 'auth.external.failed', message); },
+        async work(user, connection) {
+          // Recheck the current app configuration after the external exchange.
+          const fresh = getOidcProviderConfig(config.providerKey);
+          if (!isTianyiEnabled(fresh) || fresh.clientId !== config.clientId || fresh.clientSecret !== config.clientSecret || fresh.providerType !== config.providerType) {
+            throw new AccountTransactionAbort(401, 'auth.external.failed', '天翼应用配置已变化，请重试');
+          }
+          const factor = !cookieState.linkUserId && (user.totp_enabled ? 'totp'
+            : await isSettingEnabled('login_email_code', connection) && isUsableMailbox(user.email) ? 'email' : '');
+          if (factor) {
+            const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+            const stage = await createSecondFactorRecord({ user, returnTo: cookieState.returnTo, factor, source: 'external',
+              extraContext: { sessionDays, tianyiAppId: config.clientId, tianyiType: config.providerType },
+              expiresAt, codes: new EmailVerificationCodeModel(connection), issueCode: false });
+            return { stage: { ...stage, user, factor, expiresAt, provider: config.providerKey, source: 'external' } };
+          }
+          if (cookieState.linkUserId) return { linked: true };
+          return { issued: await issueLoginWithinTransaction(req, user, connection, { sessionDays }) };
+        }
+      });
+      if (completed.stage) {
+        if (completed.stage.factor === 'email') await issueEmailVerificationCode({ email: completed.stage.user.email,
+          purpose: EMAIL_PURPOSE_LOGIN, userId: completed.stage.user.id });
+        publishSecondFactor(res, completed.stage.user, completed.stage);
+        return res.redirect('/oauth2/mfa');
+      }
+      if (completed.issued) applyIssuedLogin(req, res, completed.issued);
+      return res.redirect(getOidcReturnPath(cookieState.returnTo));
+    }
     const endpoints = await resolveOidcEndpoints(config);
     const tokenPayload = await exchangeOidcCode(code, cookieState.codeVerifier, endpoints, getOidcCallbackUrl(req), config);
     if (config.validateIdToken && !tokenPayload.id_token) {
@@ -3485,11 +3568,17 @@ app.post('/api/v1/auth/oauth/oidc/complete', asyncHandler(async (req, res) => {
     const context = parent && readPendingContext(parent);
     const sessionDays = normalizeSessionDays(context?.sessionDays);
     if (!parent || parent.consumed_at || parent.user_id !== current.id
-        || parent.purpose !== (pending.source === 'password' ? 'password_mfa' : 'oidc_mfa')
+        || parent.purpose !== (pending.source === 'password' ? 'password_mfa' : pending.source === 'phone' ? 'phone_mfa' : 'oidc_mfa')
         || parent.code_hash !== pendingChallengeHash(pending.challenge)
         || new Date(parent.expires_at).getTime() <= Date.now() || pending.exp * 1000 <= Date.now()
         || !context || !isSafeFrontendPath(context.returnTo) || sessionDays === null) {
       throw new AccountTransactionAbort(401, 'auth.mfa.expired', '登录验证已过期，请重新登录');
+    }
+    if (pending.source === 'phone' && !phoneIntegration.validContext(context.phone)) {
+      throw new AccountTransactionAbort(401, 'auth.mfa.expired', '手机号登录配置已变化，请重新开始');
+    }
+    if (!validTianyiPendingProvider(pending, context)) {
+      throw new AccountTransactionAbort(401, 'auth.mfa.expired', '天翼应用配置已变化，请重新登录');
     }
     if (!await codes.incrementAttempts(record.id, 5)) {
       throw new AccountTransactionAbort(429, 'auth.mfa.locked', '尝试次数过多，请重新登录');
@@ -3535,6 +3624,12 @@ app.post('/api/v1/auth/oauth/oidc/complete', asyncHandler(async (req, res) => {
       }
       const issued = await issueLoginWithinTransaction(req, current, connection, { sessionDays });
       return { status: 200, body: { redirect: getOidcReturnPath(pending.returnTo) }, issued };
+    } else if (pending.source === 'phone') {
+      return phoneIntegration.finishPending(req, current, context.phone, connection);
+    } else if (pending.source === 'external' && context.tianyiAppId) {
+      // Tianyi joins the same transaction/publish boundary as direct phone login.
+      const issued = await issueLoginWithinTransaction(req, current, connection, { sessionDays });
+      return { status: 200, body: { redirect: getOidcReturnPath(context.returnTo) }, issued };
     } else if (pending.source === 'huawei' && context.huawei.oauth) {
       const oauth = context.huawei.oauth;
       const authorized = await buildAuthorizationResponse(current, oauth, connection);
@@ -6031,7 +6126,7 @@ function serializeAdminOidcProvider(config) {
     providerType: config.providerType || PROVIDER_TYPE_OIDC,
     huaweiUnionScope: normalizeText(config.huaweiUnionScope),
     enabled: config.enabled !== false,
-    configured: isOidcEnabled(config) || isHuaweiEnabled(config),
+    configured: isOidcEnabled(config) || isHuaweiEnabled(config) || isTianyiEnabled(config),
     clientId: config.clientId || '',
     clientSecretConfigured: Boolean(config.clientSecret),
     credentialError: Boolean(config.credentialError),
@@ -6142,6 +6237,11 @@ app.post('/api/admin/oidc', asyncHandler(async (req, res) => {
       return res.status(400).json({ error: 'invalid_request', error_description: `${key} must be a boolean` });
     }
   }
+  for (const key of ['clientId', 'clientSecret']) {
+    if (req.body[key] !== undefined && typeof req.body[key] !== 'string') {
+      return res.status(400).json({ error: 'invalid_request', error_description: `${key} must be a string` });
+    }
+  }
   for (const key of ['issuerUrl', 'discoveryUrl', 'authorizeUrl', 'tokenUrl', 'userinfoUrl', 'jwksUrl']) {
     if (req.body[key] && !isHttpUrl(req.body[key])) {
       return res.status(400).json({ error: 'invalid_request', error_description: `${key} must be a valid HTTPS endpoint` });
@@ -6156,6 +6256,12 @@ app.post('/api/admin/oidc', asyncHandler(async (req, res) => {
   const providerType = (normalizeText(req.body.providerType) || current?.provider_type || PROVIDER_TYPE_OIDC).toLowerCase();
   if (!PROVIDER_TYPES.has(providerType)) {
     return res.status(400).json({ error: 'invalid_request', error_description: `providerType 必须是 ${[...PROVIDER_TYPES].join(' 或 ')}` });
+  }
+  const clientId = req.body.clientId === undefined
+    ? (current?.client_id || '')
+    : normalizeText(req.body.clientId);
+  if (['tianyi_web', 'tianyi_h5'].includes(providerType) && !clientId) {
+    return res.status(400).json({ error: 'invalid_request', error_description: '天翼 Provider 必须填写 appId' });
   }
   const huaweiUnionScope = req.body.huaweiUnionScope === undefined
     ? current?.huawei_union_scope || '' : normalizeText(req.body.huaweiUnionScope);
@@ -6176,7 +6282,7 @@ app.post('/api/admin/oidc', asyncHandler(async (req, res) => {
   }
   const saved = await OidcProvider.upsert({
     providerKey, providerName, providerType, huaweiUnionScope, enabled: req.body.enabled !== false,
-    clientId: req.body.clientId, clientSecret: clientSecret ? encryptOidcSecret(clientSecret) : current.client_secret,
+    clientId, clientSecret: clientSecret ? encryptOidcSecret(clientSecret) : current.client_secret,
     issuerUrl: req.body.issuerUrl, discoveryUrl: req.body.discoveryUrl, authorizeUrl: req.body.authorizeUrl,
     tokenUrl: req.body.tokenUrl, userinfoUrl: req.body.userinfoUrl, jwksUrl: req.body.jwksUrl,
     scopes: req.body.scopes, tokenAuthMethod: req.body.tokenAuthMethod, clockTolerance: req.body.clockTolerance ?? current?.clock_tolerance,
@@ -6335,6 +6441,24 @@ app.get('/', (req, res) => {
   res.redirect('/oauth2/authorize');
 });
 
+function getPhoneAuthConfig() {
+  return adminSettingsOverrides.phoneAuth || phoneAuth.fromEnvironment();
+}
+
+const phoneIntegration = require('./services/phone-routes')({
+  app, asyncHandler, getPool: () => pool, getConfig: getPhoneAuthConfig, secret: JWT_SECRET, publicBaseUrl: PUBLIC_BASE_URL,
+  saveConfig(config) {
+    const next = { ...adminSettingsOverrides, phoneAuth: config };
+    adminSettingsStore.save(next);
+    adminSettingsOverrides = next;
+  },
+  AccountTransactionAbort, normalizeSessionDays, getOidcReturnPath, isSafeFrontendPath, validateAuthorizationRequest,
+  buildAuthorizationResponse, isSettingEnabled, isUserBanned, isUsableMailbox, getClientIp, serializeUser,
+  requireAdminUser, getAuthenticatedUser, recordAdminLog, recordLoginLog, pendingLoginSecurityState,
+  createSecondFactorRecord, publishSecondFactor, passwordStagePayload, issueEmailVerificationCode,
+  emailLoginPurpose: EMAIL_PURPOSE_LOGIN, issueLoginWithinTransaction, applyIssuedLogin
+});
+
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   if (normalizeGuardPath(req.path) === ACCOUNT_ERASE_PATH) {
@@ -6346,6 +6470,11 @@ app.use((err, req, res, next) => {
     });
   }
   if (err instanceof AccountTransactionAbort) return res.status(err.status).json(err.body);
+  if (err instanceof phoneAuth.PhoneAuthError || err instanceof tianyi.TianyiError) {
+    const status = err.code === 'not_configured' || err.code === 'config_invalid' ? 503
+      : err.code.startsWith('upstream') ? 502 : 400;
+    return res.status(status).json({ error: err.code, error_description: err.message });
+  }
   if (err instanceof moderation.ModerationError) {
     return res.status(err.status).json({ error: err.code, error_description: err.message });
   }

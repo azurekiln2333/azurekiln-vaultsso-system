@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/account-bindings.md","reason":"Phone ownership/verification/concurrency"}
+{"file":".trellis/spec/backend/session-duration.md","reason":"Fixed browser lifetime and native handoff"}
+{"file":".trellis/spec/backend/browser-accounts.md","reason":"Completed auth enrollment only"}
+{"file":".trellis/spec/backend/registration-policy.md","reason":"Preserve global/client account creation gates"}
+{"file":".trellis/spec/frontend/surface-guidelines.md","reason":"Existing UI/cache contracts; validation cloud-only"}
+{"file":".trellis/tasks/11-24-carrier-phone-auth/research/auth-integration.md","reason":"Auth integration map"}
+{"file":".trellis/tasks/11-24-carrier-phone-auth/research/cloud-validation.md","reason":"User cloud-only validation requirement"}
+{"file":".trellis/tasks/11-24-carrier-phone-auth/research/operator-oauth.md","reason":"Official Tianyi encrypted authorization contract"}

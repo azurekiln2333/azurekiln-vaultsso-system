@@ -33,6 +33,43 @@ delete process.env.TURNSTILE_SECRET_KEY;
 delete process.env.MODERATION_BASE_URL;
 delete process.env.MODERATION_APP_ID;
 delete process.env.MODERATION_API_KEY;
+
+// Carrier / SMS provider isolation. Every credential, endpoint, enable-flag and app setting is
+// cleared BEFORE server.js loads, so the default carrier configuration is disabled and
+// unconfigured. A default official Aliyun/Tianyi URL must never trigger a network probe here.
+for (const key of Object.keys(process.env)) {
+  if (key.startsWith('PHONE_AUTH_')) delete process.env[key];
+}
+process.env.PHONE_AUTH_H5_ENABLED = 'false';
+process.env.PHONE_AUTH_APP_ENABLED = 'false';
+process.env.PHONE_AUTH_SMS_ENABLED = 'false';
+process.env.PHONE_AUTH_ALLOW_REGISTRATION = 'false';
+
+// Egress guard: the carrier/SMS/Tianyi adapters use Node's global fetch. Tests that inject a
+// local fake transport replace `globalThis.fetch` explicitly; anything else must be loopback or
+// it throws before a real provider request leaves the process. Loopback is allowed so tests can
+// stand up their own 127.0.0.1 fixture server. Install this before requiring server.js.
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+function isLoopbackTarget(url) {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+const realFetch = globalThis.fetch;
+const egressGuard = async function guardedFetch(input, init) {
+  const target = typeof input === 'string' ? input : input && input.url;
+  // The fixture's own base URL is loopback, so ordinary test requests pass the guard.
+  if (!isLoopbackTarget(target)) {
+    throw Object.assign(new Error(`Blocked non-loopback network egress in tests: ${target}`), {
+      code: 'EGRESS_BLOCKED'
+    });
+  }
+  return realFetch(input, init);
+};
+// Node's fetch relies on its legacy brand checks, so bind it rather than copying the function.
+Object.defineProperty(globalThis, 'fetch', { value: egressGuard, writable: true, configurable: true });
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-security-tests-'));
 process.env.ADMIN_SETTINGS_FILE = path.join(directory, 'admin-settings.json');
 const key = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;

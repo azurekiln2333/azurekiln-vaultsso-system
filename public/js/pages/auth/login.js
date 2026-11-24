@@ -676,6 +676,18 @@ const i18n = window.VaultI18n;
       document.querySelector('.account-select')?.focus();
     }
 
+    function isCredentialActionBusy() {
+      return authActionActive
+        || loginForm.dataset.busy === 'true'
+        || registerForm.dataset.busy === 'true'
+        || phoneH5Busy
+        || phoneSmsBusy;
+    }
+
+    function setAuthTabsBusy(busy) {
+      tabButtons.forEach(function (button) { button.disabled = busy; });
+    }
+
     // The back action is only reachable in add mode while a saved account still
     // exists. Block it during a credential submit so the active request cannot
     // race the chooser; modeRevision invalidation covers discovery responses.
@@ -791,8 +803,9 @@ const i18n = window.VaultI18n;
     }
 
     async function submitAuthForm(form, endpoint, loadingKey) {
-      if (form.dataset.busy === 'true') return;
+      if (isCredentialActionBusy()) return;
       form.dataset.busy = 'true';
+      setAuthTabsBusy(true);
       setStatus('', '');
       const requestModeRevision = modeRevision;
       const requestFeedbackRevision = feedbackRevision;
@@ -875,6 +888,7 @@ const i18n = window.VaultI18n;
       } finally {
         form.dataset.busy = 'false';
         submitButton.disabled = false;
+        setAuthTabsBusy(false);
         setBackToAccountsBusy(false);
         if (form === loginForm) {
           applyLoginStepLabels();
@@ -1187,6 +1201,7 @@ const i18n = window.VaultI18n;
     renderPage();
     hydrateAuthConfig();
     hydrateOidcLogin();
+    hydratePhoneAuthConfig();
     i18n.bindLanguageButtons(document);
     hydrateBrowserAccounts();
 
@@ -1335,6 +1350,413 @@ const i18n = window.VaultI18n;
       }
       const select = event.target.closest('.account-select');
       if (select) switchAccount(select.dataset.accountId);
+    });
+
+    const phoneAuthBlock = document.getElementById('phoneAuthBlock');
+    const phoneH5Section = document.getElementById('phoneH5Section');
+    const phoneH5Btn = document.getElementById('phoneH5Btn');
+    const phoneSmsForm = document.getElementById('phoneSmsForm');
+    const phoneSmsPhone = document.getElementById('phoneSmsPhone');
+    const phoneSmsSendBtn = document.getElementById('phoneSmsSendBtn');
+    const phoneSmsCode = document.getElementById('phoneSmsCode');
+    const phoneAuthStatus = document.getElementById('phoneAuthStatus');
+
+    // Phone channel capabilities from the server. Every channel stays hidden and
+    // inert until the server reports it enabled and globally/policy available.
+    let phoneAuthConfig = null;
+    let phoneAuthStatusRevision = 0;
+    let phoneSmsChallengeId = '';
+    let phoneSmsBusy = false;
+    let phoneSmsCooldownTimer = null;
+    let phoneSdkPromise = null;
+
+    function setPhoneAuthStatus(kind, message, requestRevision = phoneAuthStatusRevision) {
+      if (requestRevision !== phoneAuthStatusRevision) return;
+      if (!kind || !message) {
+        phoneAuthStatus.className = 'status-box';
+        phoneAuthStatus.textContent = '';
+        return;
+      }
+      const colorMap = { error: 'is-error', success: 'is-success' };
+      phoneAuthStatus.className = `status-box is-visible ${colorMap[kind] || 'is-info'}`;
+      phoneAuthStatus.textContent = message;
+      phoneAuthStatus.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    function clearPhoneAuthStatus() {
+      phoneAuthStatusRevision += 1;
+      setPhoneAuthStatus('', '');
+    }
+
+    function renderPhoneAuthChannels() {
+      const h5 = Boolean(phoneAuthConfig?.h5?.available);
+      const sms = Boolean(phoneAuthConfig?.sms?.available);
+      phoneAuthBlock.hidden = !(h5 || sms);
+      phoneH5Section.hidden = !h5;
+      phoneSmsForm.hidden = !sms;
+    }
+
+    function normalizeMainlandPhone(raw) {
+      const compact = String(raw || '').trim().replace(/[\s\-().\u3000]/g, '');
+      if (!compact || compact.includes('*')) return '';
+      let digits;
+      if (compact.startsWith('+')) {
+        if (!compact.startsWith('+86')) return '';
+        digits = compact.slice(3);
+      } else if (compact.startsWith('00')) {
+        if (!compact.startsWith('0086')) return '';
+        digits = compact.slice(4);
+      } else {
+        digits = compact;
+        if (digits.startsWith('86') && digits.length > 11) digits = digits.slice(2);
+      }
+      return /^1[3-9]\d{9}$/.test(digits) ? digits : '';
+    }
+
+    function buildPhoneOauthPayload() {
+      const payload = {};
+      ['client_id', 'redirect_uri', 'scope', 'state', 'nonce', 'response_type'].forEach(function (key) {
+        if (urlParams.has(key)) payload[key] = oauthParams[key];
+      });
+      if (urlParams.has('code_challenge')) {
+        payload.code_challenge = oauthParams.code_challenge;
+        payload.code_challenge_method = oauthParams.code_challenge_method;
+      }
+      payload.session_days = Number(loginSessionDays.value) || 1;
+      return payload;
+    }
+
+    function applyPhoneLoginResult(result) {
+      if (result?.mfa_url) {
+        phoneSmsCode.value = '';
+        window.location.assign('/oauth2/mfa');
+        return true;
+      }
+      if (result?.redirect) {
+        window.location.assign(result.redirect);
+        return true;
+      }
+      return false;
+    }
+
+    async function hydratePhoneAuthConfig() {
+      try {
+        const response = await fetch('/api/auth/phone/config', { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) {
+          phoneAuthConfig = null;
+          renderPhoneAuthChannels();
+          return;
+        }
+        phoneAuthConfig = await response.json();
+      } catch (error) {
+        console.error('Phone auth config request failed:', error);
+        phoneAuthConfig = null;
+      }
+      renderPhoneAuthChannels();
+    }
+
+    function loadPhoneSdk(sdkUrl) {
+      // Resolve the official `PhoneNumberServer` constructor exported by the SDK.
+      if (typeof window.PhoneNumberServer === 'function') return Promise.resolve(window.PhoneNumberServer);
+      if (!sdkUrl) return Promise.reject(new Error('missing sdk url'));
+      if (!phoneSdkPromise) {
+        phoneSdkPromise = new Promise(function (resolve, reject) {
+          const script = document.createElement('script');
+          script.src = sdkUrl;
+          script.async = true;
+          script.charset = 'utf-8';
+          script.onload = function () {
+            if (typeof window.PhoneNumberServer === 'function') resolve(window.PhoneNumberServer);
+            else reject(new Error('PhoneNumberServer missing'));
+          };
+          script.onerror = function () {
+            script.remove();
+            reject(new Error('sdk load failed'));
+          };
+          document.head.appendChild(script);
+        }).catch(function (error) {
+          phoneSdkPromise = null;
+          throw error;
+        });
+      }
+      return phoneSdkPromise;
+    }
+
+    let phoneH5Busy = false;
+    function releaseH5Busy(originalLabel) {
+      phoneH5Busy = false;
+      phoneH5Btn.disabled = false;
+      phoneH5Btn.textContent = originalLabel;
+      setAuthTabsBusy(false);
+    }
+
+    async function startH5Login() {
+      if (isCredentialActionBusy()) return;
+      phoneH5Busy = true;
+      setAuthTabsBusy(true);
+      clearPhoneAuthStatus();
+      const requestRevision = phoneAuthStatusRevision;
+      const requestModeRevision = modeRevision;
+      const originalLabel = phoneH5Btn.textContent;
+      phoneH5Btn.disabled = true;
+      phoneH5Btn.textContent = i18n.t('auth.phone.h5_loading');
+      setBackToAccountsBusy(true);
+
+      // The provider flow is asynchronous and callback-driven. Hold the busy lock
+      // until a terminal outcome (success, error, or the provider closing the
+      // consent page) so a single tap can never issue two tokens or two logins.
+      let settled = false;
+      let exchangingProof = false;
+      const finish = function () {
+        if (settled) return;
+        settled = true;
+        setBackToAccountsBusy(false);
+        releaseH5Busy(originalLabel);
+      };
+      const stale = function () {
+        return requestRevision !== phoneAuthStatusRevision || requestModeRevision !== modeRevision;
+      };
+
+      try {
+        const tokenResponse = await fetch('/api/auth/phone/h5/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(buildPhoneOauthPayload())
+        });
+        const tokenResult = await tokenResponse.json().catch(function () { return {}; });
+        if (stale()) return finish();
+        if (!tokenResponse.ok) {
+          setPhoneAuthStatus('error', i18n.resolveMessage(tokenResult, 'common.network_error'), requestRevision);
+          return finish();
+        }
+
+        const PhoneNumberServer = await loadPhoneSdk(phoneAuthConfig?.h5?.sdkUrl || '');
+        if (stale()) return finish();
+        const server = new PhoneNumberServer();
+
+        // Only the provider's real consent + masked-number flow grants a token;
+        // no client-side number is ever trusted.
+        server.checkLoginAvailable({
+          accessToken: tokenResult.accessToken,
+          jwtToken: tokenResult.jwtToken,
+          success: function (res) {
+            if (stale()) return finish();
+            if (!res || String(res.code) !== '600000') {
+              setPhoneAuthStatus('error', i18n.t('auth.phone.h5_unavailable'), requestRevision);
+              return finish();
+            }
+            server.getLoginToken({
+              authPageOption: {
+                // Explicit sign-in wording; never reuse the account-chooser "continue as" text.
+                btnText: i18n.t('auth.phone.h5_confirm'),
+                isDialog: true,
+                manualClose: true
+              },
+              success: async function (tokenRes) {
+                if (settled || stale()) return finish();
+                if (!tokenRes || String(tokenRes.code) !== '600000' || !tokenRes.spToken) {
+                  setPhoneAuthStatus('error', i18n.t('auth.phone.h5_unavailable'), requestRevision);
+                  return finish();
+                }
+                exchangingProof = true;
+                try {
+                  const loginResponse = await fetch('/api/auth/phone/h5/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ challengeId: tokenResult.challengeId, spToken: tokenRes.spToken })
+                  });
+                  const loginResult = await loginResponse.json().catch(function () { return {}; });
+                  if (stale()) return finish();
+                  if (!loginResponse.ok) {
+                    setPhoneAuthStatus('error', i18n.resolveMessage(loginResult, 'common.network_error'), requestRevision);
+                    return finish();
+                  }
+                  if (!applyPhoneLoginResult(loginResult)) {
+                    setPhoneAuthStatus('error', i18n.t('common.network_error'), requestRevision);
+                  }
+                } catch (error) {
+                  console.error('Phone H5 login failed:', error);
+                  setPhoneAuthStatus('error', i18n.t('common.network_error'), requestRevision);
+                } finally {
+                  // Keep the consent page and cross-method busy lock until the
+                  // server has settled the provider proof exchange.
+                  try {
+                    if (typeof server.closeLoginPage === 'function') server.closeLoginPage();
+                  } catch (error) { /* ignore provider close errors */ }
+                  exchangingProof = false;
+                  finish();
+                }
+              },
+              error: function () {
+                if (settled) return;
+                if (stale()) return finish();
+                setPhoneAuthStatus('error', i18n.t('auth.phone.h5_unavailable'), requestRevision);
+                finish();
+              },
+              watch: function (status) {
+                // The official SDK reports status 2 when the user presses back or close.
+                if (Number(status) === 2 && !exchangingProof) finish();
+              }
+            });
+          },
+          error: function () {
+            if (stale()) return finish();
+            setPhoneAuthStatus('error', i18n.t('auth.phone.h5_unavailable'), requestRevision);
+            finish();
+          }
+        });
+      } catch (error) {
+        console.error('Phone H5 start failed:', error);
+        if (!stale()) setPhoneAuthStatus('error', i18n.t('auth.phone.sdk_unavailable'), requestRevision);
+        finish();
+      }
+    }
+
+    let phoneSmsRemaining = 0;
+    function renderPhoneSmsCooldown() {
+      if (phoneSmsRemaining > 0) {
+        phoneSmsSendBtn.disabled = true;
+        phoneSmsSendBtn.textContent = i18n.t('auth.phone.sms_resend_in', { seconds: phoneSmsRemaining });
+        return;
+      }
+      phoneSmsSendBtn.disabled = false;
+      phoneSmsSendBtn.textContent = i18n.t('auth.phone.sms_send');
+    }
+
+    function startPhoneSmsCooldown(seconds) {
+      if (phoneSmsCooldownTimer) clearInterval(phoneSmsCooldownTimer);
+      phoneSmsRemaining = Math.max(0, Number(seconds) || 0);
+      renderPhoneSmsCooldown();
+      if (!phoneSmsRemaining) return;
+      phoneSmsCooldownTimer = setInterval(function () {
+        phoneSmsRemaining = Math.max(0, phoneSmsRemaining - 1);
+        if (!phoneSmsRemaining) {
+          clearInterval(phoneSmsCooldownTimer);
+          phoneSmsCooldownTimer = null;
+        }
+        renderPhoneSmsCooldown();
+      }, 1000);
+    }
+
+    async function sendPhoneSmsCode() {
+      if (isCredentialActionBusy()) return;
+      clearPhoneAuthStatus();
+      const requestRevision = phoneAuthStatusRevision;
+      const requestModeRevision = modeRevision;
+      const requestedPhone = normalizeMainlandPhone(phoneSmsPhone.value);
+      if (!requestedPhone) {
+        setPhoneAuthStatus('error', i18n.t('auth.phone.invalid'), requestRevision);
+        phoneSmsPhone.focus();
+        return;
+      }
+      phoneSmsPhone.disabled = true;
+      phoneSmsCode.disabled = true;
+      phoneSmsBusy = true;
+      setAuthTabsBusy(true);
+      setBackToAccountsBusy(true);
+      phoneSmsSendBtn.disabled = true;
+      phoneSmsSendBtn.textContent = i18n.t('auth.phone.sms_sending');
+      try {
+        const payload = buildPhoneOauthPayload();
+        payload.phone = requestedPhone;
+        const response = await fetch('/api/auth/phone/sms/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(function () { return {}; });
+        // Discard stale responses: mode changed, or the input now holds another number.
+        if (requestModeRevision !== modeRevision || normalizeMainlandPhone(phoneSmsPhone.value) !== requestedPhone) return;
+        if (!response.ok) {
+          setPhoneAuthStatus('error', i18n.resolveMessage(result, 'common.network_error'), requestRevision);
+          return;
+        }
+        phoneSmsChallengeId = result.challengeId || '';
+        setPhoneAuthStatus('success', i18n.resolveMessage(result, 'auth.status.code_sent'), requestRevision);
+        startPhoneSmsCooldown(result.retryAfter || 60);
+        phoneSmsCode.focus();
+      } catch (error) {
+        console.error('Phone SMS send failed:', error);
+        setPhoneAuthStatus('error', i18n.t('common.network_error'), requestRevision);
+      } finally {
+        phoneSmsBusy = false;
+        setAuthTabsBusy(false);
+        setBackToAccountsBusy(false);
+        phoneSmsPhone.disabled = false;
+        phoneSmsCode.disabled = false;
+        if (phoneSmsRemaining > 0) renderPhoneSmsCooldown();
+        else phoneSmsSendBtn.disabled = false;
+      }
+    }
+
+    async function submitPhoneSmsLogin() {
+      if (isCredentialActionBusy()) return;
+      clearPhoneAuthStatus();
+      const requestRevision = phoneAuthStatusRevision;
+      const requestModeRevision = modeRevision;
+      const code = String(phoneSmsCode.value || '').trim();
+      if (!phoneSmsChallengeId) {
+        setPhoneAuthStatus('error', i18n.t('auth.phone.sms_send'), requestRevision);
+        return;
+      }
+      if (!/^\d{6}$/.test(code)) {
+        setPhoneAuthStatus('error', i18n.t('auth.phone.sms_code_placeholder'), requestRevision);
+        phoneSmsCode.focus();
+        return;
+      }
+      phoneSmsBusy = true;
+      setAuthTabsBusy(true);
+      setBackToAccountsBusy(true);
+      const submitButton = phoneSmsForm.querySelector('.submit');
+      const originalLabel = submitButton.textContent;
+      submitButton.disabled = true;
+      submitButton.textContent = i18n.t('auth.phone.sms_verifying');
+      phoneSmsPhone.disabled = true;
+      phoneSmsCode.disabled = true;
+      try {
+        const response = await fetch('/api/auth/phone/sms/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ challengeId: phoneSmsChallengeId, code })
+        });
+        const result = await response.json().catch(function () { return {}; });
+        if (requestModeRevision !== modeRevision) return;
+        if (!response.ok) {
+          setPhoneAuthStatus('error', i18n.resolveMessage(result, 'common.network_error'), requestRevision);
+          phoneSmsCode.value = '';
+          phoneSmsCode.focus();
+          return;
+        }
+        if (!applyPhoneLoginResult(result)) {
+          setPhoneAuthStatus('error', i18n.t('common.network_error'), requestRevision);
+        }
+      } catch (error) {
+        console.error('Phone SMS login failed:', error);
+        setPhoneAuthStatus('error', i18n.t('common.network_error'), requestRevision);
+      } finally {
+        phoneSmsBusy = false;
+        setAuthTabsBusy(false);
+        setBackToAccountsBusy(false);
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+        phoneSmsPhone.disabled = false;
+        phoneSmsCode.disabled = false;
+      }
+    }
+
+    phoneH5Btn.addEventListener('click', startH5Login);
+    phoneSmsSendBtn.addEventListener('click', sendPhoneSmsCode);
+    phoneSmsForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitPhoneSmsLogin();
+    });
+    phoneSmsPhone.addEventListener('input', function () {
+      // A new number invalidates the code challenge issued for the previous one.
+      phoneSmsChallengeId = '';
     });
 
     if (urlParams.has('oidc_error')) {

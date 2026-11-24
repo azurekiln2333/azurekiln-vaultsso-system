@@ -93,6 +93,11 @@ class MemoryConnection {
 
   async commit() {
     if (!this.transactionPool) return;
+    // Exercise failures after the statements succeed but before transaction durability.
+    if (injectedCommitFailures > 0) {
+      injectedCommitFailures -= 1;
+      throw new Error('injected transaction commit failure');
+    }
     const merged = {};
     // Apply only this connection's writes so overlapping transactions keep unrelated commits.
     for (const key of Object.keys(this.snapshot)) {
@@ -612,6 +617,39 @@ class MemoryPool {
       return [this.emailVerificationCodes.filter(row => row.id === params[0]).map(row => clone(row)), []];
     }
 
+    // Phone challenge adapter variants: the same durable table scoped by a `phone_%` purpose
+    // namespace. Mirrors the real LIKE filter so a phone challenge can never match an email row.
+    if (lower === 'select * from email_verification_codes where id = ? and purpose like ?') {
+      const prefix = String(params[1] || '').replace(/%$/, '');
+      return [this.emailVerificationCodes
+        .filter(row => row.id === params[0] && String(row.purpose || '').startsWith(prefix))
+        .map(row => clone(row)), []];
+    }
+
+    if (lower === 'update email_verification_codes set attempts = attempts + 1 where id = ? and purpose like ? and consumed_at is null and attempts < ? and expires_at > ?') {
+      const prefix = String(params[1] || '').replace(/%$/, '');
+      return [this.updateRows(this.emailVerificationCodes,
+        row => row.id === params[0] && String(row.purpose || '').startsWith(prefix)
+          && !row.consumed_at && row.attempts < params[2] && new Date(row.expires_at) > new Date(params[3]),
+        row => { row.attempts = Number(row.attempts || 0) + 1; }), []];
+    }
+
+    if (lower === 'update email_verification_codes set consumed_at = ? where id = ? and purpose like ? and consumed_at is null and expires_at > ?') {
+      if (injectedConsumeZero.delete(params[1])) return [{ affectedRows: 0 }, []];
+      const prefix = String(params[2] || '').replace(/%$/, '');
+      return [this.updateRows(this.emailVerificationCodes,
+        row => row.id === params[1] && String(row.purpose || '').startsWith(prefix)
+          && !row.consumed_at && new Date(row.expires_at) > new Date(params[3]),
+        row => { row.consumed_at = params[0]; }), []];
+    }
+
+    if (lower === 'delete from email_verification_codes where purpose like ? and (expires_at < ? or consumed_at is not null)') {
+      const prefix = String(params[0] || '').replace(/%$/, '');
+      return [this.deleteRows(this.emailVerificationCodes,
+        row => String(row.purpose || '').startsWith(prefix)
+          && (new Date(row.expires_at) < new Date(params[1]) || Boolean(row.consumed_at))), []];
+    }
+
     if (lower === 'insert into sessions (id, user_id, token, ip_address, user_agent, expires_at) values (?, ?, ?, ?, ?, ?)') {
       // Test-only fault injection: fail the final session insert so the surrounding account
       // transaction must roll back mailbox/proof mutations and emit no success cookie.
@@ -1013,9 +1051,12 @@ const injectedConsumeZero = new Set();
 function failNextConsume(id) { injectedConsumeZero.add(id); }
 const injectedInsertFailure = new Set();
 function failNextInsert(table) { injectedInsertFailure.add(table); }
+let injectedCommitFailures = 0;
+function failNextCommit() { injectedCommitFailures += 1; }
 
 module.exports = {
   createMemoryPool,
   failNextConsume,
-  failNextInsert
+  failNextInsert,
+  failNextCommit
 };

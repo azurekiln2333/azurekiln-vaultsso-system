@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Account Bindings](./account-bindings.md) | Phone editing and Huawei app identity contracts | Defined |
+| [Carrier Phone Authentication](./phone-auth.md) | H5/App one-click login, SMS proofs, Tianyi account authorization and cloud validation | Defined |
 | [Proxy Addresses](./proxy-addresses.md) | Local reverse proxy trust and client IP recording | Defined |
 | [Deployment](./deployment.md) | Host or private bundled MySQL, checked deployment script, non-root runtime, persisted data and gated images | Defined |
 | [Password Verification](./password-verification.md) | Dedicated login MFA and on-demand CAPTCHA | Defined |

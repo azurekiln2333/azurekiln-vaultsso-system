@@ -107,6 +107,7 @@ const i18n = window.VaultI18n;
         modal.classList.remove('show');
       }
       window.ProfileTotp.onModalClosed(modalId);
+      if (modalId === 'phoneSmsModal') resetPhoneSmsChallenge();
       return true;
     }
 
@@ -131,6 +132,12 @@ const i18n = window.VaultI18n;
     }
 
     function syncUserToPage(user) {
+      const previousUserId = currentUser && currentUser.id;
+      const previousPhone = currentUser && currentUser.phoneE164;
+      if (previousUserId !== (user && user.id) || previousPhone !== (user && user.phoneE164)) {
+        resetPhoneSmsChallenge();
+        clearPhoneSmsCooldown();
+      }
       currentUser = user;
       toggleAdminLinks(Boolean(user.isAdmin));
 
@@ -155,6 +162,7 @@ const i18n = window.VaultI18n;
       document.getElementById('creditsValue').textContent = String(user.credits ?? 0);
       document.getElementById('lastLoginIpValue').textContent = user.lastLoginIp || '-';
       renderPhone(user);
+      if (typeof applyPhoneSmsVisibility === 'function') applyPhoneSmsVisibility();
       renderIdentities(currentAppBindings || user.identities || []);
       renderTotpStatus(user);
 
@@ -459,8 +467,221 @@ const i18n = window.VaultI18n;
       openModal('emailModal');
     });
 
+    // Whether the server has an SMS channel that is enabled AND fully configured.
+    // The verification row stays hidden until capabilities say it is actually usable,
+    // so a disabled or incomplete channel makes zero upstream calls.
+    let phoneSmsAvailable = false;
+
+    function applyPhoneSmsVisibility() {
+      const row = document.getElementById('phoneSmsVerifyRow');
+      if (!row) return;
+      const show = phoneSmsAvailable && Boolean(currentUser && currentUser.phoneE164);
+      row.hidden = !show;
+    }
+
+    async function loadPhoneCapabilities() {
+      try {
+        const response = await fetch('/api/auth/phone/config', { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) {
+          phoneSmsAvailable = false;
+          applyPhoneSmsVisibility();
+          return;
+        }
+        const config = await response.json();
+        phoneSmsAvailable = Boolean(config && config.sms && config.sms.available);
+      } catch (error) {
+        console.error('Load phone capabilities failed:', error);
+        phoneSmsAvailable = false;
+      }
+      applyPhoneSmsVisibility();
+    }
+
+    // Authenticated SMS verification of the phone already bound to this account.
+    // The challenge is issued for the currently displayed saved number and is
+    // discarded whenever the binding changes, the modal closes, or the page reloads.
+    let phoneSmsChallengeId = '';
+    let phoneSmsChallengePhone = '';
+    let phoneSmsRequestGeneration = 0;
+    let phoneSmsRemaining = 0;
+    let phoneSmsCooldownTimer = null;
+
+    async function requestPhoneSms(path, payload) {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload || {})
+      });
+      const result = response.status === 204 ? {} : await response.json().catch(function () { return {}; });
+      if (response.status === 401) {
+        window.location.href = '/oauth2/authorize';
+        throw new Error(i18n.t('common.network_error'));
+      }
+      if (!response.ok) throw new Error(i18n.resolveMessage(result, 'common.network_error'));
+      return result;
+    }
+
+    function currentPhoneIdentity() {
+      return currentUser && currentUser.phoneE164 ? currentUser.phoneE164 : '';
+    }
+
+    function resetPhoneSmsChallenge() {
+      phoneSmsRequestGeneration += 1;
+      phoneSmsChallengeId = '';
+      phoneSmsChallengePhone = '';
+    }
+
+    function clearPhoneSmsCooldown() {
+      if (phoneSmsCooldownTimer) clearInterval(phoneSmsCooldownTimer);
+      phoneSmsCooldownTimer = null;
+      phoneSmsRemaining = 0;
+      renderPhoneSmsCooldown();
+    }
+
+    async function sendProfilePhoneCode() {
+      const phone = currentPhoneIdentity();
+      if (!phone) throw new Error(i18n.t('profile.phone.sms_no_phone'));
+      const userId = currentUser && currentUser.id;
+      const generation = phoneSmsRequestGeneration;
+      const result = await requestPhoneSms('/api/profile/phone/sms/send', {});
+      if (generation !== phoneSmsRequestGeneration || phone !== currentPhoneIdentity() || userId !== (currentUser && currentUser.id)) return null;
+      phoneSmsChallengeId = result.challengeId || '';
+      phoneSmsChallengePhone = phone;
+      startPhoneSmsCooldown(result.retryAfter || 60);
+      return result;
+    }
+
+    document.getElementById('phoneSmsVerifyStartBtn').addEventListener('click', async function () {
+      if (!currentUser || !currentUser.phoneE164) {
+        setStatus('error', i18n.t('profile.phone.sms_no_phone'));
+        return;
+      }
+      const button = document.getElementById('phoneSmsVerifyStartBtn');
+      button.disabled = true;
+      const originalLabel = button.textContent;
+      try {
+        const sent = await sendProfilePhoneCode();
+        if (!sent) return;
+        document.getElementById('phoneSmsError').classList.add('hidden');
+        document.getElementById('phoneSmsCode').value = '';
+        openModal('phoneSmsModal');
+        setStatus('success', i18n.t('auth.status.code_sent'));
+      } catch (error) {
+        setStatus('error', error.message || i18n.t('common.network_error'));
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+        renderPhoneSmsCooldown();
+      }
+    });
+
+    function renderPhoneSmsCooldown() {
+      ['phoneSmsResendBtn', 'phoneSmsVerifyStartBtn'].forEach(function (id) {
+        const element = document.getElementById(id);
+        if (!element) return;
+        if (phoneSmsRemaining > 0) {
+          element.disabled = true;
+          element.textContent = i18n.t('profile.phone.sms_resend_in', { seconds: phoneSmsRemaining });
+        } else {
+          element.disabled = false;
+          element.textContent = i18n.t('profile.phone.sms_send');
+        }
+      });
+    }
+    function startPhoneSmsCooldown(seconds) {
+      if (phoneSmsCooldownTimer) clearInterval(phoneSmsCooldownTimer);
+      phoneSmsRemaining = Math.max(0, Number(seconds) || 0);
+      renderPhoneSmsCooldown();
+      if (!phoneSmsRemaining) return;
+      phoneSmsCooldownTimer = setInterval(function () {
+        phoneSmsRemaining = Math.max(0, phoneSmsRemaining - 1);
+        if (!phoneSmsRemaining) {
+          clearInterval(phoneSmsCooldownTimer);
+          phoneSmsCooldownTimer = null;
+        }
+        renderPhoneSmsCooldown();
+      }, 1000);
+    }
+
+    document.getElementById('phoneSmsResendBtn').addEventListener('click', async function () {
+      if (phoneSmsRemaining > 0) return;
+      const button = document.getElementById('phoneSmsResendBtn');
+      button.disabled = true;
+      try {
+        const sent = await sendProfilePhoneCode();
+        if (!sent) return;
+        document.getElementById('phoneSmsError').classList.add('hidden');
+        document.getElementById('phoneSmsCode').value = '';
+        document.getElementById('phoneSmsCode').focus();
+      } catch (error) {
+        const errorNode = document.getElementById('phoneSmsError');
+        errorNode.textContent = error.message || i18n.t('common.network_error');
+        errorNode.classList.remove('hidden');
+      } finally {
+        renderPhoneSmsCooldown();
+      }
+    });
+
+    document.getElementById('phoneSmsVerifyForm').addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const submitButton = document.getElementById('phoneSmsVerifySubmit');
+      if (submitButton.disabled) return;
+      const errorNode = document.getElementById('phoneSmsError');
+      errorNode.classList.add('hidden');
+      const code = String(document.getElementById('phoneSmsCode').value || '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        errorNode.textContent = i18n.t('profile.phone.sms_code_placeholder');
+        errorNode.classList.remove('hidden');
+        return;
+      }
+      if (!phoneSmsChallengeId || phoneSmsChallengePhone !== currentPhoneIdentity()) {
+        errorNode.textContent = i18n.t('auth.phone.expired');
+        errorNode.classList.remove('hidden');
+        resetPhoneSmsChallenge();
+        return;
+      }
+      submitButton.disabled = true;
+      const originalLabel = submitButton.textContent;
+      submitButton.textContent = i18n.t('auth.phone.sms_verifying');
+      const generation = phoneSmsRequestGeneration;
+      const challengeId = phoneSmsChallengeId;
+      const challengePhone = phoneSmsChallengePhone;
+      const userId = currentUser && currentUser.id;
+      try {
+        const result = await requestPhoneSms('/api/profile/phone/sms/verify', {
+          challengeId,
+          code
+        });
+        const modal = document.getElementById('phoneSmsModal');
+        if (generation !== phoneSmsRequestGeneration
+            || challengePhone !== currentPhoneIdentity()
+            || userId !== (currentUser && currentUser.id)
+            || !modal.classList.contains('show')) return;
+        resetPhoneSmsChallenge();
+        document.getElementById('phoneSmsCode').value = '';
+        closeModal('phoneSmsModal');
+        if (result && result.user) syncUserToPage(result.user);
+        else { await loadProfile(); }
+        setStatus('success', i18n.t('profile.phone.sms_verified'));
+      } catch (error) {
+        const modal = document.getElementById('phoneSmsModal');
+        if (generation !== phoneSmsRequestGeneration
+            || challengePhone !== currentPhoneIdentity()
+            || userId !== (currentUser && currentUser.id)
+            || !modal.classList.contains('show')) return;
+        errorNode.textContent = error.message || i18n.t('common.network_error');
+        errorNode.classList.remove('hidden');
+        document.getElementById('phoneSmsCode').value = '';
+        document.getElementById('phoneSmsCode').focus();
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    });
+
     document.getElementById('editPhoneBtn').addEventListener('click', function () {
       if (!currentUser) return;
+      resetPhoneSmsChallenge();
       document.getElementById('profilePhoneCountryInput').value = `+${currentUser.phoneCountryCode || '86'}`;
       document.getElementById('profilePhoneInput').value = currentUser.phoneNationalNumber || '';
       document.getElementById('phoneCurrentPassword').value = '';
@@ -477,6 +698,7 @@ const i18n = window.VaultI18n;
 
     document.getElementById('phoneEditForm').addEventListener('submit', async function (event) {
       event.preventDefault();
+      resetPhoneSmsChallenge();
       const unbindButton = document.getElementById('phoneUnbindBtn');
       if (unbindButton.disabled) return;
       unbindButton.disabled = true;
@@ -490,6 +712,7 @@ const i18n = window.VaultI18n;
       unbindButton.disabled = false;
       if (updated) {
         document.getElementById('phoneCurrentPassword').value = '';
+        resetPhoneSmsChallenge();
         closeModal('phoneModal');
       } else {
         error.textContent = document.getElementById('statusMessage').textContent;
@@ -630,6 +853,7 @@ const i18n = window.VaultI18n;
     renderDocument();
     loadPasswordGuidance();
     loadProfile();
+    loadPhoneCapabilities();
     const identityResult = new URLSearchParams(window.location.search);
     if (identityResult.has('account_merged')) setStatus('success', i18n.t('profile.identity.merge_success'));
     else if (identityResult.has('oidc_error')) setStatus('error', identityResult.get('oidc_error_description') || i18n.t('profile.identity.merge_failed'));
@@ -642,6 +866,7 @@ const i18n = window.VaultI18n;
     document.addEventListener('vaultsso:totpchange', function (event) {
       if (currentUser) currentUser.totpEnabled = event.detail.totpEnabled;
       loadSessions();
+      loadPhoneCapabilities();
     });
 
     document.addEventListener('vaultsso:languagechange', function () {

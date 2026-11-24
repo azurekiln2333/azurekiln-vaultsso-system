@@ -16,6 +16,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -23,11 +24,62 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - name: Verify backend
-        run: bash scripts/ci-backend.sh
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/cloud
+          bash scripts/ci-backend.sh 2>&1 | tee .artifacts/cloud/backend.log
+      - name: Install locked Chromium
+        run: |
+          node node_modules/playwright-core/cli.js install --with-deps chromium
+          node -e 'console.log("BROWSER_EXECUTABLE=" + require("playwright-core").chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Verify browser flows
+        run: |
+          set -euo pipefail
+          npm run check:browser 2>&1 | tee .artifacts/cloud/browser.log
+      - name: Build deployment ZIP
+        run: |
+          set -euo pipefail
+          npm run build:deploy 2>&1 | tee .artifacts/cloud/deploy.log
+      - name: Upload cloud verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ github.sha }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            .artifacts/**/*.png
+            .artifacts/**/browser-evidence.json
+            .artifacts/**/geometry.json
+            .artifacts/cloud/*.log
+          retention-days: 14
+      - name: Upload deployment ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ github.sha }}
+          path: dist/azurekiln-oauth2.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  image-validation:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: vaultsso-validation:ci
+      - name: Inspect isolated runtime image
+        run: bash scripts/ci-image-inspect.sh vaultsso-validation:ci
 
   image:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: test
+    needs: image-validation
     runs-on: ubuntu-24.04
     permissions:
       contents: read

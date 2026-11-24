@@ -161,9 +161,18 @@ const statusBar = document.getElementById('statusBar');
         }
         oidcProviders.innerHTML = providers.map(provider => {
           const isHuawei = provider.providerType === 'huawei_quicklogin';
-          const state = provider.credentialError ? ['密钥需重新填写', 'napi-badge-warning'] : provider.configured ? ['已启用', 'napi-badge-success'] : ['未完成配置', 'bg-amber-50 text-amber-700'];
+          const isTianyi = ['tianyi_web', 'tianyi_h5'].includes(provider.providerType);
+          const providerLabel = isTianyi ? `天翼账号授权（${provider.providerType === 'tianyi_h5' ? 'H5' : 'WEB'}）` : isHuawei ? '华为一键登录' : 'OIDC';
+          const state = provider.credentialError ? ['密钥需重新填写', 'napi-badge-warning'] : provider.enabled === false ? ['已停用', 'napi-badge'] : provider.configured ? ['已启用', 'napi-badge-success'] : ['未完成配置', 'bg-amber-50 text-amber-700'];
           const endpoint = provider.issuerUrl || provider.authorizeUrl || provider.tokenUrl || (isHuawei ? '华为官方默认地址' : '-');
-          const rows = isHuawei
+          const rows = isTianyi
+            ? `<span>App ID：<b class="font-semibold text-ink">${escapeHtml(provider.clientId || '-')}</b></span>
+              <span>App Secret：<b class="font-semibold text-ink">${provider.clientSecretConfigured ? '已配置' : '未配置'}</b></span>
+              <span class="sm:col-span-2">授权接口：<b class="font-semibold text-ink">天翼官方 ${provider.providerType === 'tianyi_h5' ? 'H5' : 'WEB'} 接口</b></span>
+              <span class="sm:col-span-2">系统登录入口：<b class="break-all font-semibold text-ink">/api/v1/auth/oauth/oidc/login?provider=${escapeHtml(provider.key)}</b></span>
+              <span class="sm:col-span-2">回调地址：<b class="break-all font-semibold text-ink">${escapeHtml(config.callbackUrl || '-')}</b></span>
+              <span class="sm:col-span-2">账号标识：<b class="font-semibold text-ink">应用内 openId（不授予手机号或邮箱验证状态）</b></span>`
+            : isHuawei
             ? `<span>Client ID：<b class="font-semibold text-ink">${escapeHtml(provider.clientId || '-')}</b></span>
               <span>Client Secret：<b class="font-semibold text-ink">${provider.clientSecretConfigured ? '已配置' : '未配置'}</b></span>
               <span class="sm:col-span-2">华为主体分组：<b class="break-all font-semibold text-ink">${escapeHtml(provider.huaweiUnionScope || '独立（未设置）')}</b></span>
@@ -180,7 +189,7 @@ const statusBar = document.getElementById('statusBar');
               <span>ID Token 验证：<b class="admin-cell-strong">${provider.validateIdToken ? '开启' : '关闭'}</b></span>`;
           return `<div class="admin-provider-item">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <div><span class="admin-cell-strong">${escapeHtml(provider.providerName || provider.key)}</span><span class="admin-cell-sub ml-2">${escapeHtml(provider.key || '')}</span><span class="napi-badge ml-2">${isHuawei ? '华为一键登录' : 'OIDC'}</span></div>
+              <div><span class="admin-cell-strong">${escapeHtml(provider.providerName || provider.key)}</span><span class="admin-cell-sub ml-2">${escapeHtml(provider.key || '')}</span><span class="napi-badge ml-2">${providerLabel}</span></div>
               <div class="flex items-center gap-2"><span class="napi-badge ${state[1]}">${state[0]}</span><button class="oidc-edit napi-btn napi-btn-ghost napi-btn-sm" data-provider="${escapeHtml(provider.key)}" type="button">编辑</button><button class="oidc-delete napi-btn napi-btn-danger napi-btn-sm" data-provider="${escapeHtml(provider.key)}" type="button">删除</button></div>
             </div>
             <div class="admin-provider-meta grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
@@ -195,6 +204,24 @@ const statusBar = document.getElementById('statusBar');
         oidcStatus.parentElement.className = 'admin-note admin-note-error mb-4';
         oidcProviders.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(error.message)}</p>`;
       }
+    }
+    function updateOidcProviderFields() {
+      const type = document.getElementById('oidcProviderType').value;
+      const isTianyi = ['tianyi_web', 'tianyi_h5'].includes(type);
+      const genericFields = ['oidcHuaweiUnionScope', 'oidcIssuer', 'oidcDiscovery', 'oidcAuthorize', 'oidcToken', 'oidcUserinfo', 'oidcJwks', 'oidcScopes', 'oidcTokenAuth', 'oidcIdPath', 'oidcSecondaryIdPath', 'oidcEmailPath', 'oidcUsernamePath', 'oidcUserinfoMethod', 'oidcUserinfoTokenIn', 'oidcPkce', 'oidcValidate', 'oidcEmailVerified'];
+      genericFields.forEach(id => {
+        const field = document.getElementById(id);
+        field.disabled = isTianyi;
+        field.closest('label').hidden = isTianyi;
+      });
+      document.getElementById('oidcGenericHint').hidden = isTianyi;
+      document.getElementById('oidcClientIdLabel').textContent = isTianyi ? 'App ID' : 'Client ID';
+      document.getElementById('oidcClientSecretLabel').textContent = isTianyi ? 'App Secret' : 'Client Secret';
+      document.getElementById('oidcProviderTypeHint').textContent = isTianyi
+        ? '使用已开通的天翼应用 App ID / App Secret，并在天翼后台登记上方回调地址。系统使用固定官方接口；账号以应用内 openId 区分，不授予手机号或邮箱验证状态。'
+        : type === 'huawei_quicklogin'
+          ? '华为一键登录通过 POST + JSON 授权码换取 UnionID / OpenID / 手机号。Token 地址留空时使用华为官方接口；Client ID 必须与 App 的 AGC 配置一致。'
+          : '填写平台提供的 OIDC / OAuth2 配置与上方回调地址。';
     }
     function resetOidcForm() {
       oidcEditingKey = '';
@@ -212,6 +239,7 @@ const statusBar = document.getElementById('statusBar');
       oidcFormTitle.textContent = '新增 Provider';
       oidcCancelBtn.hidden = true;
       document.getElementById('oidcKey').disabled = false;
+      updateOidcProviderFields();
     }
     function editOidcProvider(provider) {
       if (!provider) return;
@@ -230,6 +258,8 @@ const statusBar = document.getElementById('statusBar');
       oidcFormTitle.textContent = `编辑 Provider：${provider.providerName}`;
       oidcCancelBtn.hidden = false;
       document.getElementById('oidcKey').disabled = true;
+      document.getElementById('oidcClientSecret').value = '';
+      updateOidcProviderFields();
       oidcForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     async function deleteOidcProvider(providerKey) {
@@ -241,12 +271,104 @@ const statusBar = document.getElementById('statusBar');
       const huaweiUnionScope = document.getElementById('oidcHuaweiUnionScope').value.trim();
       const payload = { providerKey: document.getElementById('oidcKey').value, providerName: document.getElementById('oidcName').value, providerType: document.getElementById('oidcProviderType').value, clientId: document.getElementById('oidcClientId').value, clientSecret: document.getElementById('oidcClientSecret').value, issuerUrl: document.getElementById('oidcIssuer').value, discoveryUrl: document.getElementById('oidcDiscovery').value, authorizeUrl: document.getElementById('oidcAuthorize').value, tokenUrl: document.getElementById('oidcToken').value, userinfoUrl: document.getElementById('oidcUserinfo').value, jwksUrl: document.getElementById('oidcJwks').value, scopes: document.getElementById('oidcScopes').value, tokenAuthMethod: document.getElementById('oidcTokenAuth').value, userinfoIdPath: document.getElementById('oidcIdPath').value, userinfoSecondaryIdPath: document.getElementById('oidcSecondaryIdPath').value, userinfoEmailPath: document.getElementById('oidcEmailPath').value, userinfoUsernamePath: document.getElementById('oidcUsernamePath').value, userinfoMethod: document.getElementById('oidcUserinfoMethod').value, userinfoTokenIn: document.getElementById('oidcUserinfoTokenIn').value, enabled: document.getElementById('oidcEnabled').checked, pkceEnabled: document.getElementById('oidcPkce').checked, validateIdToken: document.getElementById('oidcValidate').checked, requireEmailVerified: document.getElementById('oidcEmailVerified').checked };
       payload.huaweiUnionScope = huaweiUnionScope;
+      if (['tianyi_web', 'tianyi_h5'].includes(payload.providerType)) {
+        ['huaweiUnionScope', 'issuerUrl', 'discoveryUrl', 'authorizeUrl', 'tokenUrl', 'userinfoUrl', 'jwksUrl', 'scopes', 'tokenAuthMethod', 'userinfoIdPath', 'userinfoSecondaryIdPath', 'userinfoEmailPath', 'userinfoUsernamePath', 'userinfoMethod', 'userinfoTokenIn', 'pkceEnabled', 'validateIdToken', 'requireEmailVerified'].forEach(key => { delete payload[key]; });
+      }
       try { await request('/api/admin/oidc', { method: 'POST', body: JSON.stringify(payload) }); setStatus('success', 'Provider 已保存，立即生效。'); resetOidcForm(); await loadOidcSettings(); } catch (error) { setStatus('error', error.message); }
     });
     oidcResetBtn.addEventListener('click', resetOidcForm);
     oidcCancelBtn.addEventListener('click', resetOidcForm);
+    document.getElementById('oidcProviderType').addEventListener('change', updateOidcProviderFields);
+    updateOidcProviderFields();
     refreshLogsBtn.addEventListener('click', loadLogs);
+    async function loadPhoneAuth() {
+      try {
+        const config = await request('/api/admin/phone-auth');
+        document.getElementById('phoneAuthH5Enabled').checked = Boolean(config.h5Enabled);
+        document.getElementById('phoneAuthAppEnabled').checked = Boolean(config.appEnabled);
+        document.getElementById('phoneAuthSmsEnabled').checked = Boolean(config.smsEnabled);
+        document.getElementById('phoneAuthAllowRegistration').checked = Boolean(config.allowRegistration);
+        document.getElementById('phoneAuthAccessKeyId').value = config.accessKeyId || '';
+        document.getElementById('phoneAuthAccessKeySecret').value = '';
+        document.getElementById('phoneAuthSecurityToken').value = '';
+        document.getElementById('phoneAuthClearSecret').checked = false;
+        document.getElementById('phoneAuthClearToken').checked = false;
+        document.getElementById('phoneAuthSceneCode').value = config.sceneCode || '';
+        document.getElementById('phoneAuthH5Origin').value = config.h5Origin || '';
+        document.getElementById('phoneAuthH5Url').value = config.h5Url || '';
+        document.getElementById('phoneAuthH5SdkUrl').value = config.h5SdkUrl || '';
+        document.getElementById('phoneAuthSmsSchemeName').value = config.smsSchemeName || '';
+        document.getElementById('phoneAuthSmsSignName').value = config.smsSignName || '';
+        document.getElementById('phoneAuthSmsTemplateCode').value = config.smsTemplateCode || '';
+        document.getElementById('phoneAuthSmsTemplateParam').value = config.smsTemplateParam && typeof config.smsTemplateParam === 'object'
+          ? JSON.stringify(config.smsTemplateParam)
+          : (config.smsTemplateParam || '');
+        document.getElementById('phoneAuthSecretHint').textContent = config.hasAccessKeySecret ? '密钥已保存。留空保持不变。' : '尚未设置 AccessKey Secret。';
+        document.getElementById('phoneAuthTokenHint').textContent = config.hasSecurityToken ? '已保存临时凭证。留空保持不变。' : '未使用临时凭证。';
+        // adminConfig 返回的是 ready:{h5,app,sms} 布尔对象，不是缺失项数组。
+        const ready = config.ready && typeof config.ready === 'object' ? config.ready : {};
+        const enabledChannels = [];
+        const missingChannels = [];
+        [['h5', 'H5 一键登录'], ['app', 'App 一键登录'], ['sms', '短信验证码']].forEach(function ([key, label]) {
+          const isEnabled = Boolean(config[`${key}Enabled`]);
+          if (!isEnabled) return;
+          enabledChannels.push(label);
+          if (!ready[key]) missingChannels.push(label);
+        });
+        const badge = document.getElementById('phoneAuthReadiness');
+        const statusNode = document.getElementById('phoneAuthStatus');
+        const statusBox = statusNode.parentElement;
+        if (!enabledChannels.length) {
+          badge.textContent = '未启用';
+          badge.className = 'napi-badge';
+          statusNode.textContent = '所有手机号认证通道均已关闭，服务端不会发起任何上游请求。';
+          statusBox.className = 'admin-note mb-4';
+        } else if (missingChannels.length) {
+          badge.textContent = '配置不完整';
+          badge.className = 'napi-badge napi-badge-warning';
+          statusNode.textContent = `以下已启用的通道缺少必填配置：${missingChannels.join('、')}。在补齐前这些通道不会发起上游请求。`;
+          statusBox.className = 'admin-note admin-note-warning mb-4';
+        } else {
+          badge.textContent = '配置完整';
+          badge.className = 'napi-badge napi-badge-success';
+          statusNode.textContent = `已启用并配置完整：${enabledChannels.join('、')}。`;
+          statusBox.className = 'admin-note admin-note-success mb-4';
+        }
+      } catch (error) { setStatus('error', error.message); }
+    }
+    document.getElementById('savePhoneAuthBtn').addEventListener('click', async () => {
+      const button = document.getElementById('savePhoneAuthBtn');
+      button.disabled = true;
+      try {
+        const result = await request('/api/admin/phone-auth', {
+          method: 'PUT',
+          body: JSON.stringify({
+            h5Enabled: document.getElementById('phoneAuthH5Enabled').checked,
+            appEnabled: document.getElementById('phoneAuthAppEnabled').checked,
+            smsEnabled: document.getElementById('phoneAuthSmsEnabled').checked,
+            allowRegistration: document.getElementById('phoneAuthAllowRegistration').checked,
+            accessKeyId: document.getElementById('phoneAuthAccessKeyId').value.trim(),
+            accessKeySecret: document.getElementById('phoneAuthAccessKeySecret').value.trim(),
+            securityToken: document.getElementById('phoneAuthSecurityToken').value.trim(),
+            clearAccessKeySecret: document.getElementById('phoneAuthClearSecret').checked,
+            clearSecurityToken: document.getElementById('phoneAuthClearToken').checked,
+            sceneCode: document.getElementById('phoneAuthSceneCode').value.trim(),
+            h5Origin: document.getElementById('phoneAuthH5Origin').value.trim(),
+            h5Url: document.getElementById('phoneAuthH5Url').value.trim(),
+            h5SdkUrl: document.getElementById('phoneAuthH5SdkUrl').value.trim(),
+            smsSchemeName: document.getElementById('phoneAuthSmsSchemeName').value.trim(),
+            smsSignName: document.getElementById('phoneAuthSmsSignName').value.trim(),
+            smsTemplateCode: document.getElementById('phoneAuthSmsTemplateCode').value.trim(),
+            smsTemplateParam: document.getElementById('phoneAuthSmsTemplateParam').value.trim()
+          })
+        });
+        await loadPhoneAuth();
+        setStatus('success', result.message || '手机号认证配置已保存。');
+      } catch (error) { setStatus('error', error.message); }
+      finally { button.disabled = false; }
+    });
     loadSettings();
     loadTurnstile();
     loadLogs();
     loadOidcSettings();
+    loadPhoneAuth();
