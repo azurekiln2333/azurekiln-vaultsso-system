@@ -147,16 +147,16 @@ module.exports = function installPhoneRoutes(d) {
     }
     const body = { user: d.serializeUser(user), redirect: authorized?.body.redirect || context.returnTo,
       phone: context.phone, phoneStatus: 'verified' };
+    if (context.oauth && !context.oauth.scope.split(/\s+/).includes('phone')) {
+      Object.assign(body.user, { phoneCountryCode: '', phoneNationalNumber: '', phoneE164: '',
+        phoneMasked: '', phoneVerified: false, phoneVerifiedAt: null });
+      body.phone = null;
+      body.phoneStatus = 'scope_not_granted';
+    }
     if (context.oauth && context.native) {
       const redirect = new URL(authorized.body.redirect);
       Object.assign(body, { authorization_code: redirect.searchParams.get('code'),
         state: redirect.searchParams.get('state') || '', redirect_uri: context.oauth.redirect_uri });
-      if (!context.oauth.scope.split(/\s+/).includes('phone')) {
-        Object.assign(body.user, { phoneCountryCode: '', phoneNationalNumber: '', phoneE164: '',
-          phoneMasked: '', phoneVerified: false, phoneVerifiedAt: null });
-        body.phone = null;
-        body.phoneStatus = 'scope_not_granted';
-      }
       await new UserModel(connection).update(user.id, { lastLoginIp: d.getClientIp(req) });
       await d.recordLoginLog({ username: user.username, userId: user.id, req, result: 'success',
         detail: 'Phone authentication OAuth handoff', database: connection });
