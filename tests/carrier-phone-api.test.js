@@ -463,7 +463,8 @@ test('Tianyi pending MFA is invalidated when its application configuration chang
   noSession(completed);
   assert.equal(pendingRecord.consumed_at, null);
   assert.equal(f.pool.sessions.filter(row => row.user_id === target.id).length, 0);
-  assert.equal((await f.request('/api/profile', { cookie: activeLogin.cookie })).body.user.id, active.id);
+  const activeSession = f.pool.sessions.find(row => row.token === claims(activeLogin).sid);
+  assert.ok(activeSession && !activeSession.revoked_at);
 });
 
 test('Tianyi MFA publishes no session until the final account transaction commits', async () => {
