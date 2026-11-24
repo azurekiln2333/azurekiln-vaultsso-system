@@ -34,7 +34,8 @@ async function main() {
       ...(process.env.BROWSER_EXECUTABLE ? { executablePath: process.env.BROWSER_EXECUTABLE } : { channel: 'chrome' }),
       headless: true, args: ['--disable-background-networking']
     });
-    const context = await browser.newContext();
+    // These assertions use Simplified Chinese; i18n follows the browser locale.
+    const context = await browser.newContext({ locale: 'zh-CN' });
     await context.route('**/*', route => new URL(route.request().url()).origin === fixture.baseUrl ? route.continue() : route.abort());
     const page = await context.newPage();
     let pendingApplicationsRequest;
