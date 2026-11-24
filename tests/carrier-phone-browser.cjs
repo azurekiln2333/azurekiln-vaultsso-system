@@ -362,7 +362,7 @@ async function main() {
       assert.deepEqual(errors, []);
       await context.close();
     }
-    console.log('Carrier phone OAuth handoff passed: state preserved, no cookie, phone withheld without scope, code exchanges');
+    console.log('Carrier phone OAuth handoff passed: state preserved, browser session established, phone withheld without scope, code exchanges');
 
     // -----------------------------------------------------------------------
     // 4. H5 SDK fixture: provider consent, MFA fallback and the real login result.
@@ -400,6 +400,7 @@ async function main() {
       assert.equal(await page.locator('#phoneH5Section').isVisible(), true);
 
       const tokenRequest = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/h5/token'));
+      const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/h5/login'));
       await page.locator('#phoneH5Btn').click();
       const token = await tokenRequest;
       assert.equal(token.status(), 200, 'H5 token must be issued');
@@ -409,7 +410,6 @@ async function main() {
       assert.equal(provider.callsFor('GetAuthToken').length, 1);
       await page.waitForFunction(() => window.__phoneSdkCalls === 1, undefined, { timeout: 5000 });
 
-      const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/h5/login'));
       const completed = await loginResponse;
       assert.equal(completed.status(), 200, 'H5 login must complete');
       assert.equal(provider.callsFor('GetPhoneWithToken').length, 1, 'the number is resolved server-side');
@@ -504,6 +504,12 @@ async function main() {
       await page.locator('#phoneH5Btn').click();
       const response = await failed;
       assert.ok(response.status() >= 400, 'an upstream rejection is not reported as success');
+      await page.waitForFunction(() => {
+        const button = document.getElementById('phoneH5Btn');
+        const status = document.getElementById('phoneAuthStatus');
+        return button && !button.disabled && status && status.classList.contains('is-visible')
+          && status.textContent.trim().length > 0;
+      });
       const text = await page.locator('#phoneAuthStatus').innerText();
       assert.ok(text.trim().length > 0, 'the user sees a readable error');
       assert.ok(!/isv\.BUSINESS_LIMIT_CONTROL/.test(text), 'raw upstream codes are never shown');
