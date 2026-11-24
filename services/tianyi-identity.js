@@ -27,7 +27,7 @@ module.exports = async function withTianyiIdentity({ pool, config, identity, sta
     const identities = new ExternalIdentityModel(connection);
     const rows = await identities.findByProviders([config.providerKey]);
     if (rows.some(row => {
-      const profile = ExternalIdentityModel.serialize(row).profile;
+      const profile = identities.serialize(row).profile;
       return profile.appId !== config.clientId || profile.provider !== config.providerType;
     })) fail(409, '该提供方已属于其他天翼应用，请新建 Provider');
     const existing = await identities.findByProviderUserId(config.providerKey, identity.openId);
