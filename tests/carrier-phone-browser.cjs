@@ -412,6 +412,7 @@ async function main() {
             };
             this.closeLoginPage = function () {};
             window.__phoneSdkCalls = (window.__phoneSdkCalls || 0) + 1;
+            sessionStorage.setItem('__phoneSdkCalls', String(window.__phoneSdkCalls));
           };
         `
       }));
@@ -429,7 +430,7 @@ async function main() {
       assert.ok(issued.challengeId, 'the token response carries a local challenge id');
       assert.equal(issued.accessToken, 'fake-access-token', 'only the SDK-facing token reaches the browser');
       assert.equal(provider.callsFor('GetAuthToken').length, 1);
-      await page.waitForFunction(() => window.__phoneSdkCalls === 1, undefined, { timeout: 15000 });
+      await page.waitForFunction(() => sessionStorage.getItem('__phoneSdkCalls') === '1', undefined, { timeout: 15000 });
 
       const captured = await loginResponse;
       assert.equal(captured.status, 200, 'H5 login must complete');
