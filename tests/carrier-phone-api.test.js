@@ -453,9 +453,12 @@ test('Tianyi pending MFA is invalidated when its application configuration chang
   const pendingClaims = jwt.verify(decodeURIComponent(pendingCookie), process.env.JWT_SECRET);
   assert.equal(pendingClaims.source, 'external');
   assert.equal(pendingClaims.provider, 'tianyi-test');
-  const pending = await f.request('/api/v1/auth/oauth/oidc/pending', { cookie: `${activeLogin.cookie}; ${callback.cookie}` });
+  const pendingHeaders = { 'X-Oidc-Pending': decodeURIComponent(pendingCookie) };
+  const pending = await f.request('/api/v1/auth/oauth/oidc/pending', { cookie: activeLogin.cookie, headers: pendingHeaders });
   assert.equal(pending.status, 401);
-  const completed = await post('/api/v1/auth/oauth/oidc/complete', { code }, `${activeLogin.cookie}; ${callback.cookie}`);
+  const completed = await f.request('/api/v1/auth/oauth/oidc/complete', {
+    method: 'POST', data: { code }, cookie: activeLogin.cookie, headers: pendingHeaders
+  });
   assert.equal(completed.status, 401);
   noSession(completed);
   assert.equal(pendingRecord.consumed_at, null);
