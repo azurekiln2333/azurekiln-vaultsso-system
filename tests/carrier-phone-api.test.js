@@ -426,11 +426,11 @@ test('email MFA preserves existing active account until SMS login completes', as
 
 test('Tianyi pending MFA is invalidated when its application configuration changes', async () => {
   await configureTianyi();
-  f.pool.settings.push({ setting_key: 'login_email_code', setting_value: 'true' });
   const openId = `tianyi-${crypto.randomUUID()}`;
   const target = await tianyiIdentityUser(openId);
   const active = await f.user();
   const activeLogin = await f.login(active);
+  f.pool.settings.push({ setting_key: 'login_email_code', setting_value: 'true' });
 
   const started = await startTianyi(activeLogin.cookie);
   const callback = await finishTianyi(started, openId);
