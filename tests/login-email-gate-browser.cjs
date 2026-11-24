@@ -176,10 +176,15 @@ async function main() {
       assert.ok(Number(after.body.retry_after) > 0,
         'frozen: the persisted projection reports the active resend cooldown');
       assert.equal(f.mails.length, mailsBefore + 1, 'a successful send must deliver exactly one message');
+      // The button is already disabled while sending; wait for the browser to apply
+      // the successful response and unlock code entry, not just the server commit.
       await page.waitForFunction(() => {
         const button = document.getElementById('sendEmailGateCodeBtn');
-        return Boolean(button) && button.disabled;
-      }, null, { timeout: 5000 }).catch(() => {});
+        const field = document.getElementById('code');
+        const status = document.getElementById('status');
+        return Boolean(button && field && status) && button.disabled
+          && !field.disabled && !field.readOnly && status.classList.contains('is-success');
+      }, null, { timeout: 15000 });
       assert.equal(await page.locator('#sendEmailGateCodeBtn').evaluate(button => button.disabled), true,
         'frozen: the send action stays disabled for the 60s cooldown');
       return { before: before.body, after: after.body, mail: f.mails.at(-1), sent: sentBody };
@@ -1024,7 +1029,14 @@ async function main() {
         assert.equal(f.mails.some(mail => mail.to === owner.email), false,
           'the rejected destination must never receive mail');
         // A 409 makes the client re-read the pending challenge, which restores the active A proof.
-        await page.waitForTimeout(900);
+        // Wait for that browser-side refresh and send finalizer, not a runner-speed-dependent sleep.
+        await page.waitForFunction(() => {
+          const input = document.getElementById('bindEmailInput');
+          const field = document.getElementById('code');
+          const status = document.getElementById('status');
+          return Boolean(input && field && status) && !input.disabled && !field.readOnly
+            && status.textContent.trim().length > 0;
+        }, null, { timeout: 15000 });
         const pending = await pendingState(context);
         assert.equal(pending.status, 200, 'the pending challenge must survive a rejected retarget');
         assert.equal(pending.body.email, expectedMask(first),

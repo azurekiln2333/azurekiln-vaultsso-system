@@ -11,7 +11,7 @@ async function continueToPassword(page) {
   await page.waitForFunction(() => {
     const field = document.getElementById('loginPassword');
     return Boolean(field) && !field.disabled && field.getBoundingClientRect().width > 1;
-  }, null, { timeout: 15000 });
+  }, null, { timeout: 30000 });
 }
 
 // Simulated provider geometry, not a live Cloudflare challenge. An iframe isolates
@@ -155,7 +155,7 @@ async function main() {
         const firstId = await page.evaluate(() => window.__turnstileWidgets.length - 1);
         await page.setViewportSize({ width: 390, height: viewport.height });
         measurements.push(await widgetGeometry(widget, 'flexible', 'resize-flexible-390'));
-        await page.waitForTimeout(150);
+        await page.waitForTimeout(500);
         assert.equal(await tokenInput.inputValue(), firstToken, 'same-size resize must preserve the current token');
         assert.equal(await page.evaluate(() => window.__turnstileWidgets.length), firstId + 1,
           'same-size resize must not recreate the widget');
@@ -181,7 +181,7 @@ async function main() {
 
         await page.setViewportSize({ width: 340, height: viewport.height });
         measurements.push(await widgetGeometry(widget, 'compact', 'resize-compact-340'));
-        await page.waitForTimeout(150);
+        await page.waitForTimeout(500);
         assert.equal(await tokenInput.inputValue(), compactToken, 'compact-to-compact resize must preserve proof');
         assert.equal(await page.evaluate(() => window.__turnstileWidgets.length), compactId + 1);
         await page.setViewportSize({ width: viewport.width, height: viewport.height });

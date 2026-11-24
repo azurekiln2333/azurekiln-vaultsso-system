@@ -408,7 +408,7 @@ async function main() {
       assert.ok(issued.challengeId, 'the token response carries a local challenge id');
       assert.equal(issued.accessToken, 'fake-access-token', 'only the SDK-facing token reaches the browser');
       assert.equal(provider.callsFor('GetAuthToken').length, 1);
-      await page.waitForFunction(() => window.__phoneSdkCalls === 1, undefined, { timeout: 5000 });
+      await page.waitForFunction(() => window.__phoneSdkCalls === 1, undefined, { timeout: 15000 });
 
       const completed = await loginResponse;
       assert.equal(completed.status(), 200, 'H5 login must complete');

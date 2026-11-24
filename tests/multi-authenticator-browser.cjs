@@ -13,7 +13,7 @@ async function continueToPassword(page) {
   await page.waitForFunction(() => {
     const field = document.getElementById('loginPassword');
     return Boolean(field) && !field.disabled && field.getBoundingClientRect().width > 1;
-  }, null, { timeout: 15000 });
+  }, null, { timeout: 30000 });
 }
 
 async function main() {

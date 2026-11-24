@@ -57,7 +57,7 @@ async function assertLoaded(surface, label, maximumOverflow = 1) {
 }
 
 async function fontContext(browser, f, viewport, mode, cookie = '') {
-  const context = await browser.newContext({ viewport });
+  const context = await browser.newContext({ viewport, locale: 'zh-CN' });
   if (cookie) {
     await context.addCookies(cookie.split('; ').map(value => {
       const separator = value.indexOf('=');
@@ -230,7 +230,7 @@ async function main() {
       await failed.context.close();
 
       // No request routing: the second navigation can use the browser's real font cache.
-      const warmContext = await browser.newContext({ viewport });
+      const warmContext = await browser.newContext({ viewport, locale: 'zh-CN' });
       const warmPage = await warmContext.newPage();
       await warmPage.goto(`${f.baseUrl}/api-docs.html`);
       // Existing long documentation text overflows at narrow widths; compare unchanged
@@ -297,7 +297,7 @@ async function main() {
 
     // Explicitly simulated API/stylesheet uncertainty, separate from real HTTP cases above.
     for (const mode of ['empty-face-list', 'unsupported-api', 'missing-font-stylesheet']) {
-      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN' });
       if (mode === 'empty-face-list') await context.addInitScript(() => { document.fonts.load = async () => []; });
       if (mode === 'unsupported-api') await context.addInitScript(() => { Object.defineProperty(document, 'fonts', { value: undefined }); });
       if (mode === 'missing-font-stylesheet') await context.route('**/assets/vaultsso-fonts.css', route => route.abort('failed'));

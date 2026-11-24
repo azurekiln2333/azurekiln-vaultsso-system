@@ -38,6 +38,13 @@ async function main() {
     const context = await browser.newContext({ locale: 'zh-CN' });
     await context.route('**/*', route => new URL(route.request().url()).origin === fixture.baseUrl ? route.continue() : route.abort());
     const page = await context.newPage();
+    async function saveUser() {
+      const saved = page.waitForResponse(response =>
+        /\/api\/users\/[^/?]+$/.test(new URL(response.url()).pathname) && response.request().method() === 'PUT');
+      await page.locator('#saveBtn').click();
+      assert.equal((await saved).status(), 200, 'admin user save succeeds');
+      await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    }
     let pendingApplicationsRequest;
     await context.route('**/api/account/applications', route => {
       if (!pendingApplicationsRequest) { pendingApplicationsRequest = route; return; }
@@ -92,11 +99,10 @@ async function main() {
     await page.waitForFunction(() => document.getElementById('phoneInput')?.value === '13800138000');
     await page.locator('#phoneInput').fill('13600136000');
     const phoneSubmission = page.waitForRequest(request => request.url().endsWith(`/api/users/${admin.id}`) && request.method() === 'PUT');
-    await page.locator('#saveBtn').click();
+    await saveUser();
     const submitted = (await phoneSubmission).postDataJSON();
     assert.equal(submitted.phoneCountryCode, '+86');
     assert.equal(submitted.phoneNumber, '13600136000');
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
     await page.reload();
     await page.waitForFunction(() => document.getElementById('phoneInput')?.value === '13600136000');
     assert.equal((await fixture.User.findById(admin.id)).phone_e164, '+8613600136000');
@@ -114,11 +120,10 @@ async function main() {
     assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'Editing the number keeps the checkbox clear');
     await page.locator('#phoneVerifiedInput').check();
     const verifiedSubmission = page.waitForRequest(request => request.url().endsWith(`/api/users/${target.id}`) && request.method() === 'PUT');
-    await page.locator('#saveBtn').click();
+    await saveUser();
     const verifiedBody = (await verifiedSubmission).postDataJSON();
     assert.equal(verifiedBody.phoneVerified, true, 'The form submits the admin phone verification intent');
     assert.equal(verifiedBody.phoneNumber, '13900139000');
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
     const verifiedRecord = await fixture.User.findById(target.id);
     assert.equal(verifiedRecord.phone_verified, true, 'Checking the box verifies the saved number');
     const verifiedAt = verifiedRecord.phone_verified_at;
@@ -127,15 +132,13 @@ async function main() {
     await page.waitForFunction(() => document.getElementById('phoneInput').value === '13900139000');
     assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), true, 'Reload shows the persisted verification');
     // Resubmitting the unchanged verified number keeps its timestamp.
-    await page.locator('#saveBtn').click();
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    await saveUser();
     assert.equal(String((await fixture.User.findById(target.id)).phone_verified_at), String(verifiedAt), 'Unchanged verified number keeps its timestamp');
 
     // Editing the number resets the displayed verification so it cannot silently carry over.
     await page.locator('#phoneInput').fill('13900139001');
     assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'A changed number clears the displayed checkbox');
-    await page.locator('#saveBtn').click();
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    await saveUser();
     const changedRecord = await fixture.User.findById(target.id);
     assert.equal(changedRecord.phone_e164, '+8613900139001');
     assert.equal(changedRecord.phone_verified, false, 'Changing the number without re-checking clears verification');
@@ -146,12 +149,10 @@ async function main() {
 
     // Unchecking a verified number persists as unchecked.
     await page.locator('#phoneVerifiedInput').check();
-    await page.locator('#saveBtn').click();
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    await saveUser();
     assert.equal((await fixture.User.findById(target.id)).phone_verified, true);
     await page.locator('#phoneVerifiedInput').uncheck();
-    await page.locator('#saveBtn').click();
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    await saveUser();
     assert.equal((await fixture.User.findById(target.id)).phone_verified, false, 'Unchecking persists');
     assert.equal((await fixture.User.findById(target.id)).phone_verified_at, null);
 
@@ -159,8 +160,7 @@ async function main() {
     await page.locator('#phoneInput').fill('');
     assert.equal(await page.locator('#phoneVerifiedInput').isDisabled(), true, 'An empty number disables the checkbox');
     assert.equal(await page.locator('#phoneVerifiedInput').isChecked(), false, 'An empty number clears the checkbox');
-    await page.locator('#saveBtn').click();
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    await saveUser();
     assert.equal((await fixture.User.findById(target.id)).phone_e164, null);
     assert.equal((await fixture.User.findById(target.id)).phone_verified, false);
     await page.reload();
@@ -171,8 +171,7 @@ async function main() {
     // Restore a verified number for the screenshot state.
     await page.locator('#phoneInput').fill('13900139000');
     await page.locator('#phoneVerifiedInput').check();
-    await page.locator('#saveBtn').click();
-    await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
+    await saveUser();
     assert.equal((await fixture.User.findById(target.id)).phone_verified, true);
     await page.reload();
     await page.waitForFunction(() => document.getElementById('phoneInput').value === '13900139000');
