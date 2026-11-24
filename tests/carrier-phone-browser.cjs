@@ -345,6 +345,12 @@ async function main() {
       assert.equal(body.phoneStatus, 'scope_not_granted');
       assert.equal(body.user.phoneE164, '', 'the projected user hides the number too');
 
+      // This is a browser OAuth login, so it also establishes the gateway session.
+      // Native App requests use the separate code-only/no-cookie handoff contract.
+      const browserSession = (await context.cookies()).find(item => item.name === 'session');
+      assert.ok(browserSession, 'browser OAuth phone login establishes a gateway session');
+      assert.equal(jwt.verify(browserSession.value, process.env.JWT_SECRET).sub, account.id);
+
       // The authorization code really is exchangeable by the client.
       const code = new URL(body.redirect).searchParams.get('code');
       assert.ok(code, 'the redirect carries a real authorization code');
@@ -353,8 +359,6 @@ async function main() {
         redirect_uri: client.redirectUris[0], code
       } });
       assert.equal(token.status, 200, 'the code exchanges for a token');
-      assert.equal((await context.cookies()).some(item => item.name === 'session'), false,
-        'an OAuth handoff issues no gateway session cookie');
       assert.deepEqual(errors, []);
       await context.close();
     }
@@ -403,6 +407,7 @@ async function main() {
       assert.ok(issued.challengeId, 'the token response carries a local challenge id');
       assert.equal(issued.accessToken, 'fake-access-token', 'only the SDK-facing token reaches the browser');
       assert.equal(provider.callsFor('GetAuthToken').length, 1);
+      await page.waitForFunction(() => window.__phoneSdkCalls === 1, undefined, { timeout: 5000 });
 
       const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/phone/h5/login'));
       const completed = await loginResponse;
@@ -414,7 +419,6 @@ async function main() {
       const navigationTarget = body.mfa_url || body.redirect;
       assert.ok(navigationTarget, `the H5 login must return a navigation target: ${JSON.stringify(body)}`);
       await page.waitForURL(url => !url.pathname.endsWith('/oauth2/authorize'));
-      assert.equal(await page.evaluate(() => window.__phoneSdkCalls), 1, 'the SDK is instantiated once per attempt');
 
       // The completed H5 login authenticates the real phone owner.
       const cookie = (await context.cookies()).find(item => item.name === 'session');
