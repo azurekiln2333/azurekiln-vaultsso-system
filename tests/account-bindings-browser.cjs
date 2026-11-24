@@ -45,11 +45,6 @@ async function main() {
       assert.equal((await saved).status(), 200, 'admin user save succeeds');
       await page.waitForFunction(() => document.getElementById('statusBar').textContent.includes('已保存'));
     }
-    let pendingApplicationsRequest;
-    await context.route('**/api/account/applications', route => {
-      if (!pendingApplicationsRequest) { pendingApplicationsRequest = route; return; }
-      return route.continue();
-    });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('dialog', dialog => dialog.accept());
@@ -59,6 +54,20 @@ async function main() {
     await page.locator('#loginForm input[name=password]').fill(admin.clearPassword);
     await page.locator('#loginForm button[type=submit]').click();
     await page.waitForURL('**/profile');
+    await page.waitForFunction(() => {
+      const refresh = document.getElementById('applicationsRefresh');
+      const status = document.getElementById('applicationsStatus');
+      return refresh && !refresh.disabled && status && !status.textContent.includes('加载');
+    });
+    let pendingApplicationsRequest;
+    let markHeld;
+    const held = new Promise(resolve => { markHeld = resolve; });
+    await context.route('**/api/account/applications', route => {
+      if (!pendingApplicationsRequest) { pendingApplicationsRequest = route; markHeld(); return; }
+      return route.continue();
+    });
+    await page.locator('#applicationsRefresh').click();
+    await held;
     await page.locator('#editPhoneBtn').click();
     assert.equal(await page.locator('#phoneUnbindBtn').isVisible(), false, 'Unbound account has no unbind action');
     await page.locator('#profilePhoneCountryInput').fill('+86');

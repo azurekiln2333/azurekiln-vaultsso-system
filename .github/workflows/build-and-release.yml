@@ -43,8 +43,23 @@ jobs:
           node -e 'console.log("BROWSER_EXECUTABLE=" + require("playwright-core").chromium.executablePath())' >> "$GITHUB_ENV"
       - name: Verify browser flows
         run: |
-          set -euo pipefail
-          npm run check:browser 2>&1 | tee .artifacts/cloud/browser.log
+          set -uo pipefail
+          # Run every suite listed in check:browser, in order, so one failure does not hide the rest.
+          suites=$(node -p "require('./package.json').scripts['check:browser'].split('&&').map(s => s.trim().replace(/^node\s+/, '')).join('\n')")
+          failed=0
+          for suite in $suites; do
+            echo "::group::$suite"
+            if ! node "$suite" 2>&1 | tee ".artifacts/cloud/${suite##*/}.log" | tee -a .artifacts/cloud/browser.log; then
+              failed=$((failed + 1))
+              grep -E 'Error|assert|expected|actual|Timeout|    at main' ".artifacts/cloud/${suite##*/}.log" | head -n 12 | while IFS= read -r line; do
+                line=${line//'%'/'%25'}
+                line=${line//$'\r'/'%0D'}
+                echo "::error title=Browser suite failed: $suite::$line"
+              done
+            fi
+            echo "::endgroup::"
+          done
+          [ "$failed" -eq 0 ] || { echo "$failed browser suite(s) failed"; exit 1; }
       - name: Build deployment ZIP
         run: |
           set -euo pipefail
