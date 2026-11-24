@@ -73,6 +73,29 @@ function normalizeString(value, maxLength = 512) {
   return String(value).trim().slice(0, maxLength);
 }
 
+// Provider page URLs must be absolute HTTP(S) addresses without credentials or
+// fragments. Return a canonical URL so config input and environment values behave alike.
+function normalizeUrl(value) {
+  const text = normalizeString(value, 2048);
+  if (!text || /[\u0000-\u001f\u007f]/.test(text)) return '';
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) return '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+// Aliyun's Origin parameter is an origin, not an arbitrary page URL.
+function normalizeOrigin(value) {
+  const text = normalizeUrl(value);
+  if (!text) return '';
+  const url = new URL(text);
+  if (url.pathname !== '/' || url.search) return '';
+  return url.origin;
+}
+
 // 模板参数必须是对象；非法/非对象一律回落到官方默认值，避免把坏数据发给上游。
 function normalizeTemplateParam(value, fallback) {
   let parsed = value;
@@ -175,8 +198,8 @@ function normalizeConfig(input, current = {}) {
     ? normalizeString(source.sceneCode, 64)
     : normalizeString(base.sceneCode, 64);
   next.h5Origin = Object.prototype.hasOwnProperty.call(source, 'h5Origin')
-    ? normalizeUrl(source.h5Origin)
-    : normalizeUrl(base.h5Origin);
+    ? normalizeOrigin(source.h5Origin)
+    : normalizeOrigin(base.h5Origin);
   next.h5Url = Object.prototype.hasOwnProperty.call(source, 'h5Url')
     ? normalizeUrl(source.h5Url)
     : normalizeUrl(base.h5Url);

@@ -119,6 +119,26 @@ test('readiness requires the documented per-channel fields', () => {
   assert.equal(missingSdk.h5.sdkUrl, '');
 });
 
+test('H5 Origin and page URL normalize as absolute HTTP(S) URLs', () => {
+  const normalized = phoneAuth.normalizeConfig({
+    ...VALID_CONFIG,
+    h5Origin: ' https://GATEWAY.example.test:443/ ',
+    h5Url: ' https://GATEWAY.example.test:443/oauth2/authorize '
+  });
+  assert.equal(normalized.h5Origin, 'https://gateway.example.test');
+  assert.equal(normalized.h5Url, 'https://gateway.example.test/oauth2/authorize');
+  assert.equal(phoneAuth.adminConfig(normalized).ready.h5, true);
+
+  const invalid = phoneAuth.normalizeConfig({
+    ...VALID_CONFIG,
+    h5Origin: 'https://gateway.example.test/login',
+    h5Url: 'javascript:alert(1)'
+  });
+  assert.equal(invalid.h5Origin, '');
+  assert.equal(invalid.h5Url, '');
+  assert.equal(phoneAuth.publicConfig(invalid).h5.available, false);
+});
+
 test('fromEnvironment reads PHONE_AUTH_ uppercase snake case variables', () => {
   const config = phoneAuth.fromEnvironment({
     PHONE_AUTH_H5_ENABLED: 'true',
