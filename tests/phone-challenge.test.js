@@ -43,10 +43,13 @@ test('H5 completion may bind the provider-returned phone only after phone proof'
   const pool = createMemoryPool();
   const model = new PhoneChallenge(pool);
   const created = await model.create({ phone: '+8613900139000', purpose: PhoneChallenge.PURPOSES.H5_LOGIN,
+    ref: 'opaque-h5-proof-ref',
     context: { channel: 'h5', sessionDays: 14 }, expiresAt: FUTURE() });
   const row = await model.findById(created.id);
   assert.equal(row.context.phone, '+8613900139000');
   assert.ok(row.email.startsWith('phone-challenge:phone_h5_login:'));
+  assert.doesNotMatch(row.email, /13900139000/);
+  assert.doesNotMatch(row.email, /opaque-h5-proof-ref/);
 });
 
 test('unsupported purpose and malformed/expired challenges fail closed', async () => {
