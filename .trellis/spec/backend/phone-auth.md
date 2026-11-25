@@ -71,6 +71,9 @@ Tianyi authorization encrypts and signs the documented WEB/H5 envelope, verifies
 
 Provider unit tests cover official request/response envelopes, independently verified RPC signatures and the published Tianyi XXTEA vector, transport errors, disabled-channel zero calls, redaction and canonicalization. API regressions exercise real routes with isolated provider transports: readiness/save/reload, one-time consumption, expiry, attempt/cooldown, conflicting targets, registration gates, current-session preservation, MFA, duration and native OAuth scope behavior. Browser tests exercise admin setup, H5 consent/fallback, SMS login, roster and profile verification at desktop/mobile sizes. Provider fixtures must not make real paid sends or credential-bearing external calls.
 
+- In `tests/carrier-phone-api.test.js`, establish the caller's completed session before enabling global `login_email_code` when testing that Tianyi MFA preserves an active account. Send the callback's decoded pending credential as `X-Oidc-Pending` to both pending lookup and completion while retaining the caller's session cookie. Concatenating multiple `oidc_pending` cookies can select another challenge and invalidate the test premise. Assert both rejection after an application-ID change and preservation of the original session ID.
+- The memory database replaces row objects when a transaction commits. Re-read the challenge by ID before asserting its committed state, for example `f.pool.emailVerificationCodes.find(row => row.id === parent.id)?.consumed_at`; a previously captured object does not prove whether consumption committed.
+
 For this task, all executable checks, browser runs, ZIP builds and container validation run in GitHub. A passing earlier SHA does not certify a later revision. See [Deployment](./deployment.md) for publication gates. Cloud fixtures do not establish live SIM/provider approval or production-host rollout.
 
 ## 7. Wrong vs Correct
