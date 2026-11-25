@@ -74,3 +74,44 @@ Implemented and verified browser account list/add/switch/remove and administrato
 ### Next Steps
 
 - Changes are committed locally. Push and deployment were not requested. Unrelated compliance tasks and docs remain untouched.
+
+
+## Session 3: Carrier phone authentication merged and released
+<!-- trellis-session: v=2 fp=cbfec86488dfdb16 -->
+
+**Date**: 2026-11-25
+**Task**: Carrier phone authentication merged and released
+**Branch**: `main`
+
+### Summary
+
+Delivered Aliyun H5/App and SMS authentication plus Tianyi WEB/H5 authorization. Merged the cloud-verified feature into main, published v1.1.0, repaired a real-clock browser-test race, and completed GitHub-only release validation.
+
+### Main Changes
+
+- Added provider adapters, durable phone challenges, admin configuration, login/profile flows and docs/PHONE_AUTH.md.
+- Fast-forwarded verified ec73f26 into main. Published v1.1.0 at ec73f26; follow-up 4010bbd changes only tests and Trellis docs.
+- Recorded cloud regression lessons and archived 11-24-carrier-phone-auth; unrelated compliance directories remain untouched.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `70dfbc1` | feat(auth): add carrier phone authentication and cloud release gates |
+| `ec73f26` | test(browser): retain H5 SDK count across navigation |
+| `4010bbd` | test(auth): assert fixed session deadlines across signing delays |
+
+### Testing
+
+- [OK] GitHub feature run 45501906323: backend 512 passed, 7 skipped, 0 failed; all browser suites, deployment ZIP and container validation passed.
+- [OK] GitHub tag run 45637874664: all gates and GHCR publication passed. Image ghcr.io/azurekiln2333/azurekiln-vaultsso-system:v1.1.0; digest sha256:55a181e7dbdaf2316032017b1cf2c56996299cae61c1a204c914430f80d1061b.
+- [OK] Initial main run 45637867420 exposed an exp-minus-iat cross-second assertion; 4010bbd preserves fixed-deadline checks using measured authentication bounds. Main run 45641244196 passed tests, ZIP, image validation and publication.
+- [OK] All executable checks and builds ran in GitHub; no local checks, builds, app startup, paid SMS, live SIM or production-host rollout.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Operator completes provider approval/credentials, installs the approved H5/App SDK configuration, enables channels and performs real provider/SIM validation using docs/PHONE_AUTH.md.
