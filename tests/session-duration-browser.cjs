@@ -56,19 +56,31 @@ async function main() {
       const sent = page.waitForRequest(request => request.method() === 'POST'
         && new URL(request.url()).pathname === '/oauth2/authorize'
         && request.headers()['content-type'] === 'application/x-www-form-urlencoded');
+      const authenticationStartedAt = Date.now();
       await page.locator('#loginForm .submit').click();
       assert.equal(new URLSearchParams((await sent).postData()).get('session_days'), String(days),
         'The actual credential POST must carry the selected duration');
+      return authenticationStartedAt;
     }
 
-    async function assertSession(context, account, days) {
+    async function assertSession(context, account, days, authenticationStartedAt) {
       const cookie = (await context.cookies()).find(item => item.name === 'session');
+      const authenticationCompletedAt = Date.now();
       assert.ok(cookie, 'Successful final authentication must issue a session cookie');
       const claims = jwt.decode(cookie.value);
       assert.equal(claims.sub, account.id);
       assert.equal(claims.session_days, days);
       assert.equal(claims.exp, claims.session_deadline);
-      assert.equal(claims.exp - claims.iat, days * 24 * 60 * 60);
+      // The fixed deadline is chosen before DB issuance/commit; JWT iat is added
+      // when the cookie is signed afterwards, possibly in the next second.
+      const policyStartedAt = claims.exp - days * 24 * 60 * 60;
+      assert.ok(Number.isSafeInteger(policyStartedAt));
+      assert.ok(policyStartedAt >= Math.floor(authenticationStartedAt / 1000)
+        && policyStartedAt <= Math.floor(authenticationCompletedAt / 1000),
+        'The deadline must be the selected full duration after this final authentication');
+      assert.ok(Number.isSafeInteger(claims.iat) && claims.iat >= policyStartedAt
+        && claims.iat <= Math.floor(authenticationCompletedAt / 1000),
+        'Signing after commit must not restart the fixed deadline');
       const row = f.pool.sessions.find(item => item.token === claims.sid);
       assert.ok(row && !row.revoked_at);
       assert.equal(new Date(row.expires_at).getTime(), claims.exp * 1000);
@@ -147,9 +159,9 @@ async function main() {
       const { context, page, errors } = await newSession();
       await page.goto(`${f.baseUrl}/oauth2/authorize`);
       await page.locator('#authRegion').waitFor({ state: 'visible' });
-      await submitPassword(page, account, days);
+      const authenticationStartedAt = await submitPassword(page, account, days);
       await page.waitForURL('**/profile');
-      const cookie = await assertSession(context, account, days);
+      const cookie = await assertSession(context, account, days, authenticationStartedAt);
       assert.deepEqual(errors, []);
       await context.close();
 
@@ -180,9 +192,10 @@ async function main() {
     assert.equal((await email.context.request.get(`${f.baseUrl}/api/profile`)).status(), 401);
     await email.page.route('**/api/v1/auth/oauth/oidc/complete', route =>
       route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), session_days: 14 }) }));
+    const emailAuthenticationStartedAt = Date.now();
     await email.page.locator('#code').fill(f.lastCode(emailAccount.email));
     await email.page.waitForURL('**/profile');
-    await assertSession(email.context, emailAccount, 7);
+    await assertSession(email.context, emailAccount, 7, emailAuthenticationStartedAt);
     assert.deepEqual(email.errors, []);
     await email.context.close();
 
@@ -205,9 +218,10 @@ async function main() {
     assert.equal((await gate.context.request.get(`${f.baseUrl}/api/profile`)).status(), 401);
     await gate.page.locator('#sendEmailGateCodeBtn').click();
     await gate.page.waitForFunction(() => !document.getElementById('code').disabled);
+    const gateAuthenticationStartedAt = Date.now();
     await gate.page.locator('#code').fill(f.lastCode(gateAccount.email));
     await gate.page.waitForURL('**/profile');
-    await assertSession(gate.context, gateAccount, 14);
+    await assertSession(gate.context, gateAccount, 14, gateAuthenticationStartedAt);
     assert.deepEqual(gate.errors, []);
     await gate.context.close();
     console.log('Session duration browser checks passed: 1/7/14-day real POST/cookie/deadline, fresh browser context, email override rejection and TOTP/mailbox continuation');

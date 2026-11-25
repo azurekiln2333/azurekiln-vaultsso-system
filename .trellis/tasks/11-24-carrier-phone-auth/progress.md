@@ -6,9 +6,11 @@
 - Backend review fixed strict foreign-prefix rejection, Tianyi MFA application-snapshot validation, transactional final issuance/cookie publication, and token-exchange redirect rejection. The account-binding spec now records the Tianyi identity boundary.
 - UI review fixed H5 `watch(status === 2)` termination, cross-method busy-state handling, strict +86/0086 validation, profile challenge invalidation and capability loading, plus Tianyi administration and onboarding text.
 - API regressions cover Tianyi app-ID changes during MFA and failed commit behavior. The browser suite now covers H5 close/unlock behavior and rejection of `+14155550123` before SMS send.
-- GitHub workflow is configured to run backend tests, Chromium browser suite, deployment ZIP creation and isolated container-image validation on branch pushes. It publishes only on `main` or stable version tags. Feature-branch CI has not run yet.
-- Feature commits `70dfbc1`, `bb471b9`, and `d9f7956` are pushed. Latest SHA `d9f7956ceb06bab5b7f87727f75f7dfa20f3d033`, run `45382222061`, failed at `Verify backend`; browser, ZIP and image-validation jobs were skipped. The job-log API returns 403 `Must have admin rights to Repository`, so the failing test cannot be identified or corrected from the available run metadata. Do not merge/tag until logs are accessible and a later exact SHA passes every gate.
-- Historical baseline only: `main` at `e2ade3d110ffdc7622c632dab4c2f7c136f151f6` had successful GitHub run `45252768616`; it does not validate this task.
+- GitHub runs backend tests, every Chromium browser suite, deployment ZIP creation and isolated container-image validation on branch pushes. Only `main`/`v*` pushes publish; prerelease tags do not move `latest`.
+- Exact feature SHA `ec73f26f0263d30ec9289aec51793f9e0170cb96` passed all gates in [run 45501906323](https://github.com/azurekiln2333/azurekiln-vaultsso-system/actions/runs/45501906323). Retained artifacts include browser/log evidence and the deployment ZIP. Feature image publication was correctly skipped.
+- Final full-scope review found no remaining blocker. The passing revision was fast-forwarded into `main` and pushed; annotated tag `v1.1.0` points to that same revision. No force push or existing tag replacement was used.
+- Tag [run 45637874664](https://github.com/azurekiln2333/azurekiln-vaultsso-system/actions/runs/45637874664) passed all tests, ZIP, image validation and GHCR publication. Published release: `ghcr.io/azurekiln2333/azurekiln-vaultsso-system:v1.1.0` at source `ec73f26f0263d30ec9289aec51793f9e0170cb96`.
+- Initial main [run 45637867420](https://github.com/azurekiln2333/azurekiln-vaultsso-system/actions/runs/45637867420) passed backend and every browser suite except session-duration: a cross-second test compared `exp - iat` to exactly 86400 and observed 86399. The fixed deadline is chosen before commit; signing adds `iat` later. A follow-up test-only fix measures the final-authentication time window and still requires JWT/row/cookie deadline agreement and unchanged expiry on reopen. Its main cloud verification is pending; no runtime behavior was changed.
 - No provider call, paid SMS, production-host deployment or live SIM test has been performed.
 
 ## 2026-11-25 handoff to Claude coordinator (w6Q:p8)
@@ -17,3 +19,11 @@
 - Backend now passes in GitHub; failures are browser-only. Browser suites had never run in CI before this branch; the runner defaults to en-US and is slower than the local machine.
 - `5c09048` pinned account-bindings to zh-CN; run `45474121727` then passed line 63 and failed at line 164: the admin user page keeps the previous "已保存" status during the next save, so the test reads the DB before the PUT lands. Test-side race, not a product defect.
 - Tianyi XXTEA key-mode concern is covered by the official vector in `tests/tianyi.test.js`, which passes in backend CI.
+
+## Cloud fixes and final review
+
+- Authenticated GitHub log access resolved the earlier public API 403, so backend/browser failures were diagnosed from their actual job logs. No local verification was substituted.
+- Backend fixes cover H5 URL normalization and opaque challenge fixtures, the Tianyi identity serializer instance, and correctly establishing an existing session before enabling global MFA in regression fixtures. Pending tests explicitly select the intended credential and reread transaction-backed records.
+- Browser fixes specify the language under test, wait for the exact action response, retain intercepted carrier payloads before navigation, and keep H5 SDK counts outside the reloaded page. The workflow now executes every suite before returning a nonzero result, so one failure cannot hide the rest.
+- The final product fix consistently removes phone claims from browser and native OAuth handoffs without the phone scope; regression assertions still require this redaction.
+- The final cloud gates cover syntax/backend, all browser scripts, deployment ZIP and container packaging/inspection. This is not a live production database/container startup test. Separate lint/type-check scripts are not configured.

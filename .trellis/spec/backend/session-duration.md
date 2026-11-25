@@ -74,6 +74,8 @@ Controlled time must advance both `Date.now()` and `new Date()`: the memory DB u
 
 `tests/session-duration-browser.cjs` covers native selection, account/locale retention, actual credential submission, local provider URL updates, MFA and persistent-cookie reuse in a fresh browser context. Inspect actual desktop/phone images for all three locales. Memory/provider fixtures do not establish production MySQL, deployment, or live external-provider behavior.
 
+The real-clock browser test must bound `exp - selectedDuration` between the start and observation of final authentication, then require the JWT, durable row and cookie to share that deadline. Do not require `exp - iat` to equal the full duration: the policy fixes the deadline before database issuance/commit, while JWT signing adds `iat` afterwards and may cross a second. Keep unchanged-deadline assertions when reopening the browser.
+
 ## 7. Wrong vs Correct
 
 Wrong:
